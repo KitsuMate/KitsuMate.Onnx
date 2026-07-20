@@ -1,0 +1,13 @@
+{
+  "name": "ai.kitsumate.onnx.backend.sentis",
+  "version": "1.0.0-alpha.1",
+  "displayName": "KitsuMate Unity AI Inference Backend",
+  "description": "Optional Unity AI Inference backend for KitsuMate ONNX.",
+  "unity": "6000.0",
+  "keywords": ["onnx", "unity", "ai-inference", "inference", "kitsumate"],
+  "author": { "name": "KitsuMate", "url": "https://github.com/KitsuMate" },
+  "dependencies": {
+    "ai.kitsumate.onnx": "1.0.0-alpha.1",
+    "com.unity.ai.inference": "2.4.1"
+  }
+}

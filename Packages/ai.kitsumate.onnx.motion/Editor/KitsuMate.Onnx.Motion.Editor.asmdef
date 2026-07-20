@@ -1,0 +1,21 @@
+{
+    "name": "KitsuMate.Onnx.Motion.Editor",
+    "rootNamespace": "KitsuMate.Onnx.Motion.Editor",
+    "references": [
+        "KitsuMate.Onnx",
+        "KitsuMate.Onnx.Editor",
+        "KitsuMate.Onnx.Motion",
+        "KitsuMate.Onnx.Embeddings"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

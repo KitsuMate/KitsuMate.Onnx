@@ -1,0 +1,12 @@
+{
+  "name": "ai.kitsumate.onnx.backend.onnxruntime",
+  "version": "1.0.0-alpha.1",
+  "displayName": "KitsuMate ONNX Runtime Backend",
+  "description": "Optional ONNX Runtime backend for KitsuMate ONNX.",
+  "unity": "6000.0",
+  "keywords": ["onnx", "onnxruntime", "inference", "kitsumate"],
+  "author": { "name": "KitsuMate", "url": "https://github.com/KitsuMate" },
+  "dependencies": {
+    "ai.kitsumate.onnx": "1.0.0-alpha.1"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "name": "ai.kitsumate.onnx.lipsync.tests",
+  "version": "1.0.0-alpha.1",
+  "displayName": "KitsuMate ONNX LipSync Tests",
+  "description": "Optional lip-sync tests. Model fixtures are downloaded only by integration CI.",
+  "unity": "6000.0",
+  "hideInEditor": true,
+  "dependencies": { "ai.kitsumate.onnx.lipsync": "1.0.0-alpha.1" }
+}

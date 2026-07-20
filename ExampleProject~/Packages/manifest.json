@@ -1,0 +1,12 @@
+{
+  "dependencies": {
+    "ai.kitsumate.onnx": "file:../../Packages/ai.kitsumate.onnx",
+    "ai.kitsumate.onnx.backend.onnxruntime": "file:../../Packages/ai.kitsumate.onnx.backend.onnxruntime",
+    "ai.kitsumate.onnx.backend.sentis": "file:../../Packages/ai.kitsumate.onnx.backend.sentis",
+    "ai.kitsumate.onnx.asr": "file:../../Packages/ai.kitsumate.onnx.asr",
+    "ai.kitsumate.onnx.embeddings": "file:../../Packages/ai.kitsumate.onnx.embeddings",
+    "ai.kitsumate.onnx.lipsync": "file:../../Packages/ai.kitsumate.onnx.lipsync",
+    "ai.kitsumate.onnx.motion": "file:../../Packages/ai.kitsumate.onnx.motion",
+    "ai.kitsumate.onnx.tts": "file:../../Packages/ai.kitsumate.onnx.tts"
+  }
+}

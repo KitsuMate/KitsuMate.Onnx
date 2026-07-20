@@ -1,0 +1,14 @@
+{
+  "name": "KitsuMate.Onnx.Backend.OnnxRuntime.Editor",
+  "rootNamespace": "KitsuMate.Onnx.Editor",
+  "references": ["KitsuMate.Onnx", "KitsuMate.Onnx.Backend.OnnxRuntime"],
+  "includePlatforms": ["Editor"],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

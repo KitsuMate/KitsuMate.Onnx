@@ -1,0 +1,20 @@
+{
+    "name": "KitsuMate.Onnx.Asr.Editor",
+    "rootNamespace": "KitsuMate.Onnx.Asr.Editor",
+    "references": [
+        "KitsuMate.Onnx",
+        "KitsuMate.Onnx.Editor",
+        "KitsuMate.Onnx.Asr"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

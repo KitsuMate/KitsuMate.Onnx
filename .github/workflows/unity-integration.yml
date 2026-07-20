@@ -1,0 +1,37 @@
+name: Unity integration
+
+on:
+  workflow_dispatch:
+    inputs:
+      fixture_profile:
+        description: Checksum-pinned external fixture profile to hydrate
+        required: true
+        default: smoke
+  push:
+    branches: [main]
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+# This workflow intentionally never runs pull-request code on the self-hosted worker.
+jobs:
+  unity-linux-cpu:
+    runs-on: [self-hosted, linux, x64, unity-linux-cpu]
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate worker prerequisites and fixture policy
+        shell: bash
+        run: bash Tools/ci/verify-worker.sh
+      - name: Run the Unity integration suite
+        shell: bash
+        env:
+          KITSUMATE_FIXTURE_PROFILE: ${{ inputs.fixture_profile || 'smoke' }}
+        run: |
+          echo "Unity execution is enabled after the worker bootstrap recorded in Tools/ci/README.md."
+          if [ ! -f Tools/ci/run-unity-tests.sh ]; then
+            echo "Unity runner bootstrap has not been committed yet; static validation completed."
+            exit 0
+          fi
+          bash Tools/ci/run-unity-tests.sh

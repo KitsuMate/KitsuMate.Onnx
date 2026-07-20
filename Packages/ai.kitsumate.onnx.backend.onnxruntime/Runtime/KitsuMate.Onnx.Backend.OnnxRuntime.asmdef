@@ -1,0 +1,14 @@
+{
+  "name": "KitsuMate.Onnx.Backend.OnnxRuntime",
+  "rootNamespace": "KitsuMate.Onnx",
+  "references": ["KitsuMate.Onnx"],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": true,
+  "precompiledReferences": ["Microsoft.ML.OnnxRuntime.dll", "System.Numerics.Tensors.dll"],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

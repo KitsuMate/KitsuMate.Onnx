@@ -1,0 +1,3 @@
+{
+  "name": "KitsuMate.Onnx.Tts.Tests", "references": ["KitsuMate.Onnx.Tts"], "optionalUnityReferences": ["TestAssemblies"], "autoReferenced": false
+}

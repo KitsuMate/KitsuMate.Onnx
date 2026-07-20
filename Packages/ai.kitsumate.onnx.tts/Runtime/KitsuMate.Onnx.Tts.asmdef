@@ -1,0 +1,20 @@
+{
+    "name": "KitsuMate.Onnx.Tts",
+    "rootNamespace": "KitsuMate.Onnx.Tts",
+    "references": [
+        "KitsuMate.Onnx"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "KitsuMate.Tokenizers.dll",
+        "Microsoft.ML.OnnxRuntime.dll",
+        "System.Numerics.Tensors.dll"
+    ],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

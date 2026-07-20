@@ -1,0 +1,9 @@
+{
+  "name": "ai.kitsumate.onnx.tts.tests",
+  "version": "1.0.0-alpha.1",
+  "displayName": "KitsuMate ONNX TTS Tests",
+  "description": "Optional TTS tests. Model fixtures are downloaded only by integration CI.",
+  "unity": "6000.0",
+  "hideInEditor": true,
+  "dependencies": { "ai.kitsumate.onnx.tts": "1.0.0-alpha.1" }
+}

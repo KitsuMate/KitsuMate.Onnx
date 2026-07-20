@@ -1,0 +1,38 @@
+name: Validate packages
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  package-layout:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate every package manifest
+        shell: pwsh
+        run: |
+          Get-ChildItem Packages -Recurse -Filter package.json | ForEach-Object {
+            Get-Content $_.FullName -Raw | ConvertFrom-Json | Out-Null
+          }
+      - name: Enforce repository artifact policy
+        shell: bash
+        run: |
+          forbidden_package='com.unity.'
+          forbidden_package+='sentis'
+          if rg -n "$forbidden_package" .; then
+            echo 'Only com.unity.ai.inference is supported.' >&2
+            exit 1
+          fi
+          if rg --files Packages -g '*.onnx' -g '*.ort' -g '*.gguf' -g '*.so' -g '*.dylib' -g '*.tgz' | grep -q .; then
+            echo 'Models, native libraries, and release archives must not be committed.' >&2
+            exit 1
+          fi
+          if rg -n 'Microsoft\.ML\.OnnxRuntime|OnnxRuntimeBackend|GpuProvider|GraphOptimizationLevel' Packages/ai.kitsumate.onnx/Runtime; then
+            echo 'The core package must stay backend-neutral.' >&2
+            exit 1
+          fi

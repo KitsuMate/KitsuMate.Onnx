@@ -1,0 +1,23 @@
+{
+  "name": "ai.kitsumate.onnx.lipsync",
+  "version": "1.0.0-alpha.1",
+  "displayName": "KitsuMate ONNX LipSync",
+  "description": "Lip sync and viseme detection using ONNX models. Includes Uni2005 phoneme detection with phone-to-viseme mapping.",
+  "unity": "6000.0",
+  "keywords": [
+    "onnx",
+    "lipsync",
+    "viseme",
+    "phoneme",
+    "animation",
+    "face"
+  ],
+  "author": {
+    "name": "KitsuMate",
+    "url": "https://github.com/kitsumate"
+  },
+  "dependencies": {
+    "ai.kitsumate.onnx": "1.0.0-alpha.1"
+  },
+  "samples": []
+}

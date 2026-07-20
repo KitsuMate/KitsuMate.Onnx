@@ -1,0 +1,16 @@
+# CI bootstrap contract
+
+The self-hosted Linux worker at `192.168.1.25` must be registered with labels:
+
+- `self-hosted`, `linux`, `x64`, `unity-linux-cpu`
+
+Run it as a dedicated non-privileged runner account. It must expose Docker and a GameCI-compatible Unity 6000.5.3f1 image. Repository settings must restrict this runner group to protected `main` pushes, version tags, and manual dispatches; it must not accept fork or pull-request jobs.
+
+Before Unity starts, `run-unity-tests.sh` will be added with these responsibilities:
+
+1. Download the checksum-pinned ONNX Runtime 1.24.4 artifact and the selected external fixture profile into the runner cache.
+2. Verify checksums and install artifacts only into the workspace staging directories.
+3. Mount the staged artifacts into the GameCI container.
+4. Run the requested core/backend/feature test assemblies and publish NUnit XML.
+
+Models and native runtime binaries must never be committed to a UPM package or the repository. The release workflow will package each production UPM directory into its own `.tgz` after this validation step.

@@ -1,0 +1,3 @@
+{
+  "name": "KitsuMate.Onnx.Motion.Tests", "references": ["KitsuMate.Onnx.Motion"], "optionalUnityReferences": ["TestAssemblies"], "autoReferenced": false
+}

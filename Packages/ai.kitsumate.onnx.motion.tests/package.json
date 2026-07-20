@@ -1,0 +1,9 @@
+{
+  "name": "ai.kitsumate.onnx.motion.tests",
+  "version": "1.0.0-alpha.1",
+  "displayName": "KitsuMate ONNX Motion Tests",
+  "description": "Optional motion tests. Model fixtures are downloaded only by integration CI.",
+  "unity": "6000.0",
+  "hideInEditor": true,
+  "dependencies": { "ai.kitsumate.onnx.motion": "1.0.0-alpha.1" }
+}

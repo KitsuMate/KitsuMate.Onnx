@@ -1,0 +1,12 @@
+{
+  "name": "ai.kitsumate.onnx.backend.onnxruntime.tests",
+  "version": "1.0.0-alpha.1",
+  "displayName": "KitsuMate ONNX Runtime Backend Tests",
+  "description": "Optional ONNX Runtime backend tests. External fixtures are hydrated by CI.",
+  "unity": "6000.0",
+  "hideInEditor": true,
+  "dependencies": {
+    "ai.kitsumate.onnx": "1.0.0-alpha.1",
+    "ai.kitsumate.onnx.backend.onnxruntime": "1.0.0-alpha.1"
+  }
+}

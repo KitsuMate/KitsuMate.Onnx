@@ -1,0 +1,8 @@
+{
+  "name": "KitsuMate.Onnx.Backend.Sentis.Tests",
+  "references": ["KitsuMate.Onnx", "KitsuMate.Onnx.Backend.Sentis"],
+  "optionalUnityReferences": ["TestAssemblies"],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "autoReferenced": false
+}

@@ -1,0 +1,20 @@
+{
+    "name": "KitsuMate.Onnx.LipSync",
+    "rootNamespace": "KitsuMate.Onnx.LipSync",
+    "references": [
+        "KitsuMate.Onnx"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "Newtonsoft.Json.dll",
+        "Microsoft.ML.OnnxRuntime.dll",
+        "System.Numerics.Tensors.dll"
+    ],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

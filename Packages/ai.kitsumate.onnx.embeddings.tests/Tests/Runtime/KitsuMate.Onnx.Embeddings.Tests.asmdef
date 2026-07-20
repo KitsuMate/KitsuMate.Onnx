@@ -1,0 +1,3 @@
+{
+  "name": "KitsuMate.Onnx.Embeddings.Tests", "references": ["KitsuMate.Onnx.Embeddings"], "optionalUnityReferences": ["TestAssemblies"], "autoReferenced": false
+}
