@@ -6,7 +6,9 @@ The self-hosted Linux worker at `192.168.1.25` must be registered with labels:
 
 Run it as a dedicated non-privileged runner account. It must expose Docker and a GameCI-compatible Unity 6000.5.3f1 image. Repository settings must restrict this runner group to protected `main` pushes, version tags, and manual dispatches; it must not accept fork or pull-request jobs.
 
-Before Unity starts, `run-unity-tests.sh` will be added with these responsibilities:
+The protected runner must define the repository variable `KITSUMATE_UNITY_TEST_COMMAND`. It must be a reviewed GameCI invocation that runs the `ExampleProject~` EditMode and PlayMode suites and writes NUnit XML under `TestResults/`. The workflow intentionally fails if this variable is not configured; it must never silently claim Unity validation passed.
+
+Before Unity starts, `run-unity-tests.sh` has these responsibilities:
 
 1. Download the checksum-pinned ONNX Runtime 1.24.4 artifact and the selected external fixture profile into the runner cache.
 2. Verify checksums and install artifacts only into the workspace staging directories.

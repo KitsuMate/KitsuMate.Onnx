@@ -28,10 +28,7 @@ jobs:
         shell: bash
         env:
           KITSUMATE_FIXTURE_PROFILE: ${{ inputs.fixture_profile || 'smoke' }}
+          KITSUMATE_ARTIFACT_CACHE: ${{ runner.temp }}/kitsumate-artifacts
+          KITSUMATE_UNITY_COMMAND: ${{ vars.KITSUMATE_UNITY_TEST_COMMAND }}
         run: |
-          echo "Unity execution is enabled after the worker bootstrap recorded in Tools/ci/README.md."
-          if [ ! -f Tools/ci/run-unity-tests.sh ]; then
-            echo "Unity runner bootstrap has not been committed yet; static validation completed."
-            exit 0
-          fi
           bash Tools/ci/run-unity-tests.sh

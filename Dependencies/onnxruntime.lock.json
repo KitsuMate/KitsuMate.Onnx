@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "version": "1.24.4",
+  "packages": [
+    {
+      "id": "Microsoft.ML.OnnxRuntime.Managed",
+      "url": "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime.managed/1.24.4/microsoft.ml.onnxruntime.managed.1.24.4.nupkg",
+      "files": [
+        {
+          "source": "lib/netstandard2.0/Microsoft.ML.OnnxRuntime.dll",
+          "destination": "Managed/Microsoft.ML.OnnxRuntime.dll",
+          "sha256": "5c3c531af36a6cb4baa01db20dcf94a0464ec36f8090aa42f35ff565b90a1ea6"
+        }
+      ]
+    },
+    {
+      "id": "Microsoft.ML.OnnxRuntime.Gpu.Linux",
+      "url": "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime.gpu.linux/1.24.4/microsoft.ml.onnxruntime.gpu.linux.1.24.4.nupkg",
+      "files": [
+        {
+          "source": "runtimes/linux-x64/native/libonnxruntime.so",
+          "destination": "Linux/x86_64/libonnxruntime.so",
+          "sha256": "1aacefdf0b4afa145d410b2381bbc3db3d978c485fb182c42a2b0b09f91f5310"
+        }
+      ]
+    },
+    {
+      "id": "Microsoft.ML.OnnxRuntime.Gpu.Windows",
+      "url": "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime.gpu.windows/1.24.4/microsoft.ml.onnxruntime.gpu.windows.1.24.4.nupkg",
+      "files": [
+        {
+          "source": "runtimes/win-x64/native/onnxruntime.dll",
+          "destination": "Windows/x86_64/onnxruntime.dll",
+          "sha256": "3b46571d12a9567791a42a2b2967a79c4e2e957aacdba09a2ddb4fb391707baa"
+        }
+      ]
+    }
+  ]
+}

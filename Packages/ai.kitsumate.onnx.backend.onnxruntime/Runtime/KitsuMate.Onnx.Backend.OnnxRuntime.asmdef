@@ -6,7 +6,7 @@
   "excludePlatforms": [],
   "allowUnsafeCode": false,
   "overrideReferences": true,
-  "precompiledReferences": ["Microsoft.ML.OnnxRuntime.dll", "System.Numerics.Tensors.dll"],
+  "precompiledReferences": ["Microsoft.ML.OnnxRuntime.dll"],
   "autoReferenced": true,
   "defineConstraints": [],
   "versionDefines": [],

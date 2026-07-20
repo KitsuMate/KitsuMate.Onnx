@@ -1,0 +1,31 @@
+name: Build release archives
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+# Releases stay disabled until the protected runner bootstrap is complete.
+jobs:
+  build-and-publish:
+    if: vars.RELEASE_ARTIFACT_PIPELINE_READY == 'true'
+    runs-on: [self-hosted, linux, x64, unity-linux-cpu]
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Hydrate, validate, and test
+        shell: bash
+        env:
+          KITSUMATE_ARTIFACT_CACHE: ${{ runner.temp }}/kitsumate-artifacts
+          KITSUMATE_UNITY_COMMAND: ${{ vars.KITSUMATE_UNITY_TEST_COMMAND }}
+        run: bash Tools/ci/run-unity-tests.sh
+      - name: Build production UPM archives
+        shell: bash
+        run: python3 Tools/ci/package-upm.py --output Artifacts
+      - name: Publish GitHub Release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: Artifacts/*.tgz
