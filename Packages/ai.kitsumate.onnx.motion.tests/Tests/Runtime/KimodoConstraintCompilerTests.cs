@@ -66,14 +66,11 @@ namespace KitsuMate.Onnx.Motion.Tests
         }
 
         [Test]
+        [Category("Integration")]
         public void Compiler_MatchesPythonConditioningFixtures()
         {
             string root = FixtureRoot();
-            if (!Directory.Exists(root))
-            {
-                Assert.Ignore($"External Kimodo conditioning fixtures are not hydrated at {root}.");
-                return;
-            }
+            Assert.That(Directory.Exists(root), Is.True, $"External Kimodo conditioning fixtures are not hydrated at {root}.");
             JObject manifest = JObject.Parse(File.ReadAllText(Path.Combine(root, "manifest.json")));
             var compiler = new KimodoConstraintCompiler();
             foreach (JObject record in manifest["cases"]!.Children<JObject>())
@@ -161,7 +158,7 @@ namespace KitsuMate.Onnx.Motion.Tests
             return result;
         }
 
-        private static string FixtureRoot() => Path.GetFullPath(Path.Combine(
-            "Packages", "ai.kitsumate.onnx.motion.tests", "Tests", "Runtime", "Fixtures", "KimodoConstraints"));
+        private static string FixtureRoot() => Path.Combine(
+            Application.dataPath, "KitsuMateOnnxFixtures", "motion", "KimodoConstraints");
     }
 }

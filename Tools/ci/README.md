@@ -30,6 +30,12 @@ Each profile is a committed `Dependencies/fixtures/<profile>.lock.json` file wit
 }
 ```
 
-The `smoke` profile must also provide `ExampleProject~/Assets/KitsuMateOnnxFixtures/unity-ai-inference/smoke.onnx`. The `release` profile must contain equivalent fixtures. The backend integration tests fail—not skip—when either fixture is absent, so fixture setup cannot be mistaken for a passing engine test.
+The `smoke` profile must also provide:
+
+- `ExampleProject~/Assets/KitsuMateOnnxFixtures/unity-ai-inference/smoke.onnx`
+- `ExampleProject~/Assets/KitsuMateOnnxFixtures/metadata/yolo10n_external.onnx`
+- `ExampleProject~/Assets/KitsuMateOnnxFixtures/motion/KimodoConstraints/` and its manifest/case files
+
+The `release` profile must contain equivalent fixtures. Engine, metadata, and conditioning integration tests fail—not skip—when their required fixture is absent, so fixture setup cannot be mistaken for a passing integration result.
 
 Models and native runtime binaries must never be committed to a UPM package or the repository. The release workflow will package each production UPM directory into its own `.tgz` after this validation step.
