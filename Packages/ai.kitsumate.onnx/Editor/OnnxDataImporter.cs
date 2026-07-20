@@ -8,7 +8,7 @@ namespace KitsuMate.Onnx.Editor
 {
     /// <summary>
     /// Importer for .onnx_data files (external weight data for ONNX models).
-    /// Sentis does not handle .onnx_data, so this is always registered as primary.
+    /// Unity AI Inference does not handle .onnx_data, so this is always registered as primary.
     /// </summary>
     [ScriptedImporter(2, new[] { "onnx_data" }, importQueueOffset: 101)]
     public class OnnxDataImporter : ScriptedImporter

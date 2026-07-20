@@ -74,7 +74,12 @@ namespace KitsuMate.Onnx
             result ??= new ModelValidationResult();
             foreach (IOnnxModelSource model in GetAllModels())
                 if (model != null && !model.IsAvailable) result.Error("unresolved_model", $"Model '{model.SourceName}' has no resolvable data.");
-            if (context.Backend != null && providerCompatibility.Length > 0)
+            // Empty backend identifiers can exist in assets authored before the
+            // backend-neutral contract.  Treat them as unspecified rather than
+            // rejecting an otherwise usable model; the backend-specific package
+            // can provide an explicit compatibility entry on the next save.
+            bool hasExplicitBackendCompatibility = providerCompatibility.Any(x => !string.IsNullOrWhiteSpace(x.BackendId));
+            if (context.Backend != null && hasExplicitBackendCompatibility)
             {
                 bool found = providerCompatibility.Any(x => string.Equals(x.BackendId, context.Backend.BackendId, StringComparison.OrdinalIgnoreCase) && x.Supported);
                 if (!found) result.Error("unsupported_backend", $"Model variant '{Identity.Variant}' does not support {context.Backend.DisplayName}.");

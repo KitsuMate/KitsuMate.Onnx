@@ -6,7 +6,7 @@ namespace KitsuMate.Onnx.Editor
 {
     /// <summary>
     /// Explicitly assigns KitsuMate importers to framework-owned model files.
-    /// Sentis remains the primary importer for unrelated ONNX assets when installed.
+    /// Unity AI Inference remains the primary importer for unrelated ONNX assets when installed.
     /// </summary>
     public static class OnnxImporterAssignment
     {

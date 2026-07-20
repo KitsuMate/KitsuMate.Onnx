@@ -30,7 +30,7 @@ namespace KitsuMate.Onnx
     
     /// <summary>
     /// Abstraction layer for different ONNX backends.
-    /// Allows switching between ONNX Runtime, Unity Sentis, WebGL, etc.
+    /// Allows switching between ONNX Runtime, Unity AI Inference, WebGL, etc.
     /// </summary>
     public abstract class OnnxBackend : ScriptableObject, IDisposable
     {

@@ -6,10 +6,10 @@ namespace KitsuMate.Onnx.Editor
 {
     /// <summary>
     /// Ensures supported model files inside any kitsumate.onnx package always use
-    /// KitsuMate importers, even when Unity Sentis is installed.
+    /// KitsuMate importers, even when Unity AI Inference is installed.
     /// Unity normalizes all package asset paths to "Packages/{name}/" regardless
     /// of disk location, so a prefix check is reliable and fast.
-    /// .onnx_data is always primary since Sentis does not handle it.
+    /// .onnx_data is always primary since Unity AI Inference does not handle it.
     /// </summary>
     internal sealed class OnnxPackageImporterOverride : AssetPostprocessor
     {

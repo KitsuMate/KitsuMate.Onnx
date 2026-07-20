@@ -1,0 +1,16 @@
+{
+  "name": "KitsuMate.Onnx.Embeddings.Backend.Sentis",
+  "rootNamespace": "KitsuMate.Onnx.Embeddings.UnityAiInference",
+  "references": ["KitsuMate.Onnx", "KitsuMate.Onnx.Embeddings", "KitsuMate.Onnx.Backend.Sentis"],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [
+    { "name": "com.unity.ai.inference", "expression": "", "define": "KITSUMATE_HAS_UNITY_AI_INFERENCE" }
+  ],
+  "noEngineReferences": false
+}

@@ -208,7 +208,7 @@ namespace KitsuMate.Onnx.Editor.Download
             for (int i = 0; i < compatibility.Length; i++)
             {
                 SerializedProperty item = providers.GetArrayElementAtIndex(i);
-                item.FindPropertyRelative("Provider").enumValueIndex = (int)compatibility[i].Provider;
+                item.FindPropertyRelative("BackendId").stringValue = compatibility[i].BackendId ?? string.Empty;
                 item.FindPropertyRelative("Supported").boolValue = compatibility[i].Supported;
                 item.FindPropertyRelative("RecommendedRamMb").intValue = compatibility[i].RecommendedRamMb;
                 item.FindPropertyRelative("RecommendedVramMb").intValue = compatibility[i].RecommendedVramMb;
