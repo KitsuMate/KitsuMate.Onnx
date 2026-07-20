@@ -24,8 +24,12 @@ jobs:
         run: bash Tools/ci/run-unity-tests.sh
       - name: Build production UPM archives
         shell: bash
-        run: python3 Tools/ci/package-upm.py --output Artifacts
+        run: |
+          python3 Tools/ci/package-upm.py --output Artifacts
+          (cd Artifacts && sha256sum *.tgz > SHA256SUMS)
       - name: Publish GitHub Release assets
         uses: softprops/action-gh-release@v2
         with:
-          files: Artifacts/*.tgz
+          files: |
+            Artifacts/*.tgz
+            Artifacts/SHA256SUMS
