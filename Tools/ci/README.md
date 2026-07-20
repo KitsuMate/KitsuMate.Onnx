@@ -11,8 +11,25 @@ The protected runner must define the repository variable `KITSUMATE_UNITY_TEST_C
 Before Unity starts, `run-unity-tests.sh` has these responsibilities:
 
 1. Download the checksum-pinned ONNX Runtime 1.24.4 artifact and the selected external fixture profile into the runner cache.
-2. Verify checksums and install artifacts only into the workspace staging directories.
+2. Verify checksums and install fixtures only beneath `ExampleProject~/Assets/KitsuMateOnnxFixtures`; fixture installation into `Packages/` is rejected.
 3. Mount the staged artifacts into the GameCI container.
 4. Run the requested core/backend/feature test assemblies and publish NUnit XML.
+
+Each profile is a committed `Dependencies/fixtures/<profile>.lock.json` file with this form:
+
+```json
+{
+  "files": [
+    {
+      "id": "onnxruntime-smoke",
+      "url": "https://example.invalid/onnxruntime-smoke.onnx",
+      "sha256": "<lowercase SHA-256>",
+      "destination": "ExampleProject~/Assets/KitsuMateOnnxFixtures/onnxruntime/smoke.onnx"
+    }
+  ]
+}
+```
+
+The `smoke` profile must also provide `ExampleProject~/Assets/KitsuMateOnnxFixtures/unity-ai-inference/smoke.onnx`. The `release` profile must contain equivalent fixtures. The backend integration tests fail—not skip—when either fixture is absent, so fixture setup cannot be mistaken for a passing engine test.
 
 Models and native runtime binaries must never be committed to a UPM package or the repository. The release workflow will package each production UPM directory into its own `.tgz` after this validation step.
