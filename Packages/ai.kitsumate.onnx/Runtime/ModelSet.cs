@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 namespace KitsuMate.Onnx
 {
@@ -21,7 +22,20 @@ namespace KitsuMate.Onnx
     [Serializable]
     public struct ModelCapabilities { [SerializeField] private string[] values; public IReadOnlyList<string> Values => values ?? Array.Empty<string>(); public bool Contains(string value) => Values.Contains(value); }
     [Serializable]
-    public struct ModelProviderCompatibility { public string BackendId; public bool Supported; public int RecommendedRamMb; public int RecommendedVramMb; public string[] RequiredOperators; }
+    public struct ModelProviderCompatibility
+    {
+        // Preserves the serialized integer written by pre-1.0 assets without
+        // reintroducing an ONNX Runtime type into the shared contract.
+        [SerializeField, FormerlySerializedAs("Provider")] private int legacyProvider;
+        public string BackendId;
+        public bool Supported;
+        public int RecommendedRamMb;
+        public int RecommendedVramMb;
+        public string[] RequiredOperators;
+
+        public bool HasLegacyProvider => string.IsNullOrWhiteSpace(BackendId);
+        public int LegacyProviderValue => legacyProvider;
+    }
     public enum ModelDiagnosticSeverity { Warning, Error }
     public readonly struct ModelDiagnostic { public readonly ModelDiagnosticSeverity Severity; public readonly string Code, Message; public ModelDiagnostic(ModelDiagnosticSeverity severity, string code, string message) { Severity = severity; Code = code; Message = message; } public override string ToString() => Message; }
     public sealed class ModelValidationResult
