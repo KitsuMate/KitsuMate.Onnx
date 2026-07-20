@@ -4,7 +4,11 @@ The self-hosted Linux worker at `192.168.1.25` must be registered with labels:
 
 - `self-hosted`, `linux`, `x64`, `unity-linux-cpu`
 
-Run it as a dedicated non-privileged runner account. It must expose Docker and a GameCI-compatible Unity 6000.5.3f1 image. Repository settings must restrict this runner group to protected `main` pushes, version tags, and manual dispatches; it must not accept fork or pull-request jobs.
+Run it as a dedicated non-privileged runner account with Docker access. GameCI pulls
+the compatible Unity 6000.5.3f1 image on the first test run, so no manually
+preinstalled Unity editor image is required. Repository settings must restrict this
+runner group to protected `main` pushes, version tags, and manual dispatches; it
+must not accept fork or pull-request jobs.
 
 `unity-integration.yml` runs GameCI's pinned `game-ci/unity-test-runner@v4`
 explicitly for the `ExampleProject~` EditMode and PlayMode suites. Configure one
