@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -35,6 +36,8 @@ namespace KitsuMate.Onnx.Embeddings.UnityAiInference
             var result = new ModelValidationResult();
             if (embeddingModel == null || !embeddingModel.IsAvailable) result.Error("missing_model", "A Unity AI Inference ModelAsset is required.");
             if (vocabulary == null && tokenizerModel == null) result.Error("missing_tokenizer", "Vocabulary or tokenizer model file is required.");
+            if (tokenizerModel != null && vocabulary == null && !tokenizerModel.text.TrimStart().StartsWith("{"))
+                result.Error("missing_vocabulary", "A vocabulary is required for a non-JSON tokenizer model.");
             if (embeddingDimension < 1) result.Error("invalid_dimension", "Embedding dimension must be positive.");
             if (maxSequenceLength < 1) result.Error("invalid_sequence", "Maximum sequence length must be positive.");
             return ValidateCommon(context, result);
@@ -67,12 +70,7 @@ namespace KitsuMate.Onnx.Embeddings.UnityAiInference
             if (Backend is not UnityAiInferenceBackend)
                 throw new InvalidOperationException("UnityAiInferenceTextEmbeddingEngine requires a UnityAiInferenceBackend.");
 
-            TextAsset tokenizerAsset = modelSet.TokenizerModel;
-            tokenizer = tokenizerAsset != null && tokenizerAsset.text.TrimStart().StartsWith("{")
-                ? Tokenizer.FromTokenizerJson(tokenizerAsset.bytes)
-                : tokenizerAsset != null
-                    ? Tokenizer.CreateBpe(modelSet.Vocabulary.bytes, tokenizerAsset.bytes)
-                    : Tokenizer.CreateWordPiece(modelSet.Vocabulary.bytes);
+            tokenizer = CreateTokenizer(modelSet);
             session = Backend.CreateSession(modelSet.EmbeddingModel);
             return Task.CompletedTask;
         }
@@ -84,6 +82,7 @@ namespace KitsuMate.Onnx.Embeddings.UnityAiInference
                 throw new ArgumentException("At least one input text is required.", nameof(request));
 
             var vectors = new float[request.Texts.Length][];
+            var stopwatch = Stopwatch.StartNew();
             bool normalize = request.Normalize ?? modelSet.NormalizeEmbeddings;
             int maxTokens = request.MaxTokenCount ?? modelSet.MaxSequenceLength;
             for (int index = 0; index < request.Texts.Length; index++)
@@ -96,15 +95,17 @@ namespace KitsuMate.Onnx.Embeddings.UnityAiInference
                 var inputs = new Dictionary<string, OnnxTensor>
                 {
                     ["input_ids"] = OnnxTensor.FromArray(ids, new[] { 1, ids.Length }, "input_ids"),
-                    ["attention_mask"] = OnnxTensor.FromArray(attention, new[] { 1, attention.Length }, "attention_mask"),
-                    ["token_type_ids"] = OnnxTensor.FromArray(types, new[] { 1, types.Length }, "token_type_ids")
+                    ["attention_mask"] = OnnxTensor.FromArray(attention, new[] { 1, attention.Length }, "attention_mask")
                 };
+                if (session.InputNames.Contains("token_type_ids"))
+                    inputs["token_type_ids"] = OnnxTensor.FromArray(types, new[] { 1, types.Length }, "token_type_ids");
                 IReadOnlyDictionary<string, OnnxTensor> outputs = session.Run(inputs);
-                float[] vector = Pool(outputs, attention, modelSet.UseMeanPooling);
+                float[] vector = Pool(outputs, attention, request.Pooling, modelSet.UseMeanPooling);
                 if (normalize) Normalize(vector);
                 vectors[index] = vector;
             }
-            return Task.FromResult(new EmbeddingResult(vectors[0], normalized: normalize, modelIdentity: modelSet.Identity) { Batch = vectors });
+            stopwatch.Stop();
+            return Task.FromResult(new EmbeddingResult(vectors[0], (float)stopwatch.Elapsed.TotalMilliseconds, normalize, modelSet.Identity) { Batch = vectors });
         }
 
         protected override Task OnUnloadAsync(CancellationToken cancellationToken)
@@ -115,12 +116,45 @@ namespace KitsuMate.Onnx.Embeddings.UnityAiInference
             return Task.CompletedTask;
         }
 
-        private static float[] Pool(IReadOnlyDictionary<string, OnnxTensor> outputs, int[] attentionMask, bool meanPooling)
+        protected override void OnDispose()
         {
+            session?.Dispose();
+            session = null;
+            tokenizer = null;
+        }
+
+        private static Tokenizer CreateTokenizer(UnityAiInferenceTextEmbeddingModelSet modelSet)
+        {
+            TextAsset tokenizerAsset = modelSet.TokenizerModel;
+            if (tokenizerAsset != null && tokenizerAsset.text.TrimStart().StartsWith("{"))
+                return Tokenizer.FromTokenizerJson(tokenizerAsset.bytes);
+            if (tokenizerAsset != null)
+            {
+                if (modelSet.Vocabulary == null)
+                    throw new InvalidOperationException("A vocabulary asset is required when the Unity AI Inference embedding tokenizer is not tokenizer.json.");
+                return Tokenizer.CreateBpe(modelSet.Vocabulary.bytes, tokenizerAsset.bytes);
+            }
+            if (modelSet.Vocabulary == null)
+                throw new InvalidOperationException("A vocabulary or tokenizer asset is required for Unity AI Inference embeddings.");
+            return Tokenizer.CreateWordPiece(modelSet.Vocabulary.bytes);
+        }
+
+        private static float[] Pool(IReadOnlyDictionary<string, OnnxTensor> outputs, int[] attentionMask, EmbeddingPooling pooling, bool modelDefaultMean)
+        {
+            if (outputs.TryGetValue("sentence_embedding", out OnnxTensor sentenceEmbedding))
+                return sentenceEmbedding.AsFloatArray();
             OnnxTensor output = outputs.Values.FirstOrDefault(value => value.ElementType == OnnxTensorElementType.Float)
                 ?? throw new InvalidOperationException("Unity AI Inference embedding model did not produce a float output.");
             float[] values = output.AsFloatArray();
-            if (!meanPooling || output.Shape.Length < 3) return values;
+            bool meanPooling = pooling == EmbeddingPooling.Mean || (pooling == EmbeddingPooling.ModelDefault && modelDefaultMean);
+            if (!meanPooling || output.Shape.Length < 3)
+            {
+                int dimension = output.Shape.Length > 0 ? output.Shape[output.Shape.Length - 1] : values.Length;
+                if (values.Length <= dimension) return values;
+                var cls = new float[dimension];
+                Array.Copy(values, cls, dimension);
+                return cls;
+            }
 
             int sequenceLength = output.Shape[output.Shape.Length - 2];
             int dimension = output.Shape[output.Shape.Length - 1];
