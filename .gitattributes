@@ -1,0 +1,2 @@
+# Managed dependencies are reviewed via the checksum lock, not textual diffs.
+*.dll binary
