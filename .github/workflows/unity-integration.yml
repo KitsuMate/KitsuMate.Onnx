@@ -12,22 +12,47 @@ on:
 
 permissions:
   contents: read
+  checks: write
 
 # This workflow intentionally never runs pull-request code on the self-hosted worker.
 jobs:
   unity-linux-cpu:
     runs-on: [self-hosted, linux, x64, unity-linux-cpu]
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        test_mode: [EditMode, PlayMode]
     steps:
       - uses: actions/checkout@v4
       - name: Validate worker prerequisites and fixture policy
         shell: bash
         run: bash Tools/ci/verify-worker.sh
-      - name: Run the Unity integration suite
+      - name: Hydrate checksum-pinned runtime and test fixtures
         shell: bash
         env:
           KITSUMATE_FIXTURE_PROFILE: ${{ inputs.fixture_profile || 'smoke' }}
           KITSUMATE_ARTIFACT_CACHE: ${{ runner.temp }}/kitsumate-artifacts
-          KITSUMATE_UNITY_COMMAND: ${{ vars.KITSUMATE_UNITY_TEST_COMMAND }}
-        run: |
-          bash Tools/ci/run-unity-tests.sh
+        run: bash Tools/ci/run-unity-tests.sh
+      - name: Run ${{ matrix.test_mode }} integration tests
+        id: unity_tests
+        uses: game-ci/unity-test-runner@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+        with:
+          projectPath: ExampleProject~
+          unityVersion: 6000.5.3f1
+          testMode: ${{ matrix.test_mode }}
+          artifactsPath: TestResults/${{ matrix.test_mode }}
+          githubToken: ${{ secrets.GITHUB_TOKEN }}
+          checkName: Unity ${{ matrix.test_mode }} integration tests
+      - name: Upload ${{ matrix.test_mode }} results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unity-${{ matrix.test_mode }}-test-results
+          path: ${{ steps.unity_tests.outputs.artifactsPath }}
+          if-no-files-found: warn
