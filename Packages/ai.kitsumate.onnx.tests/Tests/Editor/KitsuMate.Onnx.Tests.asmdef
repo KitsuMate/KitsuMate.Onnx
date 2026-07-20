@@ -1,0 +1,19 @@
+{
+  "name": "KitsuMate.Onnx.Tests",
+  "rootNamespace": "KitsuMate.Onnx.Tests",
+  "references": [
+    "UnityEngine.TestRunner",
+    "UnityEditor.TestRunner",
+    "KitsuMate.Onnx",
+    "KitsuMate.Onnx.Editor"
+  ],
+  "includePlatforms": ["Editor"],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": false,
+  "defineConstraints": ["UNITY_INCLUDE_TESTS"],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

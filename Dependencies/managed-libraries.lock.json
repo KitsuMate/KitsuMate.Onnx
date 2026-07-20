@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "libraries": [
+    {
+      "name": "KitsuMate.Tokenizers",
+      "version": "1.0.0",
+      "release": "https://github.com/KitsuMate/KitsuMate.Tokenizers/releases/tag/v1.0.0",
+      "asset": "KitsuMate.Tokenizers.1.0.0.nupkg",
+      "assetSha256": "c39c3fcd823fee5ab56733d2f34deb6e2f7f2dce922a17c785b0eafa219c",
+      "sourceCommit": "00c0b3472010457294fc213408e493927d387589",
+      "selectedAsset": "lib/netstandard2.0/KitsuMate.Tokenizers.dll",
+      "selectedAssetSha256": "5f79442bfd7cf361ce6bac9004834c9cb5f9288e3369a2a3507987e6b702f1f9"
+    },
+    {
+      "name": "Google.Protobuf",
+      "version": "3.32.0",
+      "source": "NuGet",
+      "selectedAsset": "lib/netstandard2.0/Google.Protobuf.dll",
+      "selectedAssetSha256": "2c0b8efe798ff30e0a87fca7041ef76c26b5e557ec9a9697453b02cb4dc6b9cf"
+    }
+  ]
+}

@@ -1,3 +1,0 @@
-{
-  "name": "KitsuMate.Onnx.Asr.Tests", "references": ["KitsuMate.Onnx.Asr"], "optionalUnityReferences": ["TestAssemblies"], "autoReferenced": false
-}

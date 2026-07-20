@@ -35,3 +35,13 @@ Artifacts/
 # Core may vendor the small, reviewed managed tokenizer contract DLLs after the
 # KitsuMate.Tokenizers v1.0.0 release. Native runtime binaries remain ignored.
 !Packages/ai.kitsumate.onnx/Runtime/Plugins/Managed/*.dll
+
+# The core UPM package name itself ends in .onnx; do not mistake its directory
+# for a model artifact. Individual model files remain ignored by the rules above.
+!Packages/ai.kitsumate.onnx/
+!Packages/ai.kitsumate.onnx/**/
+!Packages/ai.kitsumate.onnx/**/*.cs
+!Packages/ai.kitsumate.onnx/**/*.asmdef
+!Packages/ai.kitsumate.onnx/**/*.json
+!Packages/ai.kitsumate.onnx/**/*.md
+!Packages/ai.kitsumate.onnx/**/*.meta

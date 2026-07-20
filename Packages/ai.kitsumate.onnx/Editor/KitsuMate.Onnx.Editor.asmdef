@@ -1,10 +1,13 @@
 {
-    "name": "KitsuMate.Onnx.Asr",
-    "rootNamespace": "KitsuMate.Onnx.Asr",
+    "name": "KitsuMate.Onnx.Editor",
+    "rootNamespace": "KitsuMate.Onnx.Editor",
     "references": [
-        "KitsuMate.Onnx"
+        "KitsuMate.Onnx",
+        "Unity.EditorCoroutines.Editor"
     ],
-    "includePlatforms": [],
+    "includePlatforms": [
+        "Editor"
+    ],
     "excludePlatforms": [],
     "allowUnsafeCode": false,
     "overrideReferences": false,
