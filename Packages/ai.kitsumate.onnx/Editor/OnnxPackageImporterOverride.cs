@@ -1,4 +1,4 @@
-#if UNITY_EDITOR && KITSUMATE_HAS_SENTIS
+#if UNITY_EDITOR && KITSUMATE_HAS_UNITY_AI_INFERENCE
 using System.Collections.Generic;
 using UnityEditor;
 

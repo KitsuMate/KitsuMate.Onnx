@@ -1,5 +1,5 @@
 {
-  "name": "ai.kitsumate.onnx.backend.sentis",
+  "name": "ai.kitsumate.onnx.backend.unity-inference",
   "version": "1.0.0-alpha.1",
   "displayName": "KitsuMate Unity AI Inference Backend",
   "description": "Optional Unity AI Inference backend for KitsuMate ONNX.",

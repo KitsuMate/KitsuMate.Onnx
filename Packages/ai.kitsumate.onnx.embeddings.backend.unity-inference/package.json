@@ -1,5 +1,5 @@
 {
-  "name": "ai.kitsumate.onnx.embeddings.backend.sentis",
+  "name": "ai.kitsumate.onnx.embeddings.backend.unity-inference",
   "version": "1.0.0-alpha.1",
   "displayName": "KitsuMate Unity AI Inference Embeddings",
   "description": "Unity AI Inference-specific text embedding assets and runtime for KitsuMate ONNX.",
@@ -9,6 +9,6 @@
   "dependencies": {
     "ai.kitsumate.onnx": "1.0.0-alpha.1",
     "ai.kitsumate.onnx.embeddings": "1.0.0-alpha.1",
-    "ai.kitsumate.onnx.backend.sentis": "1.0.0-alpha.1"
+    "ai.kitsumate.onnx.backend.unity-inference": "1.0.0-alpha.1"
   }
 }

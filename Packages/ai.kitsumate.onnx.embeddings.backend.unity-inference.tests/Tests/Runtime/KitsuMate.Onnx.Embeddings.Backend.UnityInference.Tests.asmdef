@@ -1,0 +1,8 @@
+{
+  "name": "KitsuMate.Onnx.Embeddings.Backend.UnityInference.Tests",
+  "references": ["KitsuMate.Onnx.Embeddings.Backend.UnityInference"],
+  "optionalUnityReferences": ["TestAssemblies"],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "autoReferenced": false
+}

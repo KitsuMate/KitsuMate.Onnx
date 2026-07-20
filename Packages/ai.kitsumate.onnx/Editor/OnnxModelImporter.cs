@@ -10,9 +10,9 @@ namespace KitsuMate.Onnx.Editor
 {
     /// <summary>
     /// Scripted importer for .onnx and .ort files.
-    /// Creates OnnxModelAsset ScriptableObjects from supported ONNX Runtime model files.
+    /// Creates OnnxModelAsset ScriptableObjects from supported ONNX model files.
     /// </summary>
-#if KITSUMATE_HAS_SENTIS
+#if KITSUMATE_HAS_UNITY_AI_INFERENCE
     [ScriptedImporter(4, null, new[] { "onnx", "ort" }, importQueueOffset: 100)]
 #else
     [ScriptedImporter(4, new[] { "onnx", "ort" }, importQueueOffset: 100)]

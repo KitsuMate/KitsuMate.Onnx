@@ -1,5 +1,5 @@
 {
-  "name": "KitsuMate.Onnx.Backend.Sentis",
+  "name": "KitsuMate.Onnx.Backend.UnityInference",
   "rootNamespace": "KitsuMate.Onnx",
   "references": ["KitsuMate.Onnx"],
   "includePlatforms": [],

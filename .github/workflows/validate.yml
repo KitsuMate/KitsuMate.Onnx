@@ -22,10 +22,8 @@ jobs:
       - name: Enforce repository artifact policy
         shell: bash
         run: |
-          forbidden_package='com.unity.'
-          forbidden_package+='sentis'
-          if rg -n "$forbidden_package" .; then
-            echo 'Only com.unity.ai.inference is supported.' >&2
+          if rg -n -i 'sentis' Packages ExampleProject~; then
+            echo 'Only Unity AI Inference naming and com.unity.ai.inference are supported.' >&2
             exit 1
           fi
           if rg --files Packages -g '*.onnx' -g '*.ort' -g '*.gguf' -g '*.so' -g '*.dylib' -g '*.tgz' | grep -q .; then

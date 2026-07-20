@@ -1,5 +1,5 @@
 {
-  "name": "ai.kitsumate.onnx.backend.sentis.tests",
+  "name": "ai.kitsumate.onnx.backend.unity-inference.tests",
   "version": "1.0.0-alpha.1",
   "displayName": "KitsuMate Unity AI Inference Backend Tests",
   "description": "Optional Unity AI Inference backend tests. External fixtures are hydrated by CI.",
@@ -7,6 +7,6 @@
   "hideInEditor": true,
   "dependencies": {
     "ai.kitsumate.onnx": "1.0.0-alpha.1",
-    "ai.kitsumate.onnx.backend.sentis": "1.0.0-alpha.1"
+    "ai.kitsumate.onnx.backend.unity-inference": "1.0.0-alpha.1"
   }
 }

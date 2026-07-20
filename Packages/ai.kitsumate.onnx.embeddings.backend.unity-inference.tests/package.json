@@ -1,11 +1,11 @@
 {
-  "name": "ai.kitsumate.onnx.embeddings.backend.sentis.tests",
+  "name": "ai.kitsumate.onnx.embeddings.backend.unity-inference.tests",
   "version": "1.0.0-alpha.1",
   "displayName": "KitsuMate Unity AI Inference Embeddings Tests",
   "description": "Optional tests for Unity AI Inference-specific embedding implementations.",
   "unity": "6000.0",
   "hideInEditor": true,
   "dependencies": {
-    "ai.kitsumate.onnx.embeddings.backend.sentis": "1.0.0-alpha.1"
+    "ai.kitsumate.onnx.embeddings.backend.unity-inference": "1.0.0-alpha.1"
   }
 }

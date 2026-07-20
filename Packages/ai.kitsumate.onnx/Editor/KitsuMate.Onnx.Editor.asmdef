@@ -14,6 +14,8 @@
     "precompiledReferences": [],
     "autoReferenced": true,
     "defineConstraints": [],
-    "versionDefines": [],
+    "versionDefines": [
+        { "name": "com.unity.ai.inference", "expression": "", "define": "KITSUMATE_HAS_UNITY_AI_INFERENCE" }
+    ],
     "noEngineReferences": false
 }
