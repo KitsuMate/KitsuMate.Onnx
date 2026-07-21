@@ -1,0 +1,16 @@
+name: Unity integration
+
+# This minimal default-branch workflow makes the full integration workflow
+# dispatchable on a reviewed feature branch. The feature branch's version of this
+# file supplies the actual self-hosted Unity jobs.
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  bootstrap:
+    name: Workflow bootstrap
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Unity integration workflow dispatch is available."
