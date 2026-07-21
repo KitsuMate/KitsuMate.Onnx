@@ -1,6 +1,7 @@
 #if UNITY_EDITOR
 using KitsuMate.Onnx.Asr.Whisper;
 using KitsuMate.Onnx.Editor;
+using KitsuMate.Onnx.Editor.Download;
 using UnityEditor;
 using UnityEngine;
 
@@ -19,7 +20,14 @@ namespace KitsuMate.Onnx.Asr.Editor
             EditorGUILayout.PropertyField(serializedObject.FindProperty("_decoderSource"), new GUIContent("Decoder"));
             EditorGUILayout.LabelField("Auxiliary Files", EditorStyles.boldLabel);
             EditorGUILayout.PropertyField(serializedObject.FindProperty("_tokenizerJson"), new GUIContent("Tokenizer JSON"));
-            serializedObject.ApplyModifiedProperties(); ModelSetEditorUi.Validation(set);
+            serializedObject.ApplyModifiedProperties();
+
+            EditorGUILayout.Space();
+            EditorGUILayout.HelpBox("Install a complete matching Whisper export: mel processor, encoder, decoder, and tokenizer JSON. Select a compatible public ONNX repository in the downloader.", MessageType.Info);
+            if (GUILayout.Button("Download compatible Whisper ONNX model"))
+                ModelDownloadWindow.Show(WhisperModelDownloader.CreateRequest(set));
+
+            ModelSetEditorUi.Validation(set);
         }
     }
 }

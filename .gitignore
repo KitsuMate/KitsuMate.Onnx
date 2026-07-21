@@ -32,6 +32,10 @@
 # Generated UPM archives are release artifacts, never repository contents.
 Artifacts/
 
+# Unity cannot open the UPM-convention `ExampleProject~` directory directly.
+# CI and local batch runs stage this ignored, openable copy before invoking Unity.
+ExampleProject/
+
 # Core may vendor the small, reviewed managed tokenizer contract DLLs after the
 # KitsuMate.Tokenizers v1.0.0 release. Native runtime binaries remain ignored.
 !Packages/ai.kitsumate.onnx/Runtime/Plugins/Managed/*.dll

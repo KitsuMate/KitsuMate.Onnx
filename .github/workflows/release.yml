@@ -22,6 +22,11 @@ jobs:
           KITSUMATE_ARTIFACT_CACHE: ${{ runner.temp }}/kitsumate-artifacts
           KITSUMATE_FIXTURE_PROFILE: release
         run: bash Tools/ci/run-unity-tests.sh
+      - name: Stage openable Unity test project
+        shell: bash
+        run: |
+          rm -rf ExampleProject
+          cp -a ExampleProject~ ExampleProject
       - name: Run EditMode release tests
         id: unity_editmode
         uses: game-ci/unity-test-runner@v4
@@ -31,7 +36,7 @@ jobs:
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
           UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
         with:
-          projectPath: ExampleProject~
+          projectPath: ExampleProject
           unityVersion: 6000.5.3f1
           testMode: EditMode
           artifactsPath: TestResults/release-EditMode
@@ -53,7 +58,7 @@ jobs:
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
           UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
         with:
-          projectPath: ExampleProject~
+          projectPath: ExampleProject
           unityVersion: 6000.5.3f1
           testMode: PlayMode
           artifactsPath: TestResults/release-PlayMode

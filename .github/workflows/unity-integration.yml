@@ -34,6 +34,11 @@ jobs:
           KITSUMATE_FIXTURE_PROFILE: ${{ inputs.fixture_profile || 'smoke' }}
           KITSUMATE_ARTIFACT_CACHE: ${{ runner.temp }}/kitsumate-artifacts
         run: bash Tools/ci/run-unity-tests.sh
+      - name: Stage openable Unity test project
+        shell: bash
+        run: |
+          rm -rf ExampleProject
+          cp -a ExampleProject~ ExampleProject
       - name: Run ${{ matrix.test_mode }} integration tests
         id: unity_tests
         uses: game-ci/unity-test-runner@v4
@@ -43,7 +48,7 @@ jobs:
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
           UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
         with:
-          projectPath: ExampleProject~
+          projectPath: ExampleProject
           unityVersion: 6000.5.3f1
           testMode: ${{ matrix.test_mode }}
           artifactsPath: TestResults/${{ matrix.test_mode }}

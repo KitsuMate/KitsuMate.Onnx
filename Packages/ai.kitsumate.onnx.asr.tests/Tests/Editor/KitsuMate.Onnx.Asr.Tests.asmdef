@@ -1,7 +1,7 @@
 {
   "name": "KitsuMate.Onnx.Asr.Tests",
   "rootNamespace": "KitsuMate.Onnx.Asr.Tests",
-  "references": ["UnityEngine.TestRunner", "UnityEditor.TestRunner", "KitsuMate.Onnx", "KitsuMate.Onnx.Asr"],
+  "references": ["UnityEngine.TestRunner", "UnityEditor.TestRunner", "KitsuMate.Onnx", "KitsuMate.Onnx.Editor", "KitsuMate.Onnx.Asr", "KitsuMate.Onnx.Asr.Editor"],
   "includePlatforms": ["Editor"],
   "excludePlatforms": [],
   "allowUnsafeCode": false,
