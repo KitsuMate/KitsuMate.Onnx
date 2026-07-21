@@ -17,7 +17,7 @@ namespace KitsuMate.Onnx.Tts.Tests
     public class ChatterboxTokenizerTests
     {
         // Paths relative to project root
-        private const string TokenizerJsonPath = "Assets/Onnx/TTS/tokenizer.json";
+        private const string TokenizerJsonPath = "Assets/KitsuMateOnnxFixtures/tts/chatterbox/tokenizer.json";
         private const string GroundTruthPath = "Packages/ai.kitsumate.onnx.tts.tests/Tests/Runtime/tokenizer_ground_truth.json";
 
         private Tokenizer _tokenizer;
@@ -27,18 +27,12 @@ namespace KitsuMate.Onnx.Tts.Tests
         public void LoadTokenizer()
         {
             var tokenizerPath = Path.GetFullPath(TokenizerJsonPath);
-            if (!File.Exists(tokenizerPath))
-            {
-                Assert.Ignore($"tokenizer.json not found at {tokenizerPath}. Download the Chatterbox model first.");
-                return;
-            }
+            Assert.That(File.Exists(tokenizerPath), Is.True,
+                $"Required Chatterbox tokenizer fixture is missing: {tokenizerPath}");
 
             var groundTruthPath = Path.GetFullPath(GroundTruthPath);
-            if (!File.Exists(groundTruthPath))
-            {
-                Assert.Ignore($"Ground truth not found at {groundTruthPath}. Run generate_ground_truth.py first.");
-                return;
-            }
+            Assert.That(File.Exists(groundTruthPath), Is.True,
+                $"Required Chatterbox tokenizer ground truth is missing: {groundTruthPath}");
 
             var tokenizerJson = File.ReadAllText(tokenizerPath);
             _tokenizer = Tokenizer.FromTokenizerJson(Encoding.UTF8.GetBytes(tokenizerJson));

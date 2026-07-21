@@ -20,12 +20,11 @@ namespace KitsuMate.Onnx.Asr.Tests
         [SetUp]
         public void Setup()
         {
-            // Load tokenizer pipeline if it exists.
-            if (File.Exists(TestTokenizerPath))
-            {
-                var tokenizerJson = File.ReadAllText(TestTokenizerPath);
-                _tokenizer = Tokenizer.FromTokenizerJson(Encoding.UTF8.GetBytes(tokenizerJson));
-            }
+            Assert.That(File.Exists(TestTokenizerPath), Is.True,
+                $"Required Whisper tokenizer fixture is missing: {TestTokenizerPath}");
+
+            var tokenizerJson = File.ReadAllText(TestTokenizerPath);
+            _tokenizer = Tokenizer.FromTokenizerJson(Encoding.UTF8.GetBytes(tokenizerJson));
         }
         
         [TearDown]
@@ -37,12 +36,6 @@ namespace KitsuMate.Onnx.Asr.Tests
         [Test]
         public void Tokenizer_EncodesBasicText()
         {
-            if (!File.Exists(TestTokenizerPath))
-            {
-                Assert.Ignore("Tokenizer JSON not found at: " + TestTokenizerPath);
-                return;
-            }
-            
             var text = "Hello world";
             var tokens = _tokenizer.Encode(text).Ids;
             
@@ -53,12 +46,6 @@ namespace KitsuMate.Onnx.Asr.Tests
         [Test]
         public void Tokenizer_DecodesTokensToText()
         {
-            if (!File.Exists(TestTokenizerPath))
-            {
-                Assert.Ignore("Tokenizer JSON not found at: " + TestTokenizerPath);
-                return;
-            }
-            
             var tokens = new List<int> { 50258, 50259, 50359, 50363, 15947, 1002, 50257 };
             var text = _tokenizer.Decode(tokens, skipSpecialTokens: true) ?? string.Empty;
             
@@ -69,12 +56,6 @@ namespace KitsuMate.Onnx.Asr.Tests
         [Test]
         public void Tokenizer_RoundTrip()
         {
-            if (!File.Exists(TestTokenizerPath))
-            {
-                Assert.Ignore("Tokenizer JSON not found at: " + TestTokenizerPath);
-                return;
-            }
-            
             var originalText = "This is a test.";
             var tokens = new List<int>(_tokenizer.Encode(originalText).Ids);
             var decodedText = _tokenizer.Decode(tokens, skipSpecialTokens: true) ?? string.Empty;

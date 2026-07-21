@@ -1,7 +1,7 @@
 {
   "name": "KitsuMate.Onnx.Embeddings.Backend.UnityInference",
   "rootNamespace": "KitsuMate.Onnx.Embeddings.UnityAiInference",
-  "references": ["KitsuMate.Onnx", "KitsuMate.Onnx.Embeddings", "KitsuMate.Onnx.Backend.UnityInference"],
+  "references": ["KitsuMate.Onnx", "KitsuMate.Onnx.Embeddings", "KitsuMate.Onnx.Backend.UnityInference", "Unity.InferenceEngine"],
   "includePlatforms": [],
   "excludePlatforms": [],
   "allowUnsafeCode": false,

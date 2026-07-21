@@ -1,6 +1,7 @@
 {
   "dependencies": {
-    "com.unity.ai.inference": "2.4.1",
+    "com.unity.ai.inference": "2.6.1",
+    "com.unity.modules.animation": "1.0.0",
     "com.unity.modules.audio": "1.0.0",
     "com.unity.nuget.newtonsoft-json": "3.2.2",
     "ai.kitsumate.onnx": "file:../../Packages/ai.kitsumate.onnx",

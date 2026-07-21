@@ -223,7 +223,7 @@ Use three explicit test tiers.
 - Provider assignment and fallback checks.
 - Repeated load/invoke/dispose leak tests.
 
-If CI selects this category, missing models or fixtures are failures, not `Assert.Ignore` results.
+Normal CPU CI always runs this category. Missing models or fixtures are failures, not `Assert.Ignore` results.
 
 ### Performance tests
 

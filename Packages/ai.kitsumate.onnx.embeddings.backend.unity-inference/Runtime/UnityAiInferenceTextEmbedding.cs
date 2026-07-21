@@ -149,10 +149,10 @@ namespace KitsuMate.Onnx.Embeddings.UnityAiInference
             bool meanPooling = pooling == EmbeddingPooling.Mean || (pooling == EmbeddingPooling.ModelDefault && modelDefaultMean);
             if (!meanPooling || output.Shape.Length < 3)
             {
-                int dimension = output.Shape.Length > 0 ? output.Shape[output.Shape.Length - 1] : values.Length;
-                if (values.Length <= dimension) return values;
-                var cls = new float[dimension];
-                Array.Copy(values, cls, dimension);
+                int outputDimension = output.Shape.Length > 0 ? output.Shape[output.Shape.Length - 1] : values.Length;
+                if (values.Length <= outputDimension) return values;
+                var cls = new float[outputDimension];
+                Array.Copy(values, cls, outputDimension);
                 return cls;
             }
 

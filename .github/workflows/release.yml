@@ -16,11 +16,10 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
-      - name: Hydrate checksum-pinned runtime and release fixtures
+      - name: Hydrate required checksum-pinned runtime and test fixtures
         shell: bash
         env:
           KITSUMATE_ARTIFACT_CACHE: ${{ runner.temp }}/kitsumate-artifacts
-          KITSUMATE_FIXTURE_PROFILE: release
         run: bash Tools/ci/run-unity-tests.sh
       - name: Stage openable Unity test project
         shell: bash

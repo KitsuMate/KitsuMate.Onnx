@@ -1,14 +1,14 @@
 name: Unity integration
 
 on:
-  workflow_dispatch:
-    inputs:
-      fixture_profile:
-        description: Checksum-pinned external fixture profile to hydrate
-        required: true
-        default: smoke
   push:
-    branches: [main]
+    branches:
+      - main
+      - 'feat/**'
+      - 'fix/**'
+      - 'test/**'
+      - 'ci/**'
+      - 'chore/**'
 
 permissions:
   contents: read
@@ -25,13 +25,12 @@ jobs:
         test_mode: [EditMode, PlayMode]
     steps:
       - uses: actions/checkout@v4
-      - name: Validate worker prerequisites and fixture policy
+      - name: Validate worker prerequisites
         shell: bash
         run: bash Tools/ci/verify-worker.sh
-      - name: Hydrate checksum-pinned runtime and test fixtures
+      - name: Hydrate required checksum-pinned runtime and test fixtures
         shell: bash
         env:
-          KITSUMATE_FIXTURE_PROFILE: ${{ inputs.fixture_profile || 'smoke' }}
           KITSUMATE_ARTIFACT_CACHE: ${{ runner.temp }}/kitsumate-artifacts
         run: bash Tools/ci/run-unity-tests.sh
       - name: Stage openable Unity test project

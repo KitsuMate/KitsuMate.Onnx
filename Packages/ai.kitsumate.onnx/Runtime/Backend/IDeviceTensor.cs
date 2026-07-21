@@ -23,7 +23,7 @@ namespace KitsuMate.Onnx
     /// <summary>
     /// Simple CPU-backed device tensor for non-GPU fallback paths.
     /// </summary>
-    internal class CpuDeviceTensor : IDeviceTensor
+    public sealed class CpuDeviceTensor : IDeviceTensor
     {
         private OnnxTensor _tensor;
 

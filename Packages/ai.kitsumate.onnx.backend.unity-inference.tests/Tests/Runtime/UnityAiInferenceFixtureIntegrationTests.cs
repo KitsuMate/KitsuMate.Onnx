@@ -15,7 +15,7 @@ namespace KitsuMate.Onnx.Tests
         public void SmokeFixture_ImportsAndCreatesAUnityAiInferenceSession()
         {
             var modelAsset = AssetDatabase.LoadAssetAtPath<ModelAsset>(FixturePath);
-            Assert.That(modelAsset, Is.Not.Null, $"Missing or unsupported Unity AI Inference fixture at {FixturePath}. Hydrate the selected fixture profile and allow Unity to import it.");
+            Assert.That(modelAsset, Is.Not.Null, $"Missing or unsupported Unity AI Inference fixture at {FixturePath}. Hydrate the required CPU CI fixture set and allow Unity to import it.");
 
             var source = ScriptableObject.CreateInstance<UnityAiInferenceModelAsset>();
             var backend = ScriptableObject.CreateInstance<UnityAiInferenceBackend>();

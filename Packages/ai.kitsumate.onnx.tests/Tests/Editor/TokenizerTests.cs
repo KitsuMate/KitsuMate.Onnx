@@ -14,7 +14,6 @@ namespace KitsuMate.Onnx.Tests
 {
     public class TokenizerTests
     {
-        private const string GroundTruthDir = "Packages/ai.kitsumate.onnx.embeddings/Tests/Python";
         private const string TestDataDir = "Packages/ai.kitsumate.onnx.tests/Tests/Editor/TestData";
 
         private static string LoadTestVocab()
@@ -32,88 +31,26 @@ namespace KitsuMate.Onnx.Tests
             return File.Exists(path) ? path : null;
         }
 
-        private static JObject LoadTokenizerGroundTruth(string modelTag)
-        {
-            var path = Path.GetFullPath(Path.Combine(GroundTruthDir, $"tokenizer_ground_truth_{modelTag}.json"));
-            if (!File.Exists(path))
-                return null;
-
-            return JObject.Parse(File.ReadAllText(path));
-        }
-
         [Test]
-        public void MiniLM_L6_v2_TokenizerMatchesGroundTruth()
-        {
-            ValidateTokenizerAgainstGroundTruth("all-MiniLM-L6-v2");
-        }
-
-        private void ValidateTokenizerAgainstGroundTruth(string modelTag)
+        public void MiniLmTokenizer_EncodesKnownSentence()
         {
             var tokenizerJsonPath = LoadTestTokenizerJsonPath();
-            if (tokenizerJsonPath == null)
-            {
-                Assert.Ignore($"tokenizer.json not available at {TestDataDir}");
-                return;
-            }
-
-            var groundTruth = LoadTokenizerGroundTruth(modelTag);
-            if (groundTruth == null)
-            {
-                Assert.Ignore($"Ground truth not found for {modelTag}. Run generate_test_data.py first.");
-                return;
-            }
-
-            var sentences = groundTruth["sentences"] as JArray;
-            if (sentences == null)
-            {
-                Assert.Fail($"Ground truth for {modelTag} is missing 'sentences'.");
-            }
+            Assert.That(tokenizerJsonPath, Is.Not.Null,
+                $"Required tokenizer fixture is missing from {TestDataDir}");
 
             var tokenizer = Tokenizer.FromTokenizerJson(File.ReadAllBytes(tokenizerJsonPath));
+            var result = tokenizer.Encode("Hello world");
 
-            int passed = 0;
-            foreach (var sentenceToken in sentences.Children<JObject>())
-            {
-                var text = sentenceToken.Value<string>("text") ?? string.Empty;
-                var expectedIds = GetIntArrayOrEmpty(sentenceToken, "input_ids");
-                var expectedMask = GetIntArrayOrEmpty(sentenceToken, "attention_mask");
-                var expectedTypeIds = GetIntArrayOrEmpty(sentenceToken, "token_type_ids");
-
-                var result = tokenizer.Encode(text);
-
-                Assert.AreEqual(expectedIds.Length, result.Ids.Count,
-                    $"[{modelTag}] Token count mismatch for: \"{text}\"");
-
-                CollectionAssert.AreEqual(expectedIds, result.Ids,
-                    $"[{modelTag}] input_ids mismatch for: \"{text}\"");
-
-                CollectionAssert.AreEqual(expectedMask, result.AttentionMask,
-                    $"[{modelTag}] attention_mask mismatch for: \"{text}\"");
-
-                CollectionAssert.AreEqual(expectedTypeIds, result.TypeIds,
-                    $"[{modelTag}] token_type_ids mismatch for: \"{text}\"");
-
-                passed++;
-            }
-
-            Debug.Log($"[{modelTag}] Tokenizer ground truth: {passed} sentences passed");
-        }
-
-        private static int[] GetIntArrayOrEmpty(JObject element, string propertyName)
-        {
-            if (element[propertyName] is not JArray values)
-            {
-                return Array.Empty<int>();
-            }
-
-            return values.Values<int>().ToArray();
+            CollectionAssert.AreEqual(new[] { 101, 7592, 2088, 102 }, result.Ids);
+            CollectionAssert.AreEqual(new[] { 1, 1, 1, 1 }, result.AttentionMask);
+            CollectionAssert.AreEqual(new[] { 0, 0, 0, 0 }, result.TypeIds);
         }
 
         [Test]
         public void BertTokenizer_EncodeReturnsValidResult()
         {
             var vocabText = LoadTestVocab();
-            if (vocabText == null) { Assert.Ignore("Test vocab not available"); return; }
+            Assert.That(vocabText, Is.Not.Null, "Required test vocabulary is missing.");
 
             var tokenizer = Tokenizer.CreateWordPiece(Encoding.UTF8.GetBytes(vocabText));
             var result = tokenizer.Encode("Hello world");
@@ -132,7 +69,7 @@ namespace KitsuMate.Onnx.Tests
         public void BertTokenizer_EncodeWithoutSpecialTokens()
         {
             var vocabText = LoadTestVocab();
-            if (vocabText == null) { Assert.Ignore("Test vocab not available"); return; }
+            Assert.That(vocabText, Is.Not.Null, "Required test vocabulary is missing.");
 
             var tokenizer = Tokenizer.CreateWordPiece(Encoding.UTF8.GetBytes(vocabText));
             var withSpecial = tokenizer.Encode("Hello world", addSpecialTokens: true);
@@ -145,7 +82,7 @@ namespace KitsuMate.Onnx.Tests
         public void BertTokenizer_TokenTypeIdsAreZeros()
         {
             var vocabText = LoadTestVocab();
-            if (vocabText == null) { Assert.Ignore("Test vocab not available"); return; }
+            Assert.That(vocabText, Is.Not.Null, "Required test vocabulary is missing.");
 
             var tokenizer = Tokenizer.CreateWordPiece(Encoding.UTF8.GetBytes(vocabText));
             var result = tokenizer.Encode("The quick brown fox");
@@ -158,7 +95,7 @@ namespace KitsuMate.Onnx.Tests
         public void BertTokenizer_MaxLengthTruncates()
         {
             var vocabText = LoadTestVocab();
-            if (vocabText == null) { Assert.Ignore("Test vocab not available"); return; }
+            Assert.That(vocabText, Is.Not.Null, "Required test vocabulary is missing.");
 
             var tokenizer = Tokenizer.CreateWordPiece(Encoding.UTF8.GetBytes(vocabText));
             var result = tokenizer.Encode("The quick brown fox jumps over the lazy dog", maxTokenCount: 5);
@@ -170,7 +107,7 @@ namespace KitsuMate.Onnx.Tests
         public void BertTokenizer_DecodeRoundTrips()
         {
             var vocabText = LoadTestVocab();
-            if (vocabText == null) { Assert.Ignore("Test vocab not available"); return; }
+            Assert.That(vocabText, Is.Not.Null, "Required test vocabulary is missing.");
 
             var tokenizer = Tokenizer.CreateWordPiece(Encoding.UTF8.GetBytes(vocabText));
             var encoded = tokenizer.Encode("hello world");
@@ -185,7 +122,7 @@ namespace KitsuMate.Onnx.Tests
         public void BertTokenizer_CountTokens()
         {
             var vocabText = LoadTestVocab();
-            if (vocabText == null) { Assert.Ignore("Test vocab not available"); return; }
+            Assert.That(vocabText, Is.Not.Null, "Required test vocabulary is missing.");
 
             var tokenizer = Tokenizer.CreateWordPiece(Encoding.UTF8.GetBytes(vocabText));
             var count = tokenizer.CountTokens("Hello world");

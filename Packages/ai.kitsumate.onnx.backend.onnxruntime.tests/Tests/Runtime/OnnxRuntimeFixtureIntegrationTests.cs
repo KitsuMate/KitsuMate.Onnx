@@ -13,7 +13,7 @@ namespace KitsuMate.Onnx.Tests
         public void SmokeFixture_CreatesAnOnnxRuntimeSession()
         {
             string absolutePath = Path.Combine(Application.dataPath, "KitsuMateOnnxFixtures", "onnxruntime", "smoke.onnx");
-            Assert.That(File.Exists(absolutePath), Is.True, $"Missing required ONNX Runtime fixture at {FixturePath}. Hydrate the selected fixture profile.");
+            Assert.That(File.Exists(absolutePath), Is.True, $"Missing required ONNX Runtime fixture at {FixturePath}. Hydrate the required CPU CI fixture set.");
 
             var backend = ScriptableObject.CreateInstance<OnnxRuntimeBackend>();
             try

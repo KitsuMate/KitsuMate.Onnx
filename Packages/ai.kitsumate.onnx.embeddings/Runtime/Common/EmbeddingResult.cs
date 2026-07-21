@@ -25,7 +25,7 @@ namespace KitsuMate.Onnx.Embeddings
         public float ComputeTimeMs => _computeTimeMs;
         public bool IsNormalized => _normalized;
         public string ModelIdentity => _modelIdentity;
-        public float[][] Batch { get; internal set; }
+        public float[][] Batch { get; set; }
         
         public EmbeddingResult(float[] embedding, float computeTimeMs = 0, bool normalized = false, ModelIdentity modelIdentity = default)
         {
