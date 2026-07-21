@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: write
+  checks: write
 
 # Releases stay disabled until the protected runner bootstrap is complete.
 jobs:
@@ -15,13 +16,56 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
-      - name: Hydrate, validate, and test
+      - name: Hydrate checksum-pinned runtime and release fixtures
         shell: bash
         env:
           KITSUMATE_ARTIFACT_CACHE: ${{ runner.temp }}/kitsumate-artifacts
           KITSUMATE_FIXTURE_PROFILE: release
-          KITSUMATE_UNITY_COMMAND: ${{ vars.KITSUMATE_UNITY_TEST_COMMAND }}
         run: bash Tools/ci/run-unity-tests.sh
+      - name: Run EditMode release tests
+        id: unity_editmode
+        uses: game-ci/unity-test-runner@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+        with:
+          projectPath: ExampleProject~
+          unityVersion: 6000.5.3f1
+          testMode: EditMode
+          artifactsPath: TestResults/release-EditMode
+          githubToken: ${{ secrets.GITHUB_TOKEN }}
+          checkName: Unity EditMode release tests
+      - name: Upload EditMode release results
+        if: ${{ always() && steps.unity_editmode.outputs.artifactsPath != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: unity-release-EditMode-test-results
+          path: ${{ steps.unity_editmode.outputs.artifactsPath }}
+          if-no-files-found: warn
+      - name: Run PlayMode release tests
+        id: unity_playmode
+        uses: game-ci/unity-test-runner@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+        with:
+          projectPath: ExampleProject~
+          unityVersion: 6000.5.3f1
+          testMode: PlayMode
+          artifactsPath: TestResults/release-PlayMode
+          githubToken: ${{ secrets.GITHUB_TOKEN }}
+          checkName: Unity PlayMode release tests
+      - name: Upload PlayMode release results
+        if: ${{ always() && steps.unity_playmode.outputs.artifactsPath != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: unity-release-PlayMode-test-results
+          path: ${{ steps.unity_playmode.outputs.artifactsPath }}
+          if-no-files-found: warn
       - name: Build production UPM archives
         shell: bash
         run: |
