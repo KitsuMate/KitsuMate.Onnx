@@ -21,6 +21,7 @@ namespace KitsuMate.Onnx.Editor.Download
         private float progress;
         private bool busy;
         private CancellationTokenSource cancellation;
+        private bool HasFixedVariant => !string.IsNullOrWhiteSpace(initialRequest?.Variant);
 
         public static ModelDownloadWindow Show(ModelDownloadRequest request, Action<ModelDownloadResult> onCompleted)
         {
@@ -65,7 +66,8 @@ namespace KitsuMate.Onnx.Editor.Download
                 }
                 else
                 {
-                    selectedVariant = EditorGUILayout.Popup("Variant", Mathf.Clamp(selectedVariant, 0, variants.Length - 1), variants);
+                    using (new EditorGUI.DisabledScope(HasFixedVariant))
+                        selectedVariant = EditorGUILayout.Popup("Variant", Mathf.Clamp(selectedVariant, 0, variants.Length - 1), variants);
                     if (GUILayout.Button("Download Models")) _ = DownloadAsync();
                 }
             }
@@ -96,6 +98,8 @@ namespace KitsuMate.Onnx.Editor.Download
                 variants = names is string[] array ? array : new List<string>(names).ToArray();
                 if (variants.Length == 0) throw new InvalidOperationException("The repository contains no supported variants.");
                 int requested = Array.FindIndex(variants, name => string.Equals(name, initialRequest?.Variant, StringComparison.OrdinalIgnoreCase));
+                if (HasFixedVariant && requested < 0)
+                    throw new InvalidOperationException($"Model variant '{initialRequest.Variant}' was not found.");
                 selectedVariant = requested >= 0 ? requested : 0;
                 SaveToken();
                 message = $"Found {variants.Length} model variant{(variants.Length == 1 ? string.Empty : "s")}.";

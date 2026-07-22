@@ -4,15 +4,15 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
-using KitsuMate.Onnx.Embeddings.UnityAiInference;
+using KitsuMate.Onnx.Embeddings.Sentis;
 using NUnit.Framework;
 using Unity.InferenceEngine;
 using UnityEditor;
 using UnityEngine;
 
-namespace KitsuMate.Onnx.Embeddings.UnityAiInference.Tests
+namespace KitsuMate.Onnx.Embeddings.Sentis.Tests
 {
-    public sealed class UnityAiInferenceEmbeddingIntegrationTests
+    public sealed class SentisEmbeddingIntegrationTests
     {
         private const string ModelPath = "Assets/KitsuMateOnnxFixtures/unity-ai-inference/model_unity_fp32.onnx";
 
@@ -23,8 +23,8 @@ namespace KitsuMate.Onnx.Embeddings.UnityAiInference.Tests
             ModelAsset imported = AssetDatabase.LoadAssetAtPath<ModelAsset>(ModelPath);
             Assert.That(imported, Is.Not.Null, $"Unity AI Inference did not import {ModelPath}.");
             var source = ScriptableObject.CreateInstance<UnityAiInferenceModelAsset>();
-            var modelSet = ScriptableObject.CreateInstance<UnityAiInferenceTextEmbeddingModelSet>();
-            var engine = ScriptableObject.CreateInstance<UnityAiInferenceTextEmbeddingEngine>();
+            var modelSet = ScriptableObject.CreateInstance<SentisEmbeddingModelSet>();
+            var engine = ScriptableObject.CreateInstance<SentisEmbeddingEngine>();
             var backend = ScriptableObject.CreateInstance<UnityAiInferenceBackend>();
             string root = Path.GetFullPath(Path.Combine(Application.dataPath, "..", "KitsuMateOnnxFixtures", "text-embedding", "all-minilm"));
             var tokenizer = new TextAsset(File.ReadAllText(Path.Combine(root, "tokenizer.json")));

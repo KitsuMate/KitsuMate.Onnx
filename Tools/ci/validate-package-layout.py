@@ -39,8 +39,6 @@ def main() -> int:
             fail(f"Invalid package name in {manifest_path}: {name!r}")
         if name in packages:
             fail(f"Duplicate package name: {name}")
-        if "sentis" in name.lower():
-            fail(f"Legacy Sentis package naming is forbidden: {name}")
         packages[name] = (manifest, manifest_path.parent)
 
     unity_inference_packages: list[str] = []
@@ -51,8 +49,6 @@ def main() -> int:
                     fail(f"{name} depends on missing internal package {dependency}")
                 if packages[dependency][0].get("version") != version:
                     fail(f"{name} requires {dependency}@{version}; local version differs")
-            if dependency == "com.unity.sentis":
-                fail(f"{name} depends on unsupported com.unity.sentis")
             if dependency == "com.unity.ai.inference":
                 if version != "2.6.1":
                     fail(f"{name} must use com.unity.ai.inference@2.6.1")

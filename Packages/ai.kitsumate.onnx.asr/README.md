@@ -8,6 +8,11 @@ Automatic Speech Recognition package with Whisper and Wav2Vec implementations.
   - Multi-language support with language detection
   - Word-level timestamps
   - Force alignment for subtitle generation
+  - Merged or split cached decoders
+
+- **SentisWhisperEngine**: Whisper Tiny and Base on Sentis 2.6.1
+  - Available when `ai.kitsumate.onnx.backend.unity-inference` is installed
+  - Uses split FP32 decoder models
 
 - **Wav2VecEngine**: Facebook Wav2Vec2-based transcription
   - CTC decoding

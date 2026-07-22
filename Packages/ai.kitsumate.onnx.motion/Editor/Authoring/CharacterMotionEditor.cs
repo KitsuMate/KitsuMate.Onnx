@@ -228,8 +228,7 @@ namespace KitsuMate.Onnx.Motion.Editor
             if (skeleton == null || skeleton.GuideAnimator == null)
                 throw new InvalidOperationException("Create the Character Motion skeleton before previewing a baked clip.");
 
-            // End any legacy sampling first. Older versions sampled TargetAnimator directly,
-            // so this restores a source armature left in that preview state.
+            // End the active preview before sampling another clip.
             StopPreview();
             skeleton.Preview(motion.BakedClip, time);
             SceneView.RepaintAll();

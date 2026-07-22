@@ -6,20 +6,20 @@ using Unity.InferenceEngine;
 using UnityEditor;
 using UnityEngine;
 
-namespace KitsuMate.Onnx.Embeddings.UnityAiInference.Editor
+namespace KitsuMate.Onnx.Embeddings.Sentis.Editor
 {
-    [CustomEditor(typeof(UnityAiInferenceTextEmbeddingModelSet))]
-    public sealed class UnityAiInferenceTextEmbeddingModelSetEditor : UnityEditor.Editor
+    [CustomEditor(typeof(SentisEmbeddingModelSet))]
+    public sealed class SentisEmbeddingModelSetEditor : UnityEditor.Editor
     {
         public override void OnInspectorGUI()
         {
             DrawDefaultInspector();
-            var set = (UnityAiInferenceTextEmbeddingModelSet)target;
+            var set = (SentisEmbeddingModelSet)target;
             if (GUILayout.Button("Download Models")) ShowDownload(set);
             ModelSetEditorUi.Validation(set);
         }
 
-        internal static void ShowDownload(UnityAiInferenceTextEmbeddingModelSet set)
+        internal static void ShowDownload(SentisEmbeddingModelSet set)
         {
             ModelDownloadWindow.Show(new ModelDownloadRequest("KitsuMate/all-MiniLM-L6-v2-onnx", "caa577297ce0c15e94a2116d2f9228c640d1224c", "unity-fp32",
                 ModelRoot(), "text-embedding"), result =>
@@ -28,7 +28,7 @@ namespace KitsuMate.Onnx.Embeddings.UnityAiInference.Editor
                 string directory = Path.GetDirectoryName(AssetDatabase.GetAssetPath(set))?.Replace('\\', '/') ?? "Assets";
                 var source = CreateInstance<UnityAiInferenceModelAsset>();
                 source.SetModelAsset(imported);
-                AssetDatabase.CreateAsset(source, AssetDatabase.GenerateUniqueAssetPath($"{directory}/{imported.name}-UnityInference.asset"));
+                AssetDatabase.CreateAsset(source, AssetDatabase.GenerateUniqueAssetPath($"{directory}/{imported.name}-Sentis.asset"));
                 TextAsset vocabulary = result.ProjectPaths.ContainsKey("vocabulary") ? result.LoadAsset<TextAsset>("vocabulary") : null;
                 TextAsset tokenizer = result.ProjectPaths.ContainsKey("tokenizer") ? result.LoadAsset<TextAsset>("tokenizer") : null;
                 set.SetModels(source, vocabulary, tokenizer);
@@ -45,8 +45,8 @@ namespace KitsuMate.Onnx.Embeddings.UnityAiInference.Editor
         }
     }
 
-    [CustomEditor(typeof(UnityAiInferenceTextEmbeddingEngine))]
-    public sealed class UnityAiInferenceTextEmbeddingEngineEditor : UnityEditor.Editor
+    [CustomEditor(typeof(SentisEmbeddingEngine))]
+    public sealed class SentisEmbeddingEngineEditor : UnityEditor.Editor
     {
         public override void OnInspectorGUI()
         {
@@ -54,14 +54,14 @@ namespace KitsuMate.Onnx.Embeddings.UnityAiInference.Editor
             SerializedProperty modelSet = serializedObject.FindProperty("modelSet");
             if (modelSet.objectReferenceValue != null || !GUILayout.Button("Create Model Set and Download")) return;
             string directory = Path.GetDirectoryName(AssetDatabase.GetAssetPath(target))?.Replace('\\', '/') ?? "Assets";
-            var set = CreateInstance<UnityAiInferenceTextEmbeddingModelSet>();
-            AssetDatabase.CreateAsset(set, AssetDatabase.GenerateUniqueAssetPath($"{directory}/UnityAiInferenceTextEmbeddingModelSet.asset"));
+            var set = CreateInstance<SentisEmbeddingModelSet>();
+            AssetDatabase.CreateAsset(set, AssetDatabase.GenerateUniqueAssetPath($"{directory}/SentisEmbeddingModelSet.asset"));
             modelSet.objectReferenceValue = set;
             serializedObject.ApplyModifiedProperties();
             OnnxSettings settings = OnnxSettings.Load();
-            if (settings != null) settings.RegisterDefaultEngine((UnityAiInferenceTextEmbeddingEngine)target);
+            if (settings != null) settings.RegisterDefaultEngine((SentisEmbeddingEngine)target);
             AssetDatabase.SaveAssets();
-            UnityAiInferenceTextEmbeddingModelSetEditor.ShowDownload(set);
+            SentisEmbeddingModelSetEditor.ShowDownload(set);
         }
     }
 }

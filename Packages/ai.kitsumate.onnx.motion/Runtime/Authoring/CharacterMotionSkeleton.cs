@@ -146,8 +146,8 @@ namespace KitsuMate.Onnx.Motion
             }
             else
             {
-                // Raw transform curves require legacy sampling. Use a transient clone rather
-                // than changing the generated avatar-specific asset.
+                // Raw transform curves require Unity's legacy AnimationClip sampling mode.
+                // Use a transient clone rather than changing the generated asset.
                 AnimationClip samplingClip = Instantiate(clip);
                 samplingClip.hideFlags = HideFlags.HideAndDontSave;
                 samplingClip.legacy = true;

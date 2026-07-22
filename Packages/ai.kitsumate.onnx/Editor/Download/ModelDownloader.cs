@@ -22,8 +22,6 @@ namespace KitsuMate.Onnx.Editor.Download
         public ModelIdentity Identity { get; }
         public IReadOnlyDictionary<string, string> ProjectPaths => projectPaths;
         public IReadOnlyList<string> Capabilities { get; } = Array.Empty<string>();
-        public IReadOnlyList<ModelProviderCompatibility> ProviderCompatibility { get; } =
-            Array.Empty<ModelProviderCompatibility>();
 
         internal ModelDownloadResult(ModelIdentity identity, DiscoveredVariant variant,
             IReadOnlyDictionary<string, string> paths, string root)
@@ -64,7 +62,7 @@ namespace KitsuMate.Onnx.Editor.Download
         public void ApplyMetadata(StandardModelSet target)
         {
             if (target == null) throw new ArgumentNullException(nameof(target));
-            target.SetDownloadMetadata(Identity, Capabilities, ProviderCompatibility);
+            target.SetDownloadMetadata(Identity, Capabilities);
         }
 
         private DiscoveredFile FindFile(string role)
@@ -129,7 +127,7 @@ namespace KitsuMate.Onnx.Editor.Download
 
             AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
             var identity = new ModelIdentity(repository.Family, repository.ModelId, repository.Revision,
-                variant.Name, ContentHash(variant), 1);
+                variant.Name, ContentHash(variant));
             return new ModelDownloadResult(identity, variant, installed, request.Destination);
         }
 
@@ -199,7 +197,10 @@ namespace KitsuMate.Onnx.Editor.Download
             {
                 string suffix = FileStem(encoder).Substring("encoder_model".Length);
                 string directory = PathPrefix(encoder.rfilename);
-                if (!byPath.TryGetValue(directory + "decoder_model_merged" + suffix + ".onnx", out HfSibling decoder) &&
+                HfSibling decoderWithPast = null;
+                bool split = byPath.TryGetValue(directory + "decoder_model" + suffix + ".onnx", out HfSibling decoder) &&
+                    byPath.TryGetValue(directory + "decoder_with_past_model" + suffix + ".onnx", out decoderWithPast);
+                if (!split && !byPath.TryGetValue(directory + "decoder_model_merged" + suffix + ".onnx", out decoder) &&
                     !byPath.TryGetValue(directory + "decoder_model" + suffix + ".onnx", out decoder))
                     continue;
 
@@ -212,6 +213,13 @@ namespace KitsuMate.Onnx.Editor.Download
                     cancellationToken);
                 await AddExternalDataAsync(request, revision, byPath, decoder, "decoder-data", files, token,
                     cancellationToken);
+                if (split)
+                {
+                    files.Add(await DiscoverFileAsync(request, revision, decoderWithPast, "decoder-with-past", token,
+                        cancellationToken));
+                    await AddExternalDataAsync(request, revision, byPath, decoderWithPast, "decoder-with-past-data",
+                        files, token, cancellationToken);
+                }
                 files.AddRange(common);
                 variants.Add(new DiscoveredVariant(VariantName(suffix, "fp32"), files.ToArray()));
             }

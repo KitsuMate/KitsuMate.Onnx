@@ -20,8 +20,8 @@ namespace KitsuMate.Onnx.Asr.Editor
 
         public static readonly Source[] Sources =
         {
-            new Source("Whisper Tiny", "KitsuMate/whisper-tiny-onnx", "2e633013560a290f0520dadb295d782e8cb092b1"),
-            new Source("Whisper Base", "KitsuMate/whisper-base-onnx", "3a1dbc0e5f9b1b00d4c3a2aa82919867654113f7")
+            new Source("Whisper Tiny", "KitsuMate/whisper-tiny-onnx", "4c03eadcc2691a9c8b23e7e9fdbf1403e07fc0b9"),
+            new Source("Whisper Base", "KitsuMate/whisper-base-onnx", "5405863a79f8c04cb8cfd22a5ff773af1feb39b7")
         };
 
         public static void Show(WhisperModelSet target, Source source)
@@ -36,6 +36,10 @@ namespace KitsuMate.Onnx.Asr.Editor
             result.ConfigureModel(target.MelProcessor, "mel");
             result.ConfigureModel(target.Encoder, "encoder");
             result.ConfigureModel(target.Decoder, "decoder");
+            if (result.ProjectPaths.ContainsKey("decoder-with-past"))
+                result.ConfigureModel(target.DecoderWithPast, "decoder-with-past");
+            else
+                target.DecoderWithPast.Clear();
             target.SetTokenizer(result.LoadAsset<TextAsset>("tokenizer"));
             result.ApplyMetadata(target);
             AssetDatabase.SaveAssets();

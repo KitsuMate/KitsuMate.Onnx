@@ -4,6 +4,7 @@ Text embedding engines using the shared configuration/runtime convention.
 
 - `TextEmbeddingEngine` supports conventional transformer sentence embeddings.
 - `Llm2VecEmbeddingEngine` implements the fixed Llama 3 LLM2Vec contract required by Kimodo.
+- `SentisEmbeddingEngine` is available when `ai.kitsumate.onnx.backend.unity-inference` is installed.
 - Each model size, precision, or quantization is represented by a separate model-set asset.
 
 ```csharp

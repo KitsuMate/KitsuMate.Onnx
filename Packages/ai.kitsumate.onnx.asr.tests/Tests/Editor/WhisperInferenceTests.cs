@@ -16,7 +16,7 @@ namespace KitsuMate.Onnx.Asr.Tests
         [Category("Integration")]
         public async Task WhisperTiny_RunsMelEncoderAndDecoderOnCpu()
         {
-            ConfigureModelRoot();
+            ConfigureModelRoot("KitsuMateOnnxFixtures");
             var modelSet = ScriptableObject.CreateInstance<WhisperModelSet>();
             var engine = ScriptableObject.CreateInstance<WhisperEngine>();
             var backend = ScriptableObject.CreateInstance<OnnxRuntimeBackend>();
@@ -55,7 +55,49 @@ namespace KitsuMate.Onnx.Asr.Tests
             }
         }
 
-        private static void ConfigureModelRoot()
+        [Test]
+        [Category("Integration")]
+        public async Task WhisperTiny_RunsSplitDecoderOnCpu()
+        {
+            ConfigureModelRoot("Assets/KitsuMateOnnxFixtures");
+            var modelSet = ScriptableObject.CreateInstance<WhisperModelSet>();
+            var engine = ScriptableObject.CreateInstance<WhisperEngine>();
+            var backend = ScriptableObject.CreateInstance<OnnxRuntimeBackend>();
+            TextAsset tokenizer = AssetDatabase.LoadAssetAtPath<TextAsset>(
+                "Assets/KitsuMateOnnxFixtures/whisper-sentis/tokenizer.json");
+            AudioClip audio = AssetDatabase.LoadAssetAtPath<AudioClip>(
+                "Assets/KitsuMateOnnxFixtures/whisper-sentis/answering-machine16kHz.wav");
+            InferenceEngineRuntime<AsrRequest, TranscriptionResult> runtime = null;
+            try
+            {
+                Assert.That(tokenizer, Is.Not.Null);
+                Assert.That(audio, Is.Not.Null);
+                backend.EnableGpu = false;
+                backend.PreferredProvider = GpuProvider.CPU;
+                modelSet.MelProcessor.ConfigureFile("whisper-sentis/mel.onnx", string.Empty, null, null);
+                modelSet.Encoder.ConfigureFile("whisper-sentis/tiny/encoder_model.onnx", string.Empty, null, null);
+                modelSet.Decoder.ConfigureFile("whisper-sentis/tiny/decoder_model.onnx", string.Empty, null, null);
+                modelSet.DecoderWithPast.ConfigureFile(
+                    "whisper-sentis/tiny/decoder_with_past_model.onnx", string.Empty, null, null);
+                modelSet.SetTokenizer(tokenizer);
+                SetField(engine, "modelSet", modelSet);
+                SetField(engine, "languageOverride", "en");
+                SetField(engine, "maxTokens", 2);
+                runtime = await engine.CreateRuntimeAsync(backend);
+                TranscriptionResult result = await runtime.RunAsync(new AsrRequest(audio));
+                Assert.That(result, Is.Not.Null);
+                Assert.That(result.Language, Is.EqualTo("en"));
+            }
+            finally
+            {
+                runtime?.Dispose();
+                UnityEngine.Object.DestroyImmediate(backend);
+                UnityEngine.Object.DestroyImmediate(engine);
+                UnityEngine.Object.DestroyImmediate(modelSet);
+            }
+        }
+
+        private static void ConfigureModelRoot(string root)
         {
             const string assetPath = "Assets/Resources/OnnxSettings.asset";
             if (!AssetDatabase.IsValidFolder("Assets/Resources")) AssetDatabase.CreateFolder("Assets", "Resources");
@@ -66,7 +108,7 @@ namespace KitsuMate.Onnx.Asr.Tests
                 AssetDatabase.CreateAsset(settings, assetPath);
             }
             var serialized = new SerializedObject(settings);
-            serialized.FindProperty("_modelStorageRoot").stringValue = "KitsuMateOnnxFixtures";
+            serialized.FindProperty("_modelStorageRoot").stringValue = root;
             serialized.ApplyModifiedPropertiesWithoutUndo();
         }
 

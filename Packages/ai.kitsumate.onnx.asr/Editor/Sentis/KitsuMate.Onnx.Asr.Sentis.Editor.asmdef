@@ -1,0 +1,28 @@
+{
+  "name": "KitsuMate.Onnx.Asr.Sentis.Editor",
+  "rootNamespace": "KitsuMate.Onnx.Asr.Sentis.Editor",
+  "references": [
+    "KitsuMate.Onnx",
+    "KitsuMate.Onnx.Editor",
+    "KitsuMate.Onnx.Asr",
+    "KitsuMate.Onnx.Asr.Editor",
+    "KitsuMate.Onnx.Asr.Sentis",
+    "KitsuMate.Onnx.Backend.UnityInference",
+    "Unity.InferenceEngine"
+  ],
+  "includePlatforms": ["Editor"],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [
+    "KITSUMATE_HAS_UNITY_INFERENCE_BACKEND",
+    "KITSUMATE_HAS_SENTIS_2_6_1"
+  ],
+  "versionDefines": [
+    { "name": "ai.kitsumate.onnx.backend.unity-inference", "expression": "", "define": "KITSUMATE_HAS_UNITY_INFERENCE_BACKEND" },
+    { "name": "com.unity.ai.inference", "expression": "2.6.1", "define": "KITSUMATE_HAS_SENTIS_2_6_1" }
+  ],
+  "noEngineReferences": false
+}

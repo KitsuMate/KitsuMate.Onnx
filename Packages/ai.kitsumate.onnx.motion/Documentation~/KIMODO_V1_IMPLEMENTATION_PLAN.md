@@ -166,7 +166,7 @@ Runtime, Editor, and test code remain in separate assembly definitions. Large mo
 
 ## Phase 1: authoritative reference fixtures
 
-Extend `E:\Ai\kimodo\onnx_export` to generate fixtures from the original PyTorch pipeline.
+Extend the upstream Kimodo ONNX exporter to generate fixtures from the original PyTorch pipeline.
 
 Fixture prompts include:
 

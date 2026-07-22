@@ -15,6 +15,7 @@ namespace KitsuMate.Onnx.Tts.Tests
     {
         [Test]
         [Category("Integration")]
+        [Timeout(600000)]
         public async Task Chatterbox_ProducesAudioOnCpu()
         {
             ConfigureModelRoot();

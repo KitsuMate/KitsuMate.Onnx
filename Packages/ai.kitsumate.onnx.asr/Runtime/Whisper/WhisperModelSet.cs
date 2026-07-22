@@ -1,6 +1,6 @@
 using System.Linq;
+using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.Serialization;
 using KitsuMate.Onnx;
 
 namespace KitsuMate.Onnx.Asr.Whisper
@@ -15,9 +15,9 @@ namespace KitsuMate.Onnx.Asr.Whisper
         [SerializeField] private OnnxModelReference _melProcessorSource = new();
         [SerializeField] private OnnxModelReference _encoderSource = new();
         [SerializeField] private OnnxModelReference _decoderSource = new();
+        [SerializeField] private OnnxModelReference _decoderWithPastSource = new();
 
         [Header("Tokenizer")]
-        [FormerlySerializedAs("_vocabulary")]
         [SerializeField, Tooltip("Tokenizer JSON file with the full Whisper tokenization pipeline")]
         private TextAsset _tokenizerJson;
         
@@ -30,6 +30,9 @@ namespace KitsuMate.Onnx.Asr.Whisper
         
         /// <summary>Text decoder model.</summary>
         public OnnxModelReference Decoder => _decoderSource;
+
+        /// <summary>Cached text decoder model, when the repository uses split decoders.</summary>
+        public OnnxModelReference DecoderWithPast => _decoderWithPastSource;
         
         /// <summary>Tokenizer JSON file.</summary>
         public TextAsset TokenizerJson => _tokenizerJson;
@@ -44,7 +47,9 @@ namespace KitsuMate.Onnx.Asr.Whisper
         
         public override IOnnxModelSource[] GetAllModels()
         {
-            return new IOnnxModelSource[] { _melProcessorSource, _encoderSource, _decoderSource };
+            var models = new List<IOnnxModelSource> { _melProcessorSource, _encoderSource, _decoderSource };
+            if (_decoderWithPastSource.IsAvailable) models.Add(_decoderWithPastSource);
+            return models.ToArray();
         }
         
         public override ModelValidationResult Validate(ModelValidationContext context)
@@ -60,6 +65,13 @@ namespace KitsuMate.Onnx.Asr.Whisper
                 result.Error("missing_input", $"Model '{_encoderSource.SourceName}' is missing input 'input_features'.");
             RequireInput(_decoderSource, "encoder_hidden_states", result);
             RequireInput(_decoderSource, "input_ids", result);
+            if (_decoderWithPastSource.IsAvailable)
+            {
+                RequireInput(_decoderWithPastSource, "input_ids", result);
+                if (_decoderWithPastSource.HasInspectedMetadata &&
+                    !_decoderWithPastSource.Inputs.Any(input => input.Name.StartsWith("past_key_values.")))
+                    result.Error("missing_cache", $"Model '{_decoderWithPastSource.SourceName}' has no decoder cache inputs.");
+            }
             foreach (IOnnxModelSource model in GetAllModels()) RequireSchema(model, result);
             return ValidateCommon(context, result);
         }
@@ -74,11 +86,14 @@ namespace KitsuMate.Onnx.Asr.Whisper
         /// <summary>
         /// Sets the models programmatically. Editor-only.
         /// </summary>
-        public void SetModels(OnnxModelAsset melProcessor, OnnxModelAsset encoder, OnnxModelAsset decoder, TextAsset tokenizerJson, string modelIdentifier = null)
+        public void SetModels(OnnxModelAsset melProcessor, OnnxModelAsset encoder, OnnxModelAsset decoder,
+            OnnxModelAsset decoderWithPast, TextAsset tokenizerJson)
         {
             _melProcessorSource.ConfigureAsset(melProcessor);
             _encoderSource.ConfigureAsset(encoder);
             _decoderSource.ConfigureAsset(decoder);
+            if (decoderWithPast == null) _decoderWithPastSource.Clear();
+            else _decoderWithPastSource.ConfigureAsset(decoderWithPast);
             _tokenizerJson = tokenizerJson;
             UnityEditor.EditorUtility.SetDirty(this);
         }

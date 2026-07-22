@@ -21,6 +21,7 @@ namespace KitsuMate.Onnx.Asr.Editor
             EditorGUILayout.PropertyField(serializedObject.FindProperty("_melProcessorSource"), new GUIContent("Mel Processor"));
             EditorGUILayout.PropertyField(serializedObject.FindProperty("_encoderSource"), new GUIContent("Encoder"));
             EditorGUILayout.PropertyField(serializedObject.FindProperty("_decoderSource"), new GUIContent("Decoder"));
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("_decoderWithPastSource"), new GUIContent("Decoder With Past"));
             EditorGUILayout.LabelField("Auxiliary Files", EditorStyles.boldLabel);
             EditorGUILayout.PropertyField(serializedObject.FindProperty("_tokenizerJson"), new GUIContent("Tokenizer JSON"));
             serializedObject.ApplyModifiedProperties();

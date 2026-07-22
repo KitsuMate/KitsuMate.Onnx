@@ -177,6 +177,11 @@ namespace KitsuMate.Onnx
         {
             cancellationToken.ThrowIfCancellationRequested();
             OnLoadMainThread(Backend);
+            if (Backend.RequiresMainThread)
+            {
+                OnLoadBackground(Backend);
+                return Task.CompletedTask;
+            }
             return Task.Run(() =>
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -187,6 +192,11 @@ namespace KitsuMate.Onnx
         protected sealed override Task<TResult> OnRunAsync(TRequest request, CancellationToken cancellationToken)
         {
             OnPrepareInput(request);
+            if (Backend.RequiresMainThread)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                return Task.FromResult(OnRun(request, cancellationToken));
+            }
             return Task.Run(() =>
             {
                 cancellationToken.ThrowIfCancellationRequested();

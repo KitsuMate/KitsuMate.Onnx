@@ -1,0 +1,24 @@
+{
+  "name": "KitsuMate.Onnx.Asr.Sentis",
+  "rootNamespace": "KitsuMate.Onnx.Asr.Sentis",
+  "references": [
+    "KitsuMate.Onnx",
+    "KitsuMate.Onnx.Asr",
+    "KitsuMate.Onnx.Backend.UnityInference"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [
+    "KITSUMATE_HAS_UNITY_INFERENCE_BACKEND",
+    "KITSUMATE_HAS_SENTIS_2_6_1"
+  ],
+  "versionDefines": [
+    { "name": "ai.kitsumate.onnx.backend.unity-inference", "expression": "", "define": "KITSUMATE_HAS_UNITY_INFERENCE_BACKEND" },
+    { "name": "com.unity.ai.inference", "expression": "2.6.1", "define": "KITSUMATE_HAS_SENTIS_2_6_1" }
+  ],
+  "noEngineReferences": false
+}
