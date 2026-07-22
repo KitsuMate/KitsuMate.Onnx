@@ -65,7 +65,7 @@ jobs:
           checkName: Unity EditMode tests
       - name: Run PlayMode tests
         id: playmode
-        if: always()
+        if: ${{ !cancelled() && (steps.editmode.outcome == 'success' || steps.editmode.outcome == 'failure') }}
         uses: game-ci/unity-test-runner@v4
         env:
           UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
