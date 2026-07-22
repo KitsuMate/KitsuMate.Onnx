@@ -20,13 +20,14 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def download(url: str, destination: Path) -> None:
+def download(url: str, destination: Path) -> bool:
     if destination.exists():
-        return
+        return False
     temporary = destination.with_suffix(destination.suffix + ".partial")
     with urllib.request.urlopen(url, timeout=120) as response, temporary.open("wb") as stream:
         shutil.copyfileobj(response, stream)
     temporary.replace(destination)
+    return True
 
 
 def destination_path(repository_root: Path, relative_destination: str) -> Path:
@@ -60,18 +61,19 @@ def main() -> int:
         if not fixture_id.replace("-", "").replace("_", "").isalnum():
             raise ValueError(f"Fixture id must be alphanumeric, '-' or '_': {fixture_id}")
         cache_file = args.cache / fixture["sha256"]
-        download(fixture["url"], cache_file)
+        fetched = download(fixture["url"], cache_file)
         actual = sha256(cache_file)
         if actual != fixture["sha256"]:
             cache_file.unlink(missing_ok=True)
             raise RuntimeError(f"Checksum mismatch for fixture {fixture_id}: {actual}")
+        print(f"{'fetched' if fetched else 'cache hit'} {fixture_id}")
         target = destination_path(repository_root, fixture["destination"])
         if target.exists() and sha256(target) == fixture["sha256"]:
             print(f"reused {target.relative_to(repository_root)}")
             continue
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(cache_file, target)
-        print(f"downloaded {target.relative_to(repository_root)}")
+        print(f"installed {target.relative_to(repository_root)}")
     return 0
 
 
