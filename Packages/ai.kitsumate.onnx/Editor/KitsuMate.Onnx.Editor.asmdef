@@ -1,0 +1,21 @@
+{
+    "name": "KitsuMate.Onnx.Editor",
+    "rootNamespace": "KitsuMate.Onnx.Editor",
+    "references": [
+        "KitsuMate.Onnx",
+        "Unity.EditorCoroutines.Editor"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [
+        { "name": "com.unity.ai.inference", "expression": "", "define": "KITSUMATE_HAS_UNITY_AI_INFERENCE" }
+    ],
+    "noEngineReferences": false
+}

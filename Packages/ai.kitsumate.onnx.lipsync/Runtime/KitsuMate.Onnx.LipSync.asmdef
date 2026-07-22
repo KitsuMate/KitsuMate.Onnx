@@ -1,0 +1,16 @@
+{
+    "name": "KitsuMate.Onnx.LipSync",
+    "rootNamespace": "KitsuMate.Onnx.LipSync",
+    "references": [
+        "KitsuMate.Onnx"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

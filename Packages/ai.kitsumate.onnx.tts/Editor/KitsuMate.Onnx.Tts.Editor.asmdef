@@ -1,0 +1,20 @@
+{
+    "name": "KitsuMate.Onnx.Tts.Editor",
+    "rootNamespace": "KitsuMate.Onnx.Tts.Editor",
+    "references": [
+        "KitsuMate.Onnx",
+        "KitsuMate.Onnx.Editor",
+        "KitsuMate.Onnx.Tts"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

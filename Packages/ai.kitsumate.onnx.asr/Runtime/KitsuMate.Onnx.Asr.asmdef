@@ -1,0 +1,16 @@
+{
+    "name": "KitsuMate.Onnx.Asr",
+    "rootNamespace": "KitsuMate.Onnx.Asr",
+    "references": [
+        "KitsuMate.Onnx"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

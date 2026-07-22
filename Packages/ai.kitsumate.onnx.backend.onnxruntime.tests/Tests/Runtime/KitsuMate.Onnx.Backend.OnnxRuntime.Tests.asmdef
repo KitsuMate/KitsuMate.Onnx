@@ -1,0 +1,8 @@
+{
+  "name": "KitsuMate.Onnx.Backend.OnnxRuntime.Tests",
+  "references": ["KitsuMate.Onnx", "KitsuMate.Onnx.Backend.OnnxRuntime"],
+  "optionalUnityReferences": ["TestAssemblies"],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "autoReferenced": false
+}

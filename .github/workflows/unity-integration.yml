@@ -1,16 +1,88 @@
 name: Unity integration
 
-# This minimal default-branch workflow makes the full integration workflow
-# dispatchable on a reviewed feature branch. The feature branch's version of this
-# file supplies the actual self-hosted Unity jobs.
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - 'feat/**'
+      - 'fix/**'
+      - 'test/**'
+      - 'ci/**'
+      - 'chore/**'
 
-permissions: {}
+permissions:
+  contents: read
+  checks: write
 
+# This workflow intentionally never runs untrusted pull-request code.
 jobs:
-  bootstrap:
-    name: Workflow bootstrap
+  build:
+    name: Build packages
     runs-on: ubuntu-latest
     steps:
-      - run: echo "Unity integration workflow dispatch is available."
+      - uses: actions/checkout@v4
+      - name: Validate package layout
+        run: python3 Tools/ci/validate-package-layout.py
+      - name: Build package archives
+        run: python3 Tools/ci/package-upm.py --output Artifacts
+
+  test:
+    name: Test packages
+    needs: build
+    runs-on: [self-hosted, linux, x64, unity-linux-cpu]
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Unity prerequisites
+        shell: bash
+        run: bash Tools/ci/verify-worker.sh
+      - name: Stage openable Unity test project
+        shell: bash
+        run: |
+          rm -rf ExampleProject
+          cp -a ExampleProject~ ExampleProject
+      - name: Download checksum-pinned runtime and test fixtures
+        shell: bash
+        run: bash Tools/ci/run-unity-tests.sh
+      - name: Run EditMode tests
+        id: editmode
+        uses: game-ci/unity-test-runner@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+        with:
+          projectPath: ExampleProject
+          unityVersion: 6000.5.3f1
+          testMode: EditMode
+          artifactsPath: TestResults/EditMode
+          githubToken: ${{ secrets.GITHUB_TOKEN }}
+          checkName: Unity EditMode tests
+          runAsHostUser: true
+      - name: Run PlayMode tests
+        id: playmode
+        if: ${{ !cancelled() && (steps.editmode.outcome == 'success' || steps.editmode.outcome == 'failure') }}
+        uses: game-ci/unity-test-runner@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+        with:
+          projectPath: ExampleProject
+          unityVersion: 6000.5.3f1
+          testMode: PlayMode
+          artifactsPath: TestResults/PlayMode
+          githubToken: ${{ secrets.GITHUB_TOKEN }}
+          checkName: Unity PlayMode tests
+          runAsHostUser: true
+      - name: Upload Unity results and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unity-test-results
+          path: |
+            TestResults
+            ExampleProject/Logs
+          if-no-files-found: warn

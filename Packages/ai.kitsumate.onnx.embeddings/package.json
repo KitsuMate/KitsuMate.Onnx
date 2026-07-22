@@ -1,0 +1,24 @@
+{
+    "name": "ai.kitsumate.onnx.embeddings",
+  "version": "1.0.0-alpha.1",
+    "displayName": "KitsuMate ONNX Embeddings",
+    "description": "Text and audio embedding generation using ONNX models for semantic search, similarity matching, and RAG applications.",
+    "unity": "6000.0",
+    "keywords": [
+        "onnx",
+        "ai",
+        "embeddings",
+        "semantic",
+        "vector",
+        "nlp"
+    ],
+    "category": "AI",
+    "author": {
+        "name": "KitsuMate",
+        "url": "https://github.com/kitsumate"
+    },
+    "license": "MIT",
+    "dependencies": {
+    "ai.kitsumate.onnx": "1.0.0-alpha.1"
+    }
+}

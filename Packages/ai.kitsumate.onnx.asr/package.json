@@ -1,0 +1,24 @@
+{
+  "name": "ai.kitsumate.onnx.asr",
+  "version": "1.0.0-alpha.1",
+  "displayName": "KitsuMate ONNX ASR",
+  "description": "Automatic Speech Recognition using ONNX models. Includes Whisper and Wav2Vec implementations for speech-to-text transcription with word-level timestamps.",
+  "unity": "6000.0",
+  "keywords": [
+    "onnx",
+    "asr",
+    "speech",
+    "whisper",
+    "wav2vec",
+    "transcription",
+    "stt"
+  ],
+  "author": {
+    "name": "KitsuMate",
+    "url": "https://github.com/kitsumate"
+  },
+  "dependencies": {
+    "ai.kitsumate.onnx": "1.0.0-alpha.1"
+  },
+  "samples": []
+}

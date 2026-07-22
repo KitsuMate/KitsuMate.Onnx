@@ -1,0 +1,9 @@
+{
+  "name": "KitsuMate.Onnx.Tts.IntegrationTests",
+  "references": ["KitsuMate.Onnx", "KitsuMate.Onnx.Backend.OnnxRuntime", "KitsuMate.Onnx.Tts"],
+  "optionalUnityReferences": ["TestAssemblies"],
+  "includePlatforms": ["Editor"],
+  "overrideReferences": true,
+  "precompiledReferences": ["KitsuMate.Tokenizers.dll"],
+  "autoReferenced": false
+}

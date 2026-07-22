@@ -1,0 +1,57 @@
+name: Release packages
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish packages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Read release version
+        id: version
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [[ "$version" == *-* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Verify tagged commit belongs to main
+        shell: bash
+        run: |
+          git fetch origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+      - name: Verify package versions
+        run: python3 Tools/release/set-version.py "${{ steps.version.outputs.version }}" --check
+      - name: Validate package layout
+        run: python3 Tools/ci/validate-package-layout.py
+      - name: Add ONNX Runtime release binaries
+        run: |
+          python3 Tools/ci/download-onnxruntime.py \
+            --lock Dependencies/onnxruntime.lock.json \
+            --cache "$RUNNER_TEMP/kitsumate-artifacts" \
+            --destination Packages/ai.kitsumate.onnx.backend.onnxruntime/Runtime/Plugins
+      - name: Build package archives
+        shell: bash
+        run: |
+          python3 Tools/ci/package-upm.py --output Artifacts
+          (cd Artifacts && sha256sum *.tgz > SHA256SUMS)
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          prerelease: ${{ steps.version.outputs.prerelease == 'true' }}
+          make_latest: ${{ steps.version.outputs.prerelease == 'true' && 'false' || 'true' }}
+          files: |
+            Artifacts/*.tgz
+            Artifacts/SHA256SUMS

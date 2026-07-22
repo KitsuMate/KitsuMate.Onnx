@@ -1,0 +1,14 @@
+{
+  "name": "ai.kitsumate.onnx.embeddings.backend.unity-inference",
+  "version": "1.0.0-alpha.1",
+  "displayName": "KitsuMate Unity AI Inference Embeddings",
+  "description": "Unity AI Inference-specific text embedding assets and runtime for KitsuMate ONNX.",
+  "unity": "6000.0",
+  "hideInEditor": false,
+  "author": { "name": "KitsuMate", "url": "https://github.com/KitsuMate" },
+  "dependencies": {
+    "ai.kitsumate.onnx": "1.0.0-alpha.1",
+    "ai.kitsumate.onnx.embeddings": "1.0.0-alpha.1",
+    "ai.kitsumate.onnx.backend.unity-inference": "1.0.0-alpha.1"
+  }
+}

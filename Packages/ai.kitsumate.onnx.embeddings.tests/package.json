@@ -1,0 +1,12 @@
+{
+  "name": "ai.kitsumate.onnx.embeddings.tests",
+  "version": "1.0.0-alpha.1",
+  "displayName": "KitsuMate ONNX Embeddings Tests",
+  "description": "Optional embeddings tests. Model fixtures are downloaded only by integration CI.",
+  "unity": "6000.0",
+  "hideInEditor": true,
+  "dependencies": {
+    "ai.kitsumate.onnx.embeddings": "1.0.0-alpha.1",
+    "ai.kitsumate.onnx.backend.onnxruntime": "1.0.0-alpha.1"
+  }
+}

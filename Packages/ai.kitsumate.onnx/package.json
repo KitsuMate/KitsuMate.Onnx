@@ -1,0 +1,29 @@
+{
+  "name": "ai.kitsumate.onnx",
+  "version": "1.0.0-alpha.1",
+  "displayName": "KitsuMate ONNX",
+  "description": "Core ONNX model handling, backend abstraction, inference engine, and tokenization for Unity. Provides backend-agnostic model assets, session management, tokenizers (WordPiece, BPE, Tiktoken, Llama), and project-wide configuration.",
+  "unity": "6000.0",
+  "keywords": [
+    "onnx",
+    "ai",
+    "ml",
+    "inference",
+    "neural-network",
+    "tokenizer",
+    "nlp",
+    "bert",
+    "bpe",
+    "tiktoken",
+    "llama"
+  ],
+  "author": {
+    "name": "KitsuMate",
+    "url": "https://github.com/KitsuMate"
+  },
+  "dependencies": {
+    "com.unity.editorcoroutines": "1.0.0",
+    "com.unity.nuget.newtonsoft-json": "3.2.2"
+  },
+  "samples": []
+}

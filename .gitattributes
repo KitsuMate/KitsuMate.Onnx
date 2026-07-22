@@ -1,0 +1,3 @@
+# Managed dependencies are reviewed via the checksum lock, not textual diffs.
+*.dll binary
+*.sh text eol=lf

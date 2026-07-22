@@ -53,10 +53,11 @@ refactor(motion)!: replace legacy model compatibility metadata
 ## Release and changelog policy
 
 All `ai.kitsumate.onnx*` packages are released as one coordinated repository
-version. Do not edit `CHANGELOG.md` in feature pull requests. Release Please
-derives the changelog and the release-version update from Conventional Commit
-titles after they reach `main`; the repository release workflow then builds the
-UPM `.tgz` assets for the resulting tag.
+version. Do not edit `CHANGELOG.md` in feature pull requests. Release Please is
+the selected changelog and release-PR mechanism, but it will be enabled only
+with the package-version synchronizer that updates both each package version and
+its internal UPM dependency constraints atomically. The repository release
+workflow then builds the UPM `.tgz` assets for the approved tag.
 
 ## Validation
 

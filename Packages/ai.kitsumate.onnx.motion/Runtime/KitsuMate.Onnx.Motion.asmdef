@@ -1,0 +1,17 @@
+{
+    "name": "KitsuMate.Onnx.Motion",
+    "rootNamespace": "KitsuMate.Onnx.Motion",
+    "references": [
+        "KitsuMate.Onnx",
+        "KitsuMate.Onnx.Embeddings"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

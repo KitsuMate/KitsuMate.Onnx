@@ -1,0 +1,25 @@
+{
+  "name": "ai.kitsumate.onnx.motion",
+  "version": "1.0.0-alpha.1",
+  "displayName": "KitsuMate ONNX Motion",
+  "description": "Kimodo text-conditioned Humanoid motion generation through Microsoft ONNX Runtime.",
+  "unity": "6000.0",
+  "keywords": [
+    "onnx",
+    "ai",
+    "motion",
+    "kimodo",
+    "humanoid",
+    "animation"
+  ],
+  "category": "AI",
+  "author": {
+    "name": "KitsuMate",
+    "url": "https://github.com/kitsumate"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "ai.kitsumate.onnx": "1.0.0-alpha.1",
+    "ai.kitsumate.onnx.embeddings": "1.0.0-alpha.1"
+  }
+}

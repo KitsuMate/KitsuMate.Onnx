@@ -1,0 +1,3 @@
+{
+  "name": "KitsuMate.Onnx.Tts.Tests", "references": ["KitsuMate.Onnx", "KitsuMate.Onnx.Tts"], "optionalUnityReferences": ["TestAssemblies"], "overrideReferences": true, "precompiledReferences": ["KitsuMate.Tokenizers.dll", "Newtonsoft.Json.dll"], "autoReferenced": false
+}

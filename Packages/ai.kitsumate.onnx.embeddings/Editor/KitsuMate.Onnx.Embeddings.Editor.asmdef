@@ -1,0 +1,20 @@
+{
+    "name": "KitsuMate.Onnx.Embeddings.Editor",
+    "rootNamespace": "KitsuMate.Onnx.Embeddings.Editor",
+    "references": [
+        "KitsuMate.Onnx",
+        "KitsuMate.Onnx.Editor",
+        "KitsuMate.Onnx.Embeddings"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

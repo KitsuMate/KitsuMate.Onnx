@@ -1,0 +1,37 @@
+{
+  "dependencies": {
+    "com.unity.ai.inference": "2.6.1",
+    "com.unity.modules.animation": "1.0.0",
+    "com.unity.modules.audio": "1.0.0",
+    "com.unity.nuget.newtonsoft-json": "3.2.2",
+    "ai.kitsumate.onnx": "file:../../Packages/ai.kitsumate.onnx",
+    "ai.kitsumate.onnx.backend.onnxruntime": "file:../../Packages/ai.kitsumate.onnx.backend.onnxruntime",
+    "ai.kitsumate.onnx.backend.unity-inference": "file:../../Packages/ai.kitsumate.onnx.backend.unity-inference",
+    "ai.kitsumate.onnx.asr": "file:../../Packages/ai.kitsumate.onnx.asr",
+    "ai.kitsumate.onnx.embeddings": "file:../../Packages/ai.kitsumate.onnx.embeddings",
+    "ai.kitsumate.onnx.embeddings.backend.unity-inference": "file:../../Packages/ai.kitsumate.onnx.embeddings.backend.unity-inference",
+    "ai.kitsumate.onnx.lipsync": "file:../../Packages/ai.kitsumate.onnx.lipsync",
+    "ai.kitsumate.onnx.motion": "file:../../Packages/ai.kitsumate.onnx.motion",
+    "ai.kitsumate.onnx.tts": "file:../../Packages/ai.kitsumate.onnx.tts",
+    "ai.kitsumate.onnx.tests": "file:../../Packages/ai.kitsumate.onnx.tests",
+    "ai.kitsumate.onnx.backend.onnxruntime.tests": "file:../../Packages/ai.kitsumate.onnx.backend.onnxruntime.tests",
+    "ai.kitsumate.onnx.backend.unity-inference.tests": "file:../../Packages/ai.kitsumate.onnx.backend.unity-inference.tests",
+    "ai.kitsumate.onnx.asr.tests": "file:../../Packages/ai.kitsumate.onnx.asr.tests",
+    "ai.kitsumate.onnx.embeddings.tests": "file:../../Packages/ai.kitsumate.onnx.embeddings.tests",
+    "ai.kitsumate.onnx.embeddings.backend.unity-inference.tests": "file:../../Packages/ai.kitsumate.onnx.embeddings.backend.unity-inference.tests",
+    "ai.kitsumate.onnx.lipsync.tests": "file:../../Packages/ai.kitsumate.onnx.lipsync.tests",
+    "ai.kitsumate.onnx.motion.tests": "file:../../Packages/ai.kitsumate.onnx.motion.tests",
+    "ai.kitsumate.onnx.tts.tests": "file:../../Packages/ai.kitsumate.onnx.tts.tests"
+  },
+  "testables": [
+    "ai.kitsumate.onnx.tests",
+    "ai.kitsumate.onnx.backend.onnxruntime.tests",
+    "ai.kitsumate.onnx.backend.unity-inference.tests",
+    "ai.kitsumate.onnx.asr.tests",
+    "ai.kitsumate.onnx.embeddings.tests",
+    "ai.kitsumate.onnx.embeddings.backend.unity-inference.tests",
+    "ai.kitsumate.onnx.lipsync.tests",
+    "ai.kitsumate.onnx.motion.tests",
+    "ai.kitsumate.onnx.tts.tests"
+  ]
+}

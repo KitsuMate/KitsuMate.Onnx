@@ -1,0 +1,17 @@
+{
+    "name": "KitsuMate.Onnx",
+    "rootNamespace": "KitsuMate.Onnx",
+    "references": [],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "KitsuMate.Tokenizers.dll",
+        "Google.Protobuf.dll"
+    ],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

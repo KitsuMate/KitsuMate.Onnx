@@ -1,0 +1,7 @@
+{
+  "name": "KitsuMate.Onnx.LipSync.IntegrationTests",
+  "references": ["KitsuMate.Onnx", "KitsuMate.Onnx.Backend.OnnxRuntime", "KitsuMate.Onnx.LipSync"],
+  "optionalUnityReferences": ["TestAssemblies"],
+  "includePlatforms": ["Editor"],
+  "autoReferenced": false
+}

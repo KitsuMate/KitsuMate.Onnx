@@ -1,0 +1,9 @@
+{
+  "name": "ai.kitsumate.onnx.tests",
+  "version": "1.0.0-alpha.1",
+  "displayName": "KitsuMate ONNX Core Tests",
+  "description": "Optional edit/play-mode tests for ai.kitsumate.onnx. No model fixtures are included.",
+  "unity": "6000.0",
+  "hideInEditor": true,
+  "dependencies": { "ai.kitsumate.onnx": "1.0.0-alpha.1" }
+}

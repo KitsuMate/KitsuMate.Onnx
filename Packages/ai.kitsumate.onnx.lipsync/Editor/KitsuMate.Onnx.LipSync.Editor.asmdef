@@ -1,0 +1,20 @@
+{
+    "name": "KitsuMate.Onnx.LipSync.Editor",
+    "rootNamespace": "KitsuMate.Onnx.LipSync.Editor",
+    "references": [
+        "KitsuMate.Onnx",
+        "KitsuMate.Onnx.Editor",
+        "KitsuMate.Onnx.LipSync"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
