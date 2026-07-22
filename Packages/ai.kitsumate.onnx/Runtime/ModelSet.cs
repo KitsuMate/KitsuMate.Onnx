@@ -20,7 +20,13 @@ namespace KitsuMate.Onnx
     }
 
     [Serializable]
-    public struct ModelCapabilities { [SerializeField] private string[] values; public IReadOnlyList<string> Values => values ?? Array.Empty<string>(); public bool Contains(string value) => Values.Contains(value); }
+    public struct ModelCapabilities
+    {
+        [SerializeField] private string[] values;
+        public ModelCapabilities(IEnumerable<string> values) { this.values = values?.ToArray() ?? Array.Empty<string>(); }
+        public IReadOnlyList<string> Values => values ?? Array.Empty<string>();
+        public bool Contains(string value) => Values.Contains(value);
+    }
     [Serializable]
     public struct ModelProviderCompatibility
     {
@@ -82,6 +88,22 @@ namespace KitsuMate.Onnx
         public override ModelIdentity Identity => new(string.IsNullOrWhiteSpace(family) ? DefaultFamily : family, string.IsNullOrWhiteSpace(modelId) ? DefaultModelId : modelId, revision, variant, contentHash, contractVersion);
         public override ModelCapabilities Capabilities => capabilities;
         public override IReadOnlyList<ModelProviderCompatibility> ProviderCompatibility => providerCompatibility;
+
+#if UNITY_EDITOR
+        public void SetDownloadMetadata(ModelIdentity identity, IEnumerable<string> downloadedCapabilities,
+            IEnumerable<ModelProviderCompatibility> downloadedCompatibility)
+        {
+            family = identity.Family;
+            modelId = identity.ModelId;
+            revision = identity.Revision;
+            variant = identity.Variant;
+            contentHash = identity.ContentHash;
+            contractVersion = identity.ContractVersion;
+            capabilities = new ModelCapabilities(downloadedCapabilities);
+            providerCompatibility = downloadedCompatibility?.ToArray() ?? Array.Empty<ModelProviderCompatibility>();
+            UnityEditor.EditorUtility.SetDirty(this);
+        }
+#endif
 
         protected ModelValidationResult ValidateCommon(ModelValidationContext context, ModelValidationResult result = null)
         {

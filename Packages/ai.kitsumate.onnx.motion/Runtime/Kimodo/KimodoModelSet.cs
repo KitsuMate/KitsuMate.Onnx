@@ -18,6 +18,14 @@ namespace KitsuMate.Onnx.Motion.Kimodo
         public override bool IsComplete => motionModel != null && motionModel.IsAvailable &&
             requiredEmbeddingModelSet != null && requiredEmbeddingModelSet.IsComplete;
         public override IOnnxModelSource[] GetAllModels() => motionModel != null ? new IOnnxModelSource[] { motionModel } : System.Array.Empty<IOnnxModelSource>();
+
+#if UNITY_EDITOR
+        public void SetRequiredEmbedding(ModelSet value)
+        {
+            requiredEmbeddingModelSet = value;
+            UnityEditor.EditorUtility.SetDirty(this);
+        }
+#endif
         public override ModelValidationResult Validate(ModelValidationContext context)
         {
             var result = new ModelValidationResult();

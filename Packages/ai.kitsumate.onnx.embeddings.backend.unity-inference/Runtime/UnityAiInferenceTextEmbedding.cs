@@ -31,6 +31,16 @@ namespace KitsuMate.Onnx.Embeddings.UnityAiInference
         public override bool IsComplete => embeddingModel != null && embeddingModel.IsAvailable && (vocabulary != null || tokenizerModel != null);
         public override IOnnxModelSource[] GetAllModels() => embeddingModel == null ? Array.Empty<IOnnxModelSource>() : new IOnnxModelSource[] { embeddingModel };
 
+#if UNITY_EDITOR
+        public void SetModels(UnityAiInferenceModelAsset model, TextAsset vocabularyAsset, TextAsset tokenizerAsset)
+        {
+            embeddingModel = model;
+            vocabulary = vocabularyAsset;
+            tokenizerModel = tokenizerAsset;
+            UnityEditor.EditorUtility.SetDirty(this);
+        }
+#endif
+
         public override ModelValidationResult Validate(ModelValidationContext context)
         {
             var result = new ModelValidationResult();

@@ -1,3 +1,4 @@
+using System.Linq;
 using UnityEngine;
 using UnityEngine.Serialization;
 using KitsuMate.Onnx;
@@ -54,7 +55,9 @@ namespace KitsuMate.Onnx.Asr.Whisper
             if (!_decoderSource.IsAvailable) result.Error("missing_decoder", "Decoder model is not available.");
             if (_tokenizerJson == null) result.Error("missing_tokenizer", "Tokenizer JSON file is not assigned.");
             RequireInput(_melProcessorSource, "audio", result);
-            RequireInput(_encoderSource, "mel", result);
+            if (_encoderSource.HasInspectedMetadata &&
+                !_encoderSource.Inputs.Any(input => input.Name == "mel" || input.Name == "input_features"))
+                result.Error("missing_input", $"Model '{_encoderSource.SourceName}' is missing input 'input_features'.");
             RequireInput(_decoderSource, "encoder_hidden_states", result);
             RequireInput(_decoderSource, "input_ids", result);
             foreach (IOnnxModelSource model in GetAllModels()) RequireSchema(model, result);
@@ -62,6 +65,12 @@ namespace KitsuMate.Onnx.Asr.Whisper
         }
         
 #if UNITY_EDITOR
+        public void SetTokenizer(TextAsset tokenizerJson)
+        {
+            _tokenizerJson = tokenizerJson;
+            UnityEditor.EditorUtility.SetDirty(this);
+        }
+
         /// <summary>
         /// Sets the models programmatically. Editor-only.
         /// </summary>

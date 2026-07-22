@@ -20,6 +20,15 @@ namespace KitsuMate.Onnx.Embeddings
         public override bool IsComplete => encoderSource.IsAvailable && tokenizerJson != null;
         public override IOnnxModelSource[] GetAllModels() => new IOnnxModelSource[] { encoderSource };
 
+#if UNITY_EDITOR
+        public void SetFiles(TextAsset tokenizer, TextAsset config)
+        {
+            tokenizerJson = tokenizer;
+            tokenizerConfig = config;
+            UnityEditor.EditorUtility.SetDirty(this);
+        }
+#endif
+
         public override ModelValidationResult Validate(ModelValidationContext context)
         {
             var result = new ModelValidationResult();

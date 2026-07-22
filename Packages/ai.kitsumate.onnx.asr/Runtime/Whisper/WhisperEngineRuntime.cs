@@ -27,6 +27,7 @@ namespace KitsuMate.Onnx.Asr.Whisper
         private int _maxTokens = 224;
         private AudioClip _preparedClip;
         private float[] _preparedSamples;
+        private float _preparedDuration;
         
         // Runtime state
         private IOnnxSession _melSession;
@@ -114,7 +115,7 @@ namespace KitsuMate.Onnx.Asr.Whisper
             
             return new TranscriptionResult(text, detectedLanguage)
             {
-                Duration = input.length
+                Duration = Duration(input)
             };
         }
         
@@ -127,7 +128,7 @@ namespace KitsuMate.Onnx.Asr.Whisper
             
             var result = new TranscriptionResult
             {
-                Duration = audioClip.length,
+                Duration = Duration(audioClip),
                 Language = detectedLanguage
             };
             
@@ -153,7 +154,7 @@ namespace KitsuMate.Onnx.Asr.Whisper
             var result = new TranscriptionResult
             {
                 Text = text,
-                Duration = audioClip.length,
+                Duration = Duration(audioClip),
                 Language = detectedLanguage
             };
             
@@ -165,7 +166,7 @@ namespace KitsuMate.Onnx.Asr.Whisper
                 var dtwAligner = new DTWWordAligner(VerboseLogging);
                 var transcribeResult = TranscribeWithTimestamps(audioClip);
                 var transcribedWords = ExtractTranscribedWords(transcribeResult);
-                return dtwAligner.AlignWords(text, transcribedWords, audioClip.length);
+                return dtwAligner.AlignWords(text, transcribedWords, Duration(audioClip));
             }
             
             return result;
@@ -235,7 +236,7 @@ namespace KitsuMate.Onnx.Asr.Whisper
             
             // Use DTW to align transcribed words to expected text
             var dtwAligner = new DTWWordAligner(VerboseLogging);
-            return dtwAligner.AlignWords(text, transcribedWords, audioClip.length);
+            return dtwAligner.AlignWords(text, transcribedWords, Duration(audioClip));
         }
         
         /// <summary>
@@ -307,6 +308,12 @@ namespace KitsuMate.Onnx.Asr.Whisper
         {
             _preparedClip = request.Audio;
             _preparedSamples = ExtractSamples(request.Audio);
+            _preparedDuration = request.Audio.length;
+        }
+
+        private float Duration(AudioClip clip)
+        {
+            return ReferenceEquals(clip, _preparedClip) ? _preparedDuration : clip.length;
         }
         
         private float[] Resample(float[] samples, int fromRate, int toRate)
@@ -349,12 +356,14 @@ namespace KitsuMate.Onnx.Asr.Whisper
         
         private float[] EncodeAudio(float[] melFeatures)
         {
-            // Shape: [1, mel_bins, time_steps]
-            var shape = new[] { 1, WhisperConstants.MelBins, WhisperConstants.MelTimeSteps };
+            if (melFeatures.Length % WhisperConstants.MelTimeSteps != 0)
+                throw new InvalidOperationException($"Mel processor returned {melFeatures.Length} values, which is not divisible by {WhisperConstants.MelTimeSteps} time steps.");
+            var shape = new[] { 1, melFeatures.Length / WhisperConstants.MelTimeSteps, WhisperConstants.MelTimeSteps };
             
             var inputs = new Dictionary<string, OnnxTensor>
             {
-                ["mel"] = OnnxTensor.FromArray(melFeatures, shape, "mel")
+                [_encoderSession.InputNames.Contains("input_features") ? "input_features" : "mel"] =
+                    OnnxTensor.FromArray(melFeatures, shape, "input_features")
             };
             
             var outputs = _encoderSession.Run(inputs);
@@ -511,20 +520,30 @@ namespace KitsuMate.Onnx.Asr.Whisper
         {
             // Prepare decoder inputs
             var tokenArray = tokens.Select(t => (long)t).ToArray();
-            var encoderShape = new[] { 1, 1500, 512 }; // Typical whisper encoder output shape
+            const int encoderTimeSteps = 1500;
+            if (encoderOutput.Length % encoderTimeSteps != 0)
+                throw new InvalidOperationException($"Whisper encoder returned an unsupported output length: {encoderOutput.Length}.");
+            var encoderShape = new[] { 1, encoderTimeSteps, encoderOutput.Length / encoderTimeSteps };
             
             var inputs = new Dictionary<string, OnnxTensor>
             {
                 ["encoder_hidden_states"] = OnnxTensor.FromArray(encoderOutput, encoderShape, "encoder_hidden_states"),
                 ["input_ids"] = OnnxTensor.FromArray(tokenArray, new[] { 1, tokens.Count }, "input_ids")
             };
+            if (_decoderSession.InputNames.Contains("use_cache_branch"))
+                inputs["use_cache_branch"] = OnnxTensor.FromArray(new[] { false }, new[] { 1 }, "use_cache_branch");
+            int attentionHeads = encoderShape[2] / 64;
+            foreach (string input in _decoderSession.InputNames.Where(name => name.StartsWith("past_key_values.", StringComparison.Ordinal)))
+                inputs[input] = OnnxTensor.FromArray(Array.Empty<float>(), new[] { 1, attentionHeads, 0, 64 }, input);
             
             var outputs = _decoderSession.Run(inputs);
             var logits = outputs.Values.First().AsFloatArray();
             
             // Get the last token's logits and find argmax
-            int vocabSize = WhisperConstants.VocabularySize;
-            int lastTokenOffset = (tokens.Count - 1) * vocabSize;
+            if (logits.Length % tokens.Count != 0)
+                throw new InvalidOperationException($"Whisper decoder returned an unsupported logits length: {logits.Length}.");
+            int vocabSize = logits.Length / tokens.Count;
+            int lastTokenOffset = logits.Length - vocabSize;
             
             int bestToken = 0;
             float bestLogit = float.MinValue;

@@ -1,4 +1,4 @@
-name: Build release archives
+name: Release packages
 
 on:
   push:
@@ -6,78 +6,52 @@ on:
 
 permissions:
   contents: write
-  checks: write
 
-# Releases stay disabled until the protected runner bootstrap is complete.
 jobs:
-  build-and-publish:
-    if: startsWith(github.ref, 'refs/tags/v') && vars.RELEASE_ARTIFACT_PIPELINE_READY == 'true'
-    runs-on: [self-hosted, linux, x64, unity-linux-cpu]
-    timeout-minutes: 90
+  release:
+    name: Build and publish packages
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Hydrate required checksum-pinned runtime and test fixtures
-        shell: bash
-        env:
-          KITSUMATE_ARTIFACT_CACHE: ${{ runner.temp }}/kitsumate-artifacts
-        run: bash Tools/ci/run-unity-tests.sh
-      - name: Stage openable Unity test project
+        with:
+          fetch-depth: 0
+      - name: Read release version
+        id: version
         shell: bash
         run: |
-          rm -rf ExampleProject
-          cp -a ExampleProject~ ExampleProject
-      - name: Run EditMode release tests
-        id: unity_editmode
-        uses: game-ci/unity-test-runner@v4
-        env:
-          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
-          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
-          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
-        with:
-          projectPath: ExampleProject
-          unityVersion: 6000.5.3f1
-          testMode: EditMode
-          artifactsPath: TestResults/release-EditMode
-          githubToken: ${{ secrets.GITHUB_TOKEN }}
-          checkName: Unity EditMode release tests
-      - name: Upload EditMode release results
-        if: ${{ always() && steps.unity_editmode.outputs.artifactsPath != '' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: unity-release-EditMode-test-results
-          path: ${{ steps.unity_editmode.outputs.artifactsPath }}
-          if-no-files-found: warn
-      - name: Run PlayMode release tests
-        id: unity_playmode
-        uses: game-ci/unity-test-runner@v4
-        env:
-          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
-          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
-          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
-        with:
-          projectPath: ExampleProject
-          unityVersion: 6000.5.3f1
-          testMode: PlayMode
-          artifactsPath: TestResults/release-PlayMode
-          githubToken: ${{ secrets.GITHUB_TOKEN }}
-          checkName: Unity PlayMode release tests
-      - name: Upload PlayMode release results
-        if: ${{ always() && steps.unity_playmode.outputs.artifactsPath != '' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: unity-release-PlayMode-test-results
-          path: ${{ steps.unity_playmode.outputs.artifactsPath }}
-          if-no-files-found: warn
-      - name: Build production UPM archives
+          version="${GITHUB_REF_NAME#v}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [[ "$version" == *-* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Verify tagged commit belongs to main
+        shell: bash
+        run: |
+          git fetch origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+      - name: Verify package versions
+        run: python3 Tools/release/set-version.py "${{ steps.version.outputs.version }}" --check
+      - name: Validate package layout
+        run: python3 Tools/ci/validate-package-layout.py
+      - name: Add ONNX Runtime release binaries
+        run: |
+          python3 Tools/ci/download-onnxruntime.py \
+            --lock Dependencies/onnxruntime.lock.json \
+            --cache "$RUNNER_TEMP/kitsumate-artifacts" \
+            --destination Packages/ai.kitsumate.onnx.backend.onnxruntime/Runtime/Plugins
+      - name: Build package archives
         shell: bash
         run: |
           python3 Tools/ci/package-upm.py --output Artifacts
           (cd Artifacts && sha256sum *.tgz > SHA256SUMS)
-      - name: Publish GitHub Release assets
+      - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
+          generate_release_notes: true
+          prerelease: ${{ steps.version.outputs.prerelease == 'true' }}
+          make_latest: ${{ steps.version.outputs.prerelease == 'true' && 'false' || 'true' }}
           files: |
             Artifacts/*.tgz
             Artifacts/SHA256SUMS

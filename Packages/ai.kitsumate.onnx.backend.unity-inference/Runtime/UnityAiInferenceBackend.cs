@@ -32,6 +32,14 @@ namespace KitsuMate.Onnx
         public IReadOnlyList<OnnxModelAsset.TensorInfo> Outputs => Array.Empty<OnnxModelAsset.TensorInfo>();
         public OnnxModelAsset ImportedAsset => null;
         public string ResolveModelPath() => null;
+
+#if UNITY_EDITOR
+        public void SetModelAsset(ModelAsset value)
+        {
+            modelAsset = value;
+            UnityEditor.EditorUtility.SetDirty(this);
+        }
+#endif
     }
 
     /// <summary>

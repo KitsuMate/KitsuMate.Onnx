@@ -54,6 +54,8 @@ def main() -> int:
             if dependency == "com.unity.sentis":
                 fail(f"{name} depends on unsupported com.unity.sentis")
             if dependency == "com.unity.ai.inference":
+                if version != "2.6.1":
+                    fail(f"{name} must use com.unity.ai.inference@2.6.1")
                 unity_inference_packages.append(name)
         for extension in ARTIFACT_GLOBS:
             artifacts = [path for path in package_path.rglob(extension) if path.is_file()]

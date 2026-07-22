@@ -11,6 +11,8 @@
 *.sln
 *.user
 *.userprefs
+__pycache__/
+*.pyc
 *.pidb
 *.booproj
 *.svd

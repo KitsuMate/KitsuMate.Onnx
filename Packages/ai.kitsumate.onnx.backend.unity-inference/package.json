@@ -8,6 +8,6 @@
   "author": { "name": "KitsuMate", "url": "https://github.com/KitsuMate" },
   "dependencies": {
     "ai.kitsumate.onnx": "1.0.0-alpha.1",
-    "com.unity.ai.inference": "2.4.1"
+    "com.unity.ai.inference": "2.6.1"
   }
 }

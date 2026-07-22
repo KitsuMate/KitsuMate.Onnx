@@ -93,5 +93,14 @@ namespace KitsuMate.Onnx.Embeddings
             RequireSchema(_embeddingModelSource, result);
             return ValidateCommon(context, result);
         }
+
+#if UNITY_EDITOR
+        public void SetTokenizer(TextAsset vocabulary, TextAsset tokenizerModel)
+        {
+            _vocabulary = vocabulary;
+            _tokenizerModel = tokenizerModel;
+            UnityEditor.EditorUtility.SetDirty(this);
+        }
+#endif
     }
 }

@@ -49,6 +49,18 @@ namespace KitsuMate.Onnx
             foreach (InferenceEngineBase engine in _defaultEngines) if (engine is TEngine typed) return typed;
             return null;
         }
+
+#if UNITY_EDITOR
+        public bool RegisterDefaultEngine(InferenceEngineBase engine)
+        {
+            if (engine == null) throw new ArgumentNullException(nameof(engine));
+            if (_defaultEngines.Exists(existing => existing != null && existing.GetType() == engine.GetType()))
+                return false;
+            _defaultEngines.Add(engine);
+            UnityEditor.EditorUtility.SetDirty(this);
+            return true;
+        }
+#endif
         
         /// <summary>
         /// Gets the backend for the current platform.

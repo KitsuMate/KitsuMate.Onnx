@@ -27,7 +27,7 @@ namespace KitsuMate.Onnx.Editor
                     diagnostic.Severity == ModelDiagnosticSeverity.Error ? MessageType.Error : MessageType.Warning);
             }
 
-            EditorGUILayout.HelpBox("Install or update variants through the shared ONNX Model Catalog.", MessageType.Info);
+            EditorGUILayout.HelpBox("Use Download Models in this inspector to install a compatible verified variant.", MessageType.Info);
         }
     }
 }

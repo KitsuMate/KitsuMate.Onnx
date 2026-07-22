@@ -9,6 +9,6 @@ Unity Package Manager monorepo for KitsuMate ONNX contracts, feature packages, a
 - `ai.kitsumate.onnx.backend.sentis` — Unity AI Inference backend (`com.unity.ai.inference`).
 - `ai.kitsumate.onnx.{asr,embeddings,lipsync,motion,tts}` — optional feature packages.
 
-Production packages contain no sample models, native ONNX Runtime binaries, or integration-test models. Release workflows hydrate and validate those artifacts before publishing independent `.tgz` assets.
+Production packages contain no sample models, native ONNX Runtime binaries, or integration-test models. Release workflows download and validate those artifacts before publishing independent `.tgz` assets.
 
 `ExampleProject~/` is a development and verification Unity project, not the package root.

@@ -5,5 +5,8 @@
   "description": "Optional motion tests. Model fixtures are downloaded only by integration CI.",
   "unity": "6000.0",
   "hideInEditor": true,
-  "dependencies": { "ai.kitsumate.onnx.motion": "1.0.0-alpha.1" }
+  "dependencies": {
+    "ai.kitsumate.onnx.motion": "1.0.0-alpha.1",
+    "ai.kitsumate.onnx.backend.onnxruntime": "1.0.0-alpha.1"
+  }
 }

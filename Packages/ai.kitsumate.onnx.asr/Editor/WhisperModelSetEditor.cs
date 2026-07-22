@@ -2,6 +2,7 @@
 using KitsuMate.Onnx.Asr.Whisper;
 using KitsuMate.Onnx.Editor;
 using KitsuMate.Onnx.Editor.Download;
+using System.IO;
 using UnityEditor;
 using UnityEngine;
 
@@ -10,6 +11,8 @@ namespace KitsuMate.Onnx.Asr.Editor
     [CustomEditor(typeof(WhisperModelSet))]
     public sealed class WhisperModelSetEditor : UnityEditor.Editor
     {
+        private int source;
+
         public override void OnInspectorGUI()
         {
             serializedObject.Update(); var set = (WhisperModelSet)target;
@@ -23,11 +26,51 @@ namespace KitsuMate.Onnx.Asr.Editor
             serializedObject.ApplyModifiedProperties();
 
             EditorGUILayout.Space();
-            EditorGUILayout.HelpBox("Install a complete matching Whisper export: mel processor, encoder, decoder, and tokenizer JSON. Select a compatible public ONNX repository in the downloader.", MessageType.Info);
-            if (GUILayout.Button("Download compatible Whisper ONNX model"))
-                ModelDownloadWindow.Show(WhisperModelDownloader.CreateRequest(set));
+            string[] sources = System.Array.ConvertAll(WhisperModelDownloader.Sources, item => item.Name);
+            source = EditorGUILayout.Popup("Model", Mathf.Clamp(source, 0, sources.Length - 1), sources);
+            if (GUILayout.Button("Download Models"))
+                WhisperModelDownloader.Show(set, WhisperModelDownloader.Sources[source]);
 
             ModelSetEditorUi.Validation(set);
+        }
+    }
+
+    [CustomEditor(typeof(WhisperEngine))]
+    public sealed class WhisperEngineEditor : UnityEditor.Editor
+    {
+        private int source;
+
+        public override void OnInspectorGUI()
+        {
+            DrawDefaultInspector();
+            SerializedProperty modelSet = serializedObject.FindProperty("modelSet");
+            if (modelSet.objectReferenceValue != null) return;
+            string[] names = System.Array.ConvertAll(WhisperModelDownloader.Sources, item => item.Name);
+            source = EditorGUILayout.Popup("Model", Mathf.Clamp(source, 0, names.Length - 1), names);
+            if (GUILayout.Button("Create Model Set and Download"))
+            {
+                var set = CreateModelSet<WhisperModelSet>((WhisperEngine)target, "WhisperModelSet");
+                modelSet.objectReferenceValue = set;
+                serializedObject.ApplyModifiedProperties();
+                RegisterDefault((WhisperEngine)target);
+                WhisperModelDownloader.Show(set, WhisperModelDownloader.Sources[source]);
+            }
+        }
+
+        private static T CreateModelSet<T>(UnityEngine.Object engine, string name) where T : ScriptableObject
+        {
+            string directory = Path.GetDirectoryName(AssetDatabase.GetAssetPath(engine))?.Replace('\\', '/') ?? "Assets";
+            string path = AssetDatabase.GenerateUniqueAssetPath($"{directory}/{name}.asset");
+            T set = CreateInstance<T>();
+            AssetDatabase.CreateAsset(set, path);
+            AssetDatabase.SaveAssets();
+            return set;
+        }
+
+        private static void RegisterDefault(WhisperEngine engine)
+        {
+            OnnxSettings settings = OnnxSettings.Load();
+            if (settings != null && settings.RegisterDefaultEngine(engine)) AssetDatabase.SaveAssets();
         }
     }
 }

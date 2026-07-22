@@ -2,7 +2,7 @@
   "name": "ai.kitsumate.onnx.backend.onnxruntime.tests",
   "version": "1.0.0-alpha.1",
   "displayName": "KitsuMate ONNX Runtime Backend Tests",
-  "description": "Optional ONNX Runtime backend tests. External fixtures are hydrated by CI.",
+  "description": "Optional ONNX Runtime backend tests. External fixtures are downloaded by CI.",
   "unity": "6000.0",
   "hideInEditor": true,
   "dependencies": {

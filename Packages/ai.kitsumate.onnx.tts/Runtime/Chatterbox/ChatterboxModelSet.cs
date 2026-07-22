@@ -40,6 +40,14 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
         }
 
 #if UNITY_EDITOR
+        public void SetFiles(TextAsset tokenizer, TextAsset cangjieMapping, AudioClip defaultVoice)
+        {
+            _tokenizer = tokenizer;
+            _cangjieMapping = cangjieMapping;
+            _defaultVoice = defaultVoice;
+            UnityEditor.EditorUtility.SetDirty(this);
+        }
+
         public void SetModels(OnnxModelAsset speechEncoder, OnnxModelAsset embedTokens, OnnxModelAsset languageModel,
             OnnxModelAsset conditionalDecoder, TextAsset tokenizer, TextAsset cangjieMapping, AudioClip defaultVoice,
             string modelIdentifier = null)

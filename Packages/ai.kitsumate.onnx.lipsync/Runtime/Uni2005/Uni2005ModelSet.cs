@@ -48,6 +48,12 @@ namespace KitsuMate.Onnx.LipSync.Uni2005
         }
         
 #if UNITY_EDITOR
+        public void SetVocabulary(TextAsset vocabulary)
+        {
+            _vocabulary = vocabulary;
+            UnityEditor.EditorUtility.SetDirty(this);
+        }
+
         public void SetModels(OnnxModelAsset acousticModel, TextAsset vocabulary)
         {
             _acousticModelSource.ConfigureAsset(acousticModel);

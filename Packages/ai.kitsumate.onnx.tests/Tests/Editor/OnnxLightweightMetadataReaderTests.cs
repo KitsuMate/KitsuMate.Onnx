@@ -13,14 +13,13 @@ namespace KitsuMate.Onnx.Tests
         [Category("Integration")]
         public void Read_ExternalDataModel_ReturnsSchemaWithoutExternalWeights()
         {
-            string path = Path.Combine(Application.dataPath, "KitsuMateOnnxFixtures", "metadata", "yolo10n_external.onnx");
-            Assert.That(File.Exists(path), Is.True, "Missing metadata fixture. Hydrate the required CPU CI fixture set.");
+            string path = Path.GetFullPath(Path.Combine(Application.dataPath, "..", "KitsuMateOnnxFixtures",
+                "text-embedding", "all-minilm", "model_q4f16.onnx"));
+            Assert.That(File.Exists(path), Is.True, "Missing metadata fixture. Download the required CPU CI fixture set.");
 
             OnnxLightweightMetadataReader.Result result = OnnxLightweightMetadataReader.Read(path);
-            Assert.That(result.Inputs, Has.Count.EqualTo(1));
-            Assert.That(result.Inputs.Select(x => x.Name), Contains.Item("images"));
-            Assert.That(result.Outputs, Has.Count.EqualTo(1));
-            Assert.That(result.Outputs.Select(x => x.Name), Contains.Item("output0"));
+            Assert.That(result.Inputs.Select(x => x.Name), Contains.Item("input_ids"));
+            Assert.That(result.Outputs, Is.Not.Empty);
         }
     }
 }

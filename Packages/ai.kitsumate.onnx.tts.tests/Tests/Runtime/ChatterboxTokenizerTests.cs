@@ -17,7 +17,7 @@ namespace KitsuMate.Onnx.Tts.Tests
     public class ChatterboxTokenizerTests
     {
         // Paths relative to project root
-        private const string TokenizerJsonPath = "Assets/KitsuMateOnnxFixtures/tts/chatterbox/tokenizer.json";
+        private const string TokenizerJsonPath = "KitsuMateOnnxFixtures/chatterbox/tokenizer.json";
         private const string GroundTruthPath = "Packages/ai.kitsumate.onnx.tts.tests/Tests/Runtime/tokenizer_ground_truth.json";
 
         private Tokenizer _tokenizer;
