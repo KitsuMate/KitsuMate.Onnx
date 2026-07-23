@@ -1,6 +1,7 @@
 name: Unity integration
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
@@ -21,6 +22,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          clean: true
       - name: Validate package layout
         run: python3 Tools/ci/validate-package-layout.py
       - name: Build package archives
@@ -33,6 +36,8 @@ jobs:
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
+        with:
+          clean: true
       - name: Validate Unity prerequisites
         shell: bash
         run: bash Tools/ci/verify-worker.sh
@@ -86,3 +91,17 @@ jobs:
             TestResults
             ExampleProject/Logs
           if-no-files-found: warn
+
+  gate:
+    name: Unity gate
+    if: always()
+    needs: [build, test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require build and test
+        env:
+          BUILD_RESULT: ${{ needs.build.result }}
+          TEST_RESULT: ${{ needs.test.result }}
+        run: |
+          test "$BUILD_RESULT" = success
+          test "$TEST_RESULT" = success
