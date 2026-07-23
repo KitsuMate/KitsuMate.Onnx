@@ -16,7 +16,8 @@ namespace KitsuMate.Onnx.Asr.Sentis.Tests
                 Assert.That(validation.Diagnostics, Has.Some.Matches<ModelDiagnostic>(item => item.Code == "missing_mel"));
                 Assert.That(validation.Diagnostics, Has.Some.Matches<ModelDiagnostic>(item => item.Code == "missing_encoder"));
                 Assert.That(validation.Diagnostics, Has.Some.Matches<ModelDiagnostic>(item => item.Code == "missing_decoder"));
-                Assert.That(validation.Diagnostics, Has.Some.Matches<ModelDiagnostic>(item => item.Code == "missing_cached_decoder"));
+                Assert.That(validation.Diagnostics, Has.None.Matches<ModelDiagnostic>(
+                    item => item.Code == "missing_cached_decoder"));
                 Assert.That(validation.Diagnostics, Has.Some.Matches<ModelDiagnostic>(item => item.Code == "missing_tokenizer"));
             }
             finally

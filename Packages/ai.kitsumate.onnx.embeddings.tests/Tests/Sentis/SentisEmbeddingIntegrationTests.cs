@@ -14,7 +14,7 @@ namespace KitsuMate.Onnx.Embeddings.Sentis.Tests
 {
     public sealed class SentisEmbeddingIntegrationTests
     {
-        private const string ModelPath = "Assets/KitsuMateOnnxFixtures/unity-ai-inference/model_unity_fp32.onnx";
+        private const string ModelPath = "Assets/KitsuMateOnnxFixtures/unity-ai-inference/model.onnx";
 
         [Test]
         [Category("Integration")]

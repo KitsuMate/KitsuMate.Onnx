@@ -30,9 +30,10 @@ namespace KitsuMate.Onnx.Embeddings.Editor
 
         internal static void ShowDownload(TextEmbeddingModelSet set)
         {
-            ModelDownloadWindow.Show(new ModelDownloadRequest("KitsuMate/all-MiniLM-L6-v2-onnx", "caa577297ce0c15e94a2116d2f9228c640d1224c", string.Empty,
-                ModelRoot(), "text-embedding"), result =>
+            ModelDownloadWindow.Show(new ModelDownloadRequest("KitsuMate/all-MiniLM-L6-v2-onnx",
+                "9ec4eb6ad90ebff9e819a807468f37926836816f", "text-embedding"), result =>
             {
+                result.RequireGraph("model", new[] { "input_ids", "attention_mask" });
                 result.ConfigureModel(set.EmbeddingModel, "model");
                 TextAsset vocabulary = result.ProjectPaths.ContainsKey("vocabulary") ? result.LoadAsset<TextAsset>("vocabulary") : null;
                 TextAsset tokenizer = result.ProjectPaths.ContainsKey("tokenizer") ? result.LoadAsset<TextAsset>("tokenizer") : null;
@@ -43,11 +44,6 @@ namespace KitsuMate.Onnx.Embeddings.Editor
             });
         }
 
-        private static string ModelRoot()
-        {
-            OnnxSettings settings = OnnxSettings.Load();
-            return settings != null ? settings.ModelStorageRoot : "Assets/StreamingAssets/KitsuMateModels";
-        }
     }
 
     [CustomEditor(typeof(TextEmbeddingEngine))]

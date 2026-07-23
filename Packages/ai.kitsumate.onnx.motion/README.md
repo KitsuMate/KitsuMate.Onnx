@@ -6,12 +6,12 @@ Kimodo character-motion inference and Unity Humanoid authoring using the shared 
 
 Create and assign these assets:
 
-1. `KimodoModelSet`, referencing one installed Kimodo ONNX variant.
+1. `KimodoModelSet`, referencing an installed Kimodo ONNX artifact.
 2. `KimodoEngine`, referencing that model set.
 3. `Llm2VecModelSet` and `Llm2VecEmbeddingEngine` from `ai.kitsumate.onnx.embeddings`.
 4. Caller-owned `OnnxBackend` assets for motion and embedding inference.
 
-Each precision or quantization is a separate model-set asset. Engine assets are immutable configuration; inference state lives in disposable runtimes.
+Each ONNX role can select its own available artifact type in the ModelSet inspector. Engine assets are immutable configuration; inference state lives in disposable runtimes.
 
 ```csharp
 using CharacterMotionEngineRuntime runtime =

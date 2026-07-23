@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using KitsuMate.Onnx.Asr.Editor;
 using KitsuMate.Onnx.Editor;
 using KitsuMate.Onnx.Editor.Download;
@@ -27,8 +28,9 @@ namespace KitsuMate.Onnx.Asr.Sentis.Editor
 
         internal static void ShowDownload(SentisWhisperModelSet set, WhisperModelDownloader.Source source)
         {
-            ModelDownloadWindow.Show(new ModelDownloadRequest(source.Repository, source.Revision, "fp32",
-                ModelRoot(), "whisper"), result => Apply(set, result));
+            ModelDownloadWindow.ShowForSentis(
+                new ModelDownloadRequest(source.Repository, source.Revision, "whisper"),
+                result => Apply(set, result));
         }
 
         private static void Apply(SentisWhisperModelSet set, ModelDownloadResult result)
@@ -36,13 +38,24 @@ namespace KitsuMate.Onnx.Asr.Sentis.Editor
             ModelAsset mel = result.LoadAsset<ModelAsset>("mel");
             ModelAsset encoder = result.LoadAsset<ModelAsset>("encoder");
             ModelAsset decoder = result.LoadAsset<ModelAsset>("decoder");
-            ModelAsset decoderWithPast = result.LoadAsset<ModelAsset>("decoder-with-past");
+            ModelAsset decoderWithPast = result.ProjectPaths.ContainsKey("decoder-with-past")
+                ? result.LoadAsset<ModelAsset>("decoder-with-past")
+                : null;
             TextAsset tokenizer = result.LoadAsset<TextAsset>("tokenizer");
+            Validate(mel, new[] { "audio" }, new[] { "log_mel" });
+            ValidateAnyInput(encoder, new[] { "mel", "input_features" }, "last_hidden_state");
+            Model decoderModel = Validate(decoder,
+                new[] { "input_ids", "encoder_hidden_states" }, new[] { "logits" });
+            Model cachedModel = decoderWithPast != null
+                ? Validate(decoderWithPast, new[] { "input_ids" }, new[] { "logits" })
+                : null;
+            ValidateCache(decoderModel, cachedModel);
             string directory = Path.GetDirectoryName(AssetDatabase.GetAssetPath(set))?.Replace('\\', '/') ?? "Assets";
             UnityAiInferenceModelAsset melSource = CreateSource(mel, directory);
             UnityAiInferenceModelAsset encoderSource = CreateSource(encoder, directory);
             UnityAiInferenceModelAsset decoderSource = CreateSource(decoder, directory);
-            UnityAiInferenceModelAsset cachedDecoderSource = CreateSource(decoderWithPast, directory);
+            UnityAiInferenceModelAsset cachedDecoderSource =
+                decoderWithPast != null ? CreateSource(decoderWithPast, directory) : null;
             set.SetModels(melSource, encoderSource, decoderSource, cachedDecoderSource, tokenizer);
             result.ApplyMetadata(set);
             AssetDatabase.SaveAssets();
@@ -58,10 +71,52 @@ namespace KitsuMate.Onnx.Asr.Sentis.Editor
             return source;
         }
 
-        private static string ModelRoot()
+        private static Model Validate(ModelAsset asset, string[] requiredInputs, string[] requiredOutputs)
         {
-            OnnxSettings settings = OnnxSettings.Load();
-            return settings != null ? settings.ModelStorageRoot : "Assets/StreamingAssets/KitsuMateModels";
+            Model model = ModelLoader.Load(asset);
+            using var worker = new Worker(model, BackendType.CPU);
+            string[] inputs = model.inputs.Select(input => input.name).ToArray();
+            string[] outputs = model.outputs.Select(output => output.name).ToArray();
+            foreach (string input in requiredInputs)
+                if (!inputs.Contains(input))
+                    throw new InvalidOperationException($"Model '{asset.name}' is missing input '{input}'.");
+            foreach (string output in requiredOutputs)
+                if (!outputs.Contains(output))
+                    throw new InvalidOperationException($"Model '{asset.name}' is missing output '{output}'.");
+            return model;
+        }
+
+        private static void ValidateAnyInput(ModelAsset asset, string[] inputNames, string outputName)
+        {
+            Model model = ModelLoader.Load(asset);
+            using var worker = new Worker(model, BackendType.CPU);
+            if (!model.inputs.Any(input => inputNames.Contains(input.name)))
+                throw new InvalidOperationException(
+                    $"Model '{asset.name}' is missing input '{string.Join("' or '", inputNames)}'.");
+            if (!model.outputs.Any(output => output.name == outputName))
+                throw new InvalidOperationException($"Model '{asset.name}' is missing output '{outputName}'.");
+        }
+
+        private static void ValidateCache(Model decoder, Model cachedDecoder)
+        {
+            if (cachedDecoder == null)
+            {
+                if (!decoder.inputs.Any(input => input.name == "use_cache_branch"))
+                    throw new InvalidOperationException(
+                        "A Whisper decoder without decoder-with-past must provide 'use_cache_branch'.");
+                return;
+            }
+
+            int initialCacheCount = decoder.outputs.Count(output =>
+                output.name.StartsWith("present.", StringComparison.Ordinal));
+            int cacheInputCount = cachedDecoder.inputs.Count(input =>
+                input.name.StartsWith("past_key_values.", StringComparison.Ordinal));
+            int cacheOutputCount = cachedDecoder.outputs.Count(output =>
+                output.name.StartsWith("present.", StringComparison.Ordinal));
+            if (initialCacheCount == 0 || initialCacheCount != cacheInputCount ||
+                cacheInputCount != cacheOutputCount)
+                throw new InvalidOperationException(
+                    "Whisper initial and cached decoder cache contracts do not match.");
         }
     }
 

@@ -8,13 +8,13 @@ namespace KitsuMate.Onnx
     [Serializable]
     public readonly struct ModelIdentity : IEquatable<ModelIdentity>
     {
-        public readonly string Family, ModelId, Revision, Variant, ContentHash;
-        public ModelIdentity(string family, string modelId, string revision, string variant, string contentHash)
-        { Family = family ?? ""; ModelId = modelId ?? ""; Revision = revision ?? ""; Variant = variant ?? ""; ContentHash = contentHash ?? ""; }
-        public bool Equals(ModelIdentity other) => Family == other.Family && ModelId == other.ModelId && Revision == other.Revision && Variant == other.Variant && ContentHash == other.ContentHash;
+        public readonly string Family, ModelId, Revision, ContentHash;
+        public ModelIdentity(string family, string modelId, string revision, string contentHash)
+        { Family = family ?? ""; ModelId = modelId ?? ""; Revision = revision ?? ""; ContentHash = contentHash ?? ""; }
+        public bool Equals(ModelIdentity other) => Family == other.Family && ModelId == other.ModelId && Revision == other.Revision && ContentHash == other.ContentHash;
         public override bool Equals(object obj) => obj is ModelIdentity other && Equals(other);
-        public override int GetHashCode() => HashCode.Combine(Family, ModelId, Revision, Variant, ContentHash);
-        public override string ToString() => $"{Family}/{ModelId}@{Revision}:{Variant}#{ContentHash}";
+        public override int GetHashCode() => HashCode.Combine(Family, ModelId, Revision, ContentHash);
+        public override string ToString() => $"{Family}/{ModelId}@{Revision}#{ContentHash}";
     }
 
     [Serializable]
@@ -58,13 +58,12 @@ namespace KitsuMate.Onnx
         [SerializeField] private string family;
         [SerializeField] private string modelId;
         [SerializeField] private string revision = "main";
-        [SerializeField] private string variant = "fp32";
         [SerializeField] private string contentHash;
         [SerializeField] private ModelCapabilities capabilities;
 
         protected virtual string DefaultFamily => GetType().Namespace ?? "onnx";
         protected virtual string DefaultModelId => GetType().Name;
-        public override ModelIdentity Identity => new(string.IsNullOrWhiteSpace(family) ? DefaultFamily : family, string.IsNullOrWhiteSpace(modelId) ? DefaultModelId : modelId, revision, variant, contentHash);
+        public override ModelIdentity Identity => new(string.IsNullOrWhiteSpace(family) ? DefaultFamily : family, string.IsNullOrWhiteSpace(modelId) ? DefaultModelId : modelId, revision, contentHash);
         public override ModelCapabilities Capabilities => capabilities;
 
 #if UNITY_EDITOR
@@ -73,7 +72,6 @@ namespace KitsuMate.Onnx
             family = identity.Family;
             modelId = identity.ModelId;
             revision = identity.Revision;
-            variant = identity.Variant;
             contentHash = identity.ContentHash;
             capabilities = new ModelCapabilities(downloadedCapabilities);
             UnityEditor.EditorUtility.SetDirty(this);

@@ -27,7 +27,7 @@ namespace KitsuMate.Onnx.Editor
                     diagnostic.Severity == ModelDiagnosticSeverity.Error ? MessageType.Error : MessageType.Warning);
             }
 
-            EditorGUILayout.HelpBox("Use Download Models in this inspector to install a compatible verified variant.", MessageType.Info);
+            EditorGUILayout.HelpBox("Use Download Models in this inspector to select and install compatible artifacts.", MessageType.Info);
         }
     }
 }

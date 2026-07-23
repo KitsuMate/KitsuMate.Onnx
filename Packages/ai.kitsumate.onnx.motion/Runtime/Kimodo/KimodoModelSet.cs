@@ -6,7 +6,7 @@ namespace KitsuMate.Onnx.Motion.Kimodo
     public sealed class KimodoModelSet : StandardModelSet
     {
         [SerializeField] private OnnxModelReference motionModel = new();
-        [SerializeField, Tooltip("Embedding model whose output contract this Kimodo variant expects.")]
+        [SerializeField, Tooltip("Embedding model whose output contract this Kimodo model expects.")]
         private ModelSet requiredEmbeddingModelSet;
 
         public OnnxModelReference MotionModel => motionModel;
@@ -31,7 +31,7 @@ namespace KitsuMate.Onnx.Motion.Kimodo
             var result = new ModelValidationResult();
             if (motionModel == null) result.Error("missing_model", "Kimodo motion model is not assigned.");
             if (requiredEmbeddingModelSet == null)
-                result.Error("missing_embedding_contract", "Assign the embedding model required by this Kimodo variant.");
+                result.Error("missing_embedding_contract", "Assign the embedding model required by this Kimodo model.");
             else if (!requiredEmbeddingModelSet.IsComplete)
                 result.Error("incomplete_embedding_contract", $"Required embedding model set '{requiredEmbeddingModelSet.name}' is incomplete.");
             foreach (string input in new[] { "motion", "motion_valid", "text_embedding", "timestep", KimodoTensorContract.FirstHeading, "constraint_mask", "observed_motion" }) RequireInput(motionModel, input, result);

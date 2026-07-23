@@ -1,6 +1,6 @@
 {
   "name": "KitsuMate.Onnx.Backend.UnityInference.Tests",
-  "references": ["KitsuMate.Onnx", "KitsuMate.Onnx.Backend.UnityInference", "Unity.InferenceEngine"],
+  "references": ["KitsuMate.Onnx", "KitsuMate.Onnx.Backend.OnnxRuntime", "KitsuMate.Onnx.Backend.UnityInference", "Unity.InferenceEngine"],
   "optionalUnityReferences": ["TestAssemblies"],
   "includePlatforms": ["Editor"],
   "excludePlatforms": [],

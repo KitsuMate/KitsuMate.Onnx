@@ -7,6 +7,7 @@
   "hideInEditor": true,
   "dependencies": {
     "ai.kitsumate.onnx": "1.0.0-alpha.1",
+    "ai.kitsumate.onnx.backend.onnxruntime": "1.0.0-alpha.1",
     "ai.kitsumate.onnx.backend.unity-inference": "1.0.0-alpha.1"
   }
 }

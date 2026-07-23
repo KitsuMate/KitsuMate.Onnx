@@ -20,10 +20,11 @@ namespace KitsuMate.Onnx.Asr.Sentis
         public TextAsset TokenizerJson => tokenizerJson;
         public override string DisplayName => string.IsNullOrWhiteSpace(name) ? "Sentis Whisper" : name;
         public override bool IsComplete => IsReady(melProcessor) && IsReady(encoder) && IsReady(decoder) &&
-            IsReady(decoderWithPast) && tokenizerJson != null;
+            tokenizerJson != null;
 
-        public override IOnnxModelSource[] GetAllModels() =>
-            new IOnnxModelSource[] { melProcessor, encoder, decoder, decoderWithPast };
+        public override IOnnxModelSource[] GetAllModels() => IsReady(decoderWithPast)
+            ? new IOnnxModelSource[] { melProcessor, encoder, decoder, decoderWithPast }
+            : new IOnnxModelSource[] { melProcessor, encoder, decoder };
 
         public override ModelValidationResult Validate(ModelValidationContext context)
         {
@@ -31,7 +32,6 @@ namespace KitsuMate.Onnx.Asr.Sentis
             if (!IsReady(melProcessor)) result.Error("missing_mel", "A Sentis mel model is required.");
             if (!IsReady(encoder)) result.Error("missing_encoder", "A Sentis encoder model is required.");
             if (!IsReady(decoder)) result.Error("missing_decoder", "A Sentis decoder model is required.");
-            if (!IsReady(decoderWithPast)) result.Error("missing_cached_decoder", "A Sentis cached decoder model is required.");
             if (tokenizerJson == null) result.Error("missing_tokenizer", "Tokenizer JSON is required.");
             if (context.Backend != null && context.Backend is not UnityAiInferenceBackend)
                 result.Error("invalid_backend", "SentisWhisperEngine requires UnityAiInferenceBackend.");

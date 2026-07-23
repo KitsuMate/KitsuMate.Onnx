@@ -19,7 +19,6 @@ namespace KitsuMate.Onnx.LipSync.Editor
             EditorGUILayout.PropertyField(serializedObject.FindProperty("_acousticModelSource"), new GUIContent("Acoustic Model"));
             EditorGUILayout.LabelField("Auxiliary Files", EditorStyles.boldLabel);
             EditorGUILayout.PropertyField(serializedObject.FindProperty("_vocabulary"));
-            EditorGUILayout.PropertyField(serializedObject.FindProperty("_variantDescription"));
             serializedObject.ApplyModifiedProperties();
             if (GUILayout.Button("Download Models"))
                 ShowDownload(set);
@@ -28,9 +27,10 @@ namespace KitsuMate.Onnx.LipSync.Editor
 
         internal static void ShowDownload(Uni2005ModelSet set)
         {
-            ModelDownloadWindow.Show(new ModelDownloadRequest("KitsuMate/uni2005-onnx", "018d386ed6000d0fdc0c962cbceacb30c7a7e3a4", string.Empty,
-                ModelRoot(), "uni2005"), result =>
+            ModelDownloadWindow.Show(new ModelDownloadRequest("KitsuMate/uni2005-onnx",
+                "018d386ed6000d0fdc0c962cbceacb30c7a7e3a4", "uni2005"), result =>
             {
+                result.RequireGraph("model", new[] { "mfcc" });
                 result.ConfigureModel(set.AcousticModel, "model");
                 set.SetVocabulary(result.LoadAsset<TextAsset>("vocabulary"));
                 result.ApplyMetadata(set);
@@ -39,11 +39,6 @@ namespace KitsuMate.Onnx.LipSync.Editor
             });
         }
 
-        private static string ModelRoot()
-        {
-            OnnxSettings settings = OnnxSettings.Load();
-            return settings != null ? settings.ModelStorageRoot : "Assets/StreamingAssets/KitsuMateModels";
-        }
     }
 
     [CustomEditor(typeof(Uni2005Engine))]
