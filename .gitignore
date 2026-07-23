@@ -33,6 +33,8 @@ __pycache__/
 
 # Generated UPM archives are release artifacts, never repository contents.
 Artifacts/
+TestResults/
+Packages/ai.kitsumate.onnx.backend.onnxruntime/Runtime/Plugins/
 
 # Unity cannot open the UPM-convention `ExampleProject~` directory directly.
 # CI and local batch runs stage this ignored, openable copy before invoking Unity.

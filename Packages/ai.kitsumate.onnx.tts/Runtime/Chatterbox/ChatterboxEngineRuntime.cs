@@ -41,6 +41,7 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
         // Tokenizer (initialized on load)
         private Tokenizer _tokenizer;
         private bool _isMultilingual;
+        private string _displayName;
 
         // Language preprocessor
         private LanguagePreprocessor _languagePreprocessor;
@@ -52,8 +53,11 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
         // Voice encoder cache (LRU)
         private VoiceEncoderCache _voiceCache;
 
-        // Pre-computed KV cache output name → past_key_values name mapping
-        private string[] _kvOutputToPastName;
+        private bool _usesModernInputs;
+        private string[] _kvPastNames;
+        private Dictionary<string, string> _kvOutputToPastName;
+        private string _logitsOutputName;
+        private int _logitsOutputIndex;
 
         public override int OutputSampleRate => ChatterboxConstants.SampleRate;
         public override bool IsMultilingual => _isMultilingual;
@@ -70,6 +74,7 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
 
             _tokenizer = Tokenizer.FromTokenizerJson(_modelSet.Tokenizer.bytes);
             _isMultilingual = DetectMultilingual(_modelSet.Tokenizer.text);
+            _displayName = _modelSet.DisplayName;
             _languagePreprocessor = new LanguagePreprocessor(
                 _modelSet.CangjieMapping != null ? _modelSet.CangjieMapping.text : null);
         }
@@ -126,14 +131,21 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
             // Initialize voice encoder cache
             _voiceCache = _voiceCacheCapacity > 0 ? new VoiceEncoderCache(_voiceCacheCapacity) : null;
 
-            // Pre-compute KV output name mapping: "present.X.Y" → "past_key_values.X.Y"
-            var outputNames = _languageModelSession.OutputNames;
-            _kvOutputToPastName = new string[outputNames.Count];
-            for (int i = 1; i < outputNames.Count; i++)
-                _kvOutputToPastName[i] = outputNames[i].Replace("present", "past_key_values");
+            _usesModernInputs = !_embedTokensSession.InputNames.Contains("position_ids");
+            _kvPastNames = _languageModelSession.InputNames
+                .Where(name => name.StartsWith("past_key_values.", StringComparison.Ordinal))
+                .ToArray();
+            _kvOutputToPastName = _languageModelSession.OutputNames
+                .Where(name => name.StartsWith("present.", StringComparison.Ordinal))
+                .ToDictionary(name => name, name => "past_key_values." + name.Substring("present.".Length),
+                    StringComparer.Ordinal);
+            _logitsOutputName = _languageModelSession.OutputNames.Contains("logits")
+                ? "logits"
+                : _languageModelSession.OutputNames[0];
+            _logitsOutputIndex = _languageModelSession.OutputNames.ToList().IndexOf(_logitsOutputName);
 
             if (VerboseLogging)
-                Debug.Log($"[ChatterboxEngine] Loaded {_modelSet.DisplayName} (multilingual={IsMultilingual}, voiceCache={_voiceCacheCapacity})");
+                Debug.Log($"[ChatterboxEngine] Loaded {_displayName} (multilingual={IsMultilingual}, voiceCache={_voiceCacheCapacity})");
         }
 
         protected override void OnUnload()
@@ -149,10 +161,15 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
             _conditionalDecoderSession = null;
             _tokenizer = null;
             _isMultilingual = false;
+            _displayName = null;
             _languagePreprocessor = null;
             _voiceCache?.Dispose();
             _voiceCache = null;
+            _usesModernInputs = false;
+            _kvPastNames = null;
             _kvOutputToPastName = null;
+            _logitsOutputName = null;
+            _logitsOutputIndex = 0;
         }
 
         /// <summary>
@@ -210,6 +227,10 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
                 text = _languagePreprocessor.Process(text, langId);
                 text = $"[{langId.ToLowerInvariant()}]{text}";
             }
+            else if (_usesModernInputs)
+            {
+                text = PrepareModernText(text);
+            }
 
             // 2. Tokenize (includes TemplateProcessing framing:
             //    [EXAGGERATION][START] {text} [STOP][START_SPEECH][START_SPEECH])
@@ -248,10 +269,10 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
                 var speechEncoderOutputs = _speechEncoderSession.Run(speechEncoderInputs);
                 voiceEntry = new VoiceCacheEntry
                 {
-                    CondEmb = speechEncoderOutputs[_speechEncoderSession.OutputNames[0]],
-                    PromptToken = speechEncoderOutputs[_speechEncoderSession.OutputNames[1]],
-                    RefXVector = speechEncoderOutputs[_speechEncoderSession.OutputNames[2]],
-                    PromptFeat = speechEncoderOutputs[_speechEncoderSession.OutputNames[3]],
+                    CondEmb = GetOutput(speechEncoderOutputs, "audio_features", 0),
+                    PromptToken = GetOutput(speechEncoderOutputs, "audio_tokens", 1),
+                    RefXVector = GetOutput(speechEncoderOutputs, "speaker_embeddings", 2),
+                    PromptFeat = GetOutput(speechEncoderOutputs, "speaker_features", 3),
                 };
                 _voiceCache?.Put(_cachedVoiceClipId, voiceEntry);
 
@@ -273,28 +294,21 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
 
             var generatedTokens = new List<int>(maxNewTokens + 1) { ChatterboxConstants.StartSpeechToken };
 
-            // Initialize KV cache — 30 layers × 2 (key, value), shape [1, 16, 0, 64]
-            int kvCount = ChatterboxConstants.NumHiddenLayers * 2;
-            var kvPastNames = new string[kvCount];
-            {
-                int idx = 0;
-                for (int layer = 0; layer < ChatterboxConstants.NumHiddenLayers; layer++)
-                {
-                    kvPastNames[idx++] = $"past_key_values.{layer}.key";
-                    kvPastNames[idx++] = $"past_key_values.{layer}.value";
-                }
-            }
+            int kvCount = _kvPastNames.Length;
+            int kvHeads = Math.Max(1, voiceEntry.CondEmb.Shape[2] / ChatterboxConstants.HeadDim);
 
-            // Pre-allocate reusable tensors and dictionaries
-            var exaggerationTensor = OnnxTensor.FromArray(new[] { exaggeration }, new[] { 1 });
-            var speechPositionTensor = OnnxTensor.FromArray(new[] { 0L }, new[] { 1, 1 });
-
-            var embedInputs = new Dictionary<string, OnnxTensor>(3)
+            OnnxTensor exaggerationTensor = _embedTokensSession.InputNames.Contains("exaggeration")
+                ? OnnxTensor.FromArray(new[] { exaggeration }, new[] { 1 })
+                : null;
+            OnnxTensor speechPositionTensor = _embedTokensSession.InputNames.Contains("position_ids")
+                ? OnnxTensor.FromArray(new[] { 0L }, new[] { 1, 1 })
+                : null;
+            var embedInputs = new Dictionary<string, OnnxTensor>
             {
-                ["input_ids"] = null,
-                ["position_ids"] = null,
-                ["exaggeration"] = exaggerationTensor
+                ["input_ids"] = null
             };
+            if (speechPositionTensor != null) embedInputs["position_ids"] = null;
+            if (exaggerationTensor != null) embedInputs["exaggeration"] = exaggerationTensor;
 
             // Pre-allocate attention mask as long[] — max possible length
             int initialSeqLen = 0; // set after step 0
@@ -311,7 +325,7 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
             HashSet<string> cpuOutputNames = null;
             if (deviceSession != null)
             {
-                cpuOutputNames = new HashSet<string> { _languageModelSession.OutputNames[0] };
+                cpuOutputNames = new HashSet<string> { _logitsOutputName };
             }
 
             // Device tensor KV cache (IO Binding path)
@@ -325,15 +339,17 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
                 kvCache = new Dictionary<string, OnnxTensor>(kvCount);
                 for (int i = 0; i < kvCount; i++)
                 {
-                    kvCache[kvPastNames[i]] = OnnxTensor.FromArray(
+                    kvCache[_kvPastNames[i]] = OnnxTensor.FromArray(
                         Array.Empty<float>(),
-                        new[] { 1, ChatterboxConstants.NumKeyValueHeads, 0, ChatterboxConstants.HeadDim });
+                        new[] { 1, kvHeads, 0, ChatterboxConstants.HeadDim });
                 }
-                lmInputs = new Dictionary<string, OnnxTensor>(2 + kvCount)
+                lmInputs = new Dictionary<string, OnnxTensor>(3 + kvCount)
                 {
                     ["inputs_embeds"] = null,
                     ["attention_mask"] = null
                 };
+                if (_languageModelSession.InputNames.Contains("position_ids"))
+                    lmInputs["position_ids"] = null;
                 foreach (var kv in kvCache)
                     lmInputs[kv.Key] = kv.Value;
             }
@@ -349,13 +365,15 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
                 if (step == 0)
                 {
                     embedInputs["input_ids"] = OnnxTensor.FromArray(inputIds, new[] { 1, inputIds.Length });
-                    embedInputs["position_ids"] = OnnxTensor.FromArray(positionIds, new[] { 1, positionIds.Length });
+                    if (speechPositionTensor != null)
+                        embedInputs["position_ids"] = OnnxTensor.FromArray(positionIds, new[] { 1, positionIds.Length });
                 }
                 else
                 {
                     embedInputs["input_ids"] = OnnxTensor.FromArray(
                         new[] { (long)generatedTokens[generatedTokens.Count - 1] }, new[] { 1, 1 });
-                    embedInputs["position_ids"] = speechPositionTensor;
+                    if (speechPositionTensor != null)
+                        embedInputs["position_ids"] = speechPositionTensor;
                 }
 
                 var embedOutputs = _embedTokensSession.Run(embedInputs);
@@ -385,6 +403,14 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
 
                 float[] logits;
                 int vocabSize;
+                OnnxTensor lmPositionTensor = null;
+                if (_languageModelSession.InputNames.Contains("position_ids"))
+                {
+                    long[] values = step == 0
+                        ? Enumerable.Range(0, initialSeqLen).Select(index => (long)index).ToArray()
+                        : new[] { (long)attentionMaskLen - 1 };
+                    lmPositionTensor = OnnxTensor.FromArray(values, new[] { 1, values.Length });
+                }
 
                 if (deviceSession != null)
                 {
@@ -396,6 +422,8 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
                             new ReadOnlySpan<long>(attentionMask, 0, attentionMaskLen).ToArray(),
                             new[] { 1, attentionMaskLen }))
                     };
+                    if (lmPositionTensor != null)
+                        cpuInputs.Add(new OnnxNamedValue("position_ids", lmPositionTensor));
 
                     IReadOnlyList<IDeviceTensor> deviceInputs;
                     if (step == 0)
@@ -403,9 +431,9 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
                         // First step: pass empty KV cache as CPU inputs
                         for (int i = 0; i < kvCount; i++)
                         {
-                            cpuInputs.Add(new OnnxNamedValue(kvPastNames[i],
+                            cpuInputs.Add(new OnnxNamedValue(_kvPastNames[i],
                                 OnnxTensor.FromArray(Array.Empty<float>(),
-                                    new[] { 1, ChatterboxConstants.NumKeyValueHeads, 0, ChatterboxConstants.HeadDim })));
+                                    new[] { 1, kvHeads, 0, ChatterboxConstants.HeadDim })));
                         }
                         deviceInputs = Array.Empty<IDeviceTensor>();
                     }
@@ -418,24 +446,25 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
                     var lmOutputs = deviceSession.RunOnDevice(cpuInputs, deviceInputs, cpuOutputNames);
 
                     // First output is logits (on CPU), remaining are KV cache (on device)
-                    var logitsTensor = lmOutputs[0].ToCpu();
+                    var logitsTensor = lmOutputs[_logitsOutputIndex].ToCpu();
                     logits = logitsTensor.AsFloatArray();
                     vocabSize = logitsTensor.Shape[^1];
 
                     // Dispose old KV device tensors, store new ones
                     var outputNames = _languageModelSession.OutputNames;
-                    for (int i = 1; i < outputNames.Count; i++)
+                    for (int i = 0; i < outputNames.Count; i++)
                     {
-                        // Map output index to KV past name index
-                        string pastName = _kvOutputToPastName[i];
-                        int kvIdx = Array.IndexOf(kvPastNames, pastName);
+                        if (i == _logitsOutputIndex) continue;
+                        if (!_kvOutputToPastName.TryGetValue(outputNames[i], out string pastName)) continue;
+                        int kvIdx = Array.IndexOf(_kvPastNames, pastName);
+                        if (kvIdx < 0) continue;
                         kvDeviceTensors[kvIdx]?.Dispose();
                         lmOutputs[i].Name = pastName; // set correct input name for next step
                         kvDeviceTensors[kvIdx] = lmOutputs[i];
                     }
 
                     // Dispose the logits device tensor (we already extracted the data)
-                    lmOutputs[0].Dispose();
+                    lmOutputs[_logitsOutputIndex].Dispose();
                 }
                 else
                 {
@@ -444,19 +473,27 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
                     lmInputs["attention_mask"] = OnnxTensor.FromArray(
                         new ReadOnlySpan<long>(attentionMask, 0, attentionMaskLen).ToArray(),
                         new[] { 1, attentionMaskLen });
+                    if (lmPositionTensor != null)
+                        lmInputs["position_ids"] = lmPositionTensor;
                     foreach (var kv in kvCache)
                         lmInputs[kv.Key] = kv.Value;
 
                     var lmOutputs = _languageModelSession.Run(lmInputs);
 
-                    var logitsTensor = lmOutputs[_languageModelSession.OutputNames[0]];
+                    var logitsTensor = lmOutputs[_logitsOutputName];
                     logits = logitsTensor.AsFloatArray();
                     vocabSize = logitsTensor.Shape[^1];
 
                     var outputNames = _languageModelSession.OutputNames;
-                    for (int i = 1; i < outputNames.Count; i++)
-                        kvCache[_kvOutputToPastName[i]] = lmOutputs[outputNames[i]];
+                    for (int i = 0; i < outputNames.Count; i++)
+                    {
+                        if (i == _logitsOutputIndex) continue;
+                        if (!_kvOutputToPastName.TryGetValue(outputNames[i], out string pastName)) continue;
+                        kvCache[pastName]?.Dispose();
+                        kvCache[pastName] = lmOutputs[outputNames[i]];
+                    }
                 }
+                lmPositionTensor?.Dispose();
 
                 if (VerboseLogging)
                 {
@@ -531,11 +568,14 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
             if (generatedTokens[genEnd - 1] == ChatterboxConstants.StopSpeechToken)
                 genEnd--;
 
-            int speechCount = promptTokenData.Length + (genEnd - genStart);
+            int silenceCount = _usesModernInputs ? 3 : 0;
+            int speechCount = promptTokenData.Length + (genEnd - genStart) + silenceCount;
             var speechTokenIds = new long[speechCount];
             Array.Copy(promptTokenData, 0, speechTokenIds, 0, promptTokenData.Length);
             for (int i = genStart; i < genEnd; i++)
                 speechTokenIds[promptTokenData.Length + i - genStart] = generatedTokens[i];
+            for (int i = speechCount - silenceCount; i < speechCount; i++)
+                speechTokenIds[i] = ChatterboxConstants.SilenceToken;
 
             // 7. Run conditional decoder
             var decoderInputs = new Dictionary<string, OnnxTensor>
@@ -546,7 +586,7 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
             };
 
             var decoderOutputs = _conditionalDecoderSession.Run(decoderInputs);
-            var wavData = decoderOutputs[_conditionalDecoderSession.OutputNames[0]].AsFloatArray();
+            var wavData = GetOutput(decoderOutputs, "waveform", 0).AsFloatArray();
 
             if (VerboseLogging)
             {
@@ -565,6 +605,29 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
         private static bool DetectMultilingual(string tokenizerJson)
         {
             return tokenizerJson.Contains("\"[ko]\"") || tokenizerJson.Contains("\"[zh]\"");
+        }
+
+        private static string PrepareModernText(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return "You need to add some text for me to talk.";
+            text = string.Join(" ", text.Split((char[])null, StringSplitOptions.RemoveEmptyEntries));
+            foreach (var replacement in new[]
+            {
+                ("…", ", "), (":", ","), ("—", "-"), ("–", "-"), (" ,", ","),
+                ("“", "\""), ("”", "\""), ("‘", "'"), ("’", "'")
+            })
+                text = text.Replace(replacement.Item1, replacement.Item2);
+            text = text.TrimEnd();
+            if (char.IsLower(text[0])) text = char.ToUpperInvariant(text[0]) + text.Substring(1);
+            if (!".!?-,".Contains(text[text.Length - 1])) text += ".";
+            return text;
+        }
+
+        private static OnnxTensor GetOutput(IReadOnlyDictionary<string, OnnxTensor> outputs, string name,
+            int fallbackIndex)
+        {
+            if (outputs.TryGetValue(name, out OnnxTensor output)) return output;
+            return outputs.ElementAt(fallbackIndex).Value;
         }
 
         /// <summary>

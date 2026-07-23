@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+
+- Discover mixed-precision Chatterbox repositories as one model set, named after their largest graph.
+
 ## [1.0.0] - 2026-07-11
 
 - Split immutable engine assets from isolated disposable inference runtimes.
