@@ -45,6 +45,9 @@ namespace KitsuMate.Onnx
         
         /// <summary>Whether this backend is available on the current platform.</summary>
         public abstract bool IsAvailable { get; }
+
+        /// <summary>Whether model loading and inference must stay on Unity's main thread.</summary>
+        public virtual bool RequiresMainThread => false;
         
         /// <summary>Priority for automatic backend selection (higher = preferred).</summary>
         public abstract int Priority { get; }

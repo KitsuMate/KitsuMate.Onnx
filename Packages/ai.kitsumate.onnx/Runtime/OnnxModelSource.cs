@@ -99,6 +99,15 @@ namespace KitsuMate.Onnx
         }
 
 #if UNITY_EDITOR
+        public void Clear()
+        {
+            sourceKind = SourceKind.Asset;
+            asset = null;
+            relativePath = string.Empty;
+            resolvedFilePath = null;
+            ClearFileCache();
+        }
+
         public void ConfigureAsset(OnnxModelAsset value)
         {
             sourceKind = SourceKind.Asset;

@@ -1,14 +1,14 @@
 using NUnit.Framework;
 using UnityEngine;
 
-namespace KitsuMate.Onnx.Embeddings.UnityAiInference.Tests
+namespace KitsuMate.Onnx.Embeddings.Sentis.Tests
 {
-    public sealed class UnityAiInferenceTextEmbeddingTests
+    public sealed class SentisEmbeddingTests
     {
         [Test]
         public void EmptyModelSet_ReportsItsMissingEngineSpecificInputs()
         {
-            var modelSet = ScriptableObject.CreateInstance<UnityAiInferenceTextEmbeddingModelSet>();
+            var modelSet = ScriptableObject.CreateInstance<SentisEmbeddingModelSet>();
             try
             {
                 ModelValidationResult validation = modelSet.Validate(new ModelValidationContext(null));
@@ -25,11 +25,11 @@ namespace KitsuMate.Onnx.Embeddings.UnityAiInference.Tests
         [Test]
         public void NonJsonTokenizer_RequiresVocabulary()
         {
-            var modelSet = ScriptableObject.CreateInstance<UnityAiInferenceTextEmbeddingModelSet>();
+            var modelSet = ScriptableObject.CreateInstance<SentisEmbeddingModelSet>();
             var tokenizer = new TextAsset("version: 0.2\nmerges: []");
             try
             {
-                typeof(UnityAiInferenceTextEmbeddingModelSet)
+                typeof(SentisEmbeddingModelSet)
                     .GetField("tokenizerModel", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
                     .SetValue(modelSet, tokenizer);
 

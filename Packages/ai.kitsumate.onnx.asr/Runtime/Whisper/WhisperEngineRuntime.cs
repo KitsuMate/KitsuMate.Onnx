@@ -13,8 +13,11 @@ namespace KitsuMate.Onnx.Asr.Whisper
     /// </summary>
     public sealed class WhisperEngineRuntime : AsrEngineRuntime
     {
-        [Header("Model Set")]
-        private readonly WhisperModelSet _modelSet;
+        private readonly IOnnxModelSource _melSource;
+        private readonly IOnnxModelSource _encoderSource;
+        private readonly IOnnxModelSource _decoderSource;
+        private readonly IOnnxModelSource _decoderWithPastSource;
+        private readonly TextAsset _tokenizerJson;
         
         [Header("Transcription Settings")]
         [SerializeField, Tooltip("Language code (e.g., 'en', 'ja'). Leave empty for auto-detect.")]
@@ -33,12 +36,18 @@ namespace KitsuMate.Onnx.Asr.Whisper
         private IOnnxSession _melSession;
         private IOnnxSession _encoderSession;
         private IOnnxSession _decoderSession;
+        private IOnnxSession _decoderWithPastSession;
         private Tokenizer _tokenizer;
         
-        /// <summary>Model set containing Whisper models.</summary>
-        public WhisperEngineRuntime(WhisperModelSet modelSet, string languageOverride, WhisperTask task, int maxTokens, bool verbose)
+        public WhisperEngineRuntime(IOnnxModelSource melSource, IOnnxModelSource encoderSource,
+            IOnnxModelSource decoderSource, IOnnxModelSource decoderWithPastSource, TextAsset tokenizerJson,
+            string languageOverride, WhisperTask task, int maxTokens, bool verbose)
         {
-            _modelSet = modelSet;
+            _melSource = melSource;
+            _encoderSource = encoderSource;
+            _decoderSource = decoderSource;
+            _decoderWithPastSource = decoderWithPastSource;
+            _tokenizerJson = tokenizerJson;
             _languageOverride = languageOverride ?? string.Empty;
             _task = task;
             _maxTokens = maxTokens;
@@ -64,24 +73,21 @@ namespace KitsuMate.Onnx.Asr.Whisper
 
         protected override void OnLoadMainThread(OnnxBackend backend)
         {
-            if (_modelSet == null || !_modelSet.IsComplete)
-                throw new InvalidOperationException("WhisperModelSet is not assigned or incomplete");
-
-            _tokenizer = Tokenizer.FromTokenizerJson(_modelSet.TokenizerJson.bytes);
+            ValidateSources();
+            _tokenizer = Tokenizer.FromTokenizerJson(_tokenizerJson.bytes);
         }
         
         protected override void OnLoadBackground(OnnxBackend backend)
         {
-            if (_modelSet == null || !_modelSet.IsComplete)
-                throw new InvalidOperationException("WhisperModelSet is not assigned or incomplete");
-            
-            // Create sessions
-            _melSession = backend.CreateSession(_modelSet.MelProcessor);
-            _encoderSession = backend.CreateSession(_modelSet.Encoder);
-            _decoderSession = backend.CreateSession(_modelSet.Decoder);
+            ValidateSources();
+            _melSession = backend.CreateSession(_melSource);
+            _encoderSession = backend.CreateSession(_encoderSource);
+            _decoderSession = backend.CreateSession(_decoderSource);
+            if (_decoderWithPastSource != null && _decoderWithPastSource.IsAvailable)
+                _decoderWithPastSession = backend.CreateSession(_decoderWithPastSource);
             
             if (VerboseLogging)
-                Debug.Log($"[WhisperEngine] Loaded {_modelSet.DisplayName}");
+                Debug.Log($"[WhisperEngine] Loaded {_encoderSource.SourceName}");
         }
         
         protected override void OnUnload()
@@ -89,11 +95,21 @@ namespace KitsuMate.Onnx.Asr.Whisper
             _melSession?.Dispose();
             _encoderSession?.Dispose();
             _decoderSession?.Dispose();
+            _decoderWithPastSession?.Dispose();
             
             _melSession = null;
             _encoderSession = null;
             _decoderSession = null;
+            _decoderWithPastSession = null;
             _tokenizer = null;
+        }
+
+        private void ValidateSources()
+        {
+            if (_melSource == null || !_melSource.IsAvailable ||
+                _encoderSource == null || !_encoderSource.IsAvailable ||
+                _decoderSource == null || !_decoderSource.IsAvailable || _tokenizerJson == null)
+                throw new InvalidOperationException("Whisper models and tokenizer must be assigned before loading.");
         }
         
         protected override TranscriptionResult Transcribe(AudioClip input)
@@ -348,10 +364,16 @@ namespace KitsuMate.Onnx.Asr.Whisper
                 ["audio"] = OnnxTensor.FromArray(samples, new[] { 1, samples.Length }, "audio")
             };
             
-            var outputs = _melSession.Run(inputs);
-            var melTensor = outputs.Values.First();
-            
-            return melTensor.AsFloatArray();
+            IReadOnlyDictionary<string, OnnxTensor> outputs = _melSession.Run(inputs);
+            try
+            {
+                return RequiredOutput(outputs, "log_mel").AsFloatArray();
+            }
+            finally
+            {
+                DisposeTensors(inputs.Values);
+                DisposeTensors(outputs.Values);
+            }
         }
         
         private float[] EncodeAudio(float[] melFeatures)
@@ -366,10 +388,16 @@ namespace KitsuMate.Onnx.Asr.Whisper
                     OnnxTensor.FromArray(melFeatures, shape, "input_features")
             };
             
-            var outputs = _encoderSession.Run(inputs);
-            var encoderOutput = outputs.Values.First();
-            
-            return encoderOutput.AsFloatArray();
+            IReadOnlyDictionary<string, OnnxTensor> outputs = _encoderSession.Run(inputs);
+            try
+            {
+                return RequiredOutput(outputs, "last_hidden_state").AsFloatArray();
+            }
+            finally
+            {
+                DisposeTensors(inputs.Values);
+                DisposeTensors(outputs.Values);
+            }
         }
         
         private (List<int> tokens, string language) DecodeTokens(float[] encoderOutput)
@@ -397,10 +425,10 @@ namespace KitsuMate.Onnx.Asr.Whisper
             
             string detectedLanguage = _languageOverride;
             
-            // Greedy decoding
+            using var decoderState = new DecoderState();
             for (int i = 0; i < _maxTokens; i++)
             {
-                var nextToken = PredictNextToken(encoderOutput, tokens);
+                var nextToken = PredictNextToken(encoderOutput, tokens, decoderState);
                 
                 if (nextToken == WhisperConstants.EndOfText)
                     break;
@@ -445,9 +473,10 @@ namespace KitsuMate.Onnx.Asr.Whisper
             
             string detectedLanguage = _languageOverride;
             
+            using var decoderState = new DecoderState();
             for (int i = 0; i < _maxTokens; i++)
             {
-                var nextToken = PredictNextToken(encoderOutput, tokens);
+                var nextToken = PredictNextToken(encoderOutput, tokens, decoderState);
                 
                 if (nextToken == WhisperConstants.EndOfText)
                     break;
@@ -488,9 +517,10 @@ namespace KitsuMate.Onnx.Asr.Whisper
             // the model to insert timestamp tokens between them
             int targetIdx = 0;
             
+            using var decoderState = new DecoderState();
             for (int i = 0; i < _maxTokens && targetIdx <= targetTokens.Count; i++)
             {
-                var nextToken = PredictNextToken(encoderOutput, tokens);
+                var nextToken = PredictNextToken(encoderOutput, tokens, decoderState);
                 
                 if (nextToken == WhisperConstants.EndOfText)
                     break;
@@ -516,10 +546,12 @@ namespace KitsuMate.Onnx.Asr.Whisper
             return (tokens, _languageOverride ?? "en");
         }
         
-        private int PredictNextToken(float[] encoderOutput, List<int> tokens)
+        private int PredictNextToken(float[] encoderOutput, List<int> tokens, DecoderState state)
         {
-            // Prepare decoder inputs
-            var tokenArray = tokens.Select(t => (long)t).ToArray();
+            if (_decoderWithPastSession != null && state.Started)
+                return PredictWithCache(tokens[tokens.Count - 1], state);
+
+            var tokenArray = tokens.ToArray();
             const int encoderTimeSteps = 1500;
             if (encoderOutput.Length % encoderTimeSteps != 0)
                 throw new InvalidOperationException($"Whisper encoder returned an unsupported output length: {encoderOutput.Length}.");
@@ -536,18 +568,59 @@ namespace KitsuMate.Onnx.Asr.Whisper
             foreach (string input in _decoderSession.InputNames.Where(name => name.StartsWith("past_key_values.", StringComparison.Ordinal)))
                 inputs[input] = OnnxTensor.FromArray(Array.Empty<float>(), new[] { 1, attentionHeads, 0, 64 }, input);
             
-            var outputs = _decoderSession.Run(inputs);
-            var logits = outputs.Values.First().AsFloatArray();
-            
-            // Get the last token's logits and find argmax
-            if (logits.Length % tokens.Count != 0)
-                throw new InvalidOperationException($"Whisper decoder returned an unsupported logits length: {logits.Length}.");
-            int vocabSize = logits.Length / tokens.Count;
+            IReadOnlyDictionary<string, OnnxTensor> outputs = _decoderSession.Run(inputs);
+            bool keepCache = _decoderWithPastSession != null;
+            try
+            {
+                int nextToken = ArgMaxLastToken(RequiredOutput(outputs, "logits"));
+                if (keepCache) state.Capture(outputs);
+                return nextToken;
+            }
+            finally
+            {
+                DisposeTensors(inputs.Values);
+                DisposeOutputs(outputs, keepCache);
+            }
+        }
+
+        private int PredictWithCache(int token, DecoderState state)
+        {
+            OnnxTensor tokenInput = OnnxTensor.FromArray(new[] { token }, new[] { 1, 1 }, "input_ids");
+            var inputs = new Dictionary<string, OnnxTensor> { ["input_ids"] = tokenInput };
+            foreach (KeyValuePair<string, OnnxTensor> cache in state.Cache)
+                inputs[cache.Key] = cache.Value;
+            IReadOnlyDictionary<string, OnnxTensor> outputs = _decoderWithPastSession.Run(inputs);
+            try
+            {
+                int nextToken = ArgMaxLastToken(RequiredOutput(outputs, "logits"));
+                state.Capture(outputs);
+                return nextToken;
+            }
+            finally
+            {
+                tokenInput.Dispose();
+                DisposeOutputs(outputs, true);
+            }
+        }
+
+        private static OnnxTensor RequiredOutput(IReadOnlyDictionary<string, OnnxTensor> outputs, string name)
+        {
+            if (!outputs.TryGetValue(name, out OnnxTensor tensor))
+                throw new InvalidOperationException($"Whisper model did not produce required output '{name}'.");
+            return tensor;
+        }
+
+        private static int ArgMaxLastToken(OnnxTensor logitsTensor)
+        {
+            float[] logits = logitsTensor.AsFloatArray();
+            if (logitsTensor.Shape.Length == 0)
+                throw new InvalidOperationException("Whisper logits have no shape.");
+            int vocabSize = logitsTensor.Shape[logitsTensor.Shape.Length - 1];
+            if (vocabSize <= 0 || logits.Length < vocabSize)
+                throw new InvalidOperationException($"Whisper decoder returned an unsupported logits shape: [{string.Join(",", logitsTensor.Shape)}].");
             int lastTokenOffset = logits.Length - vocabSize;
-            
             int bestToken = 0;
             float bestLogit = float.MinValue;
-            
             for (int i = 0; i < vocabSize; i++)
             {
                 float logit = logits[lastTokenOffset + i];
@@ -557,8 +630,44 @@ namespace KitsuMate.Onnx.Asr.Whisper
                     bestToken = i;
                 }
             }
-            
             return bestToken;
+        }
+
+        private static void DisposeOutputs(IReadOnlyDictionary<string, OnnxTensor> outputs, bool keepCache)
+        {
+            foreach (KeyValuePair<string, OnnxTensor> output in outputs)
+                if (!keepCache || !output.Key.StartsWith("present.", StringComparison.Ordinal))
+                    output.Value.Dispose();
+        }
+
+        private static void DisposeTensors(IEnumerable<OnnxTensor> tensors)
+        {
+            foreach (OnnxTensor tensor in tensors) tensor.Dispose();
+        }
+
+        private sealed class DecoderState : IDisposable
+        {
+            private readonly Dictionary<string, OnnxTensor> cache = new(StringComparer.Ordinal);
+            public bool Started { get; private set; }
+            public IReadOnlyDictionary<string, OnnxTensor> Cache => cache;
+
+            public void Capture(IReadOnlyDictionary<string, OnnxTensor> outputs)
+            {
+                foreach (KeyValuePair<string, OnnxTensor> output in outputs)
+                {
+                    if (!output.Key.StartsWith("present.", StringComparison.Ordinal)) continue;
+                    string inputName = "past_key_values." + output.Key.Substring("present.".Length);
+                    if (cache.TryGetValue(inputName, out OnnxTensor previous)) previous.Dispose();
+                    cache[inputName] = output.Value;
+                }
+                Started = true;
+            }
+
+            public void Dispose()
+            {
+                foreach (OnnxTensor tensor in cache.Values) tensor.Dispose();
+                cache.Clear();
+            }
         }
         
         #endregion

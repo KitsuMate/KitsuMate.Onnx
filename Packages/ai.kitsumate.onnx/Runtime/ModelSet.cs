@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
-using UnityEngine.Serialization;
 
 namespace KitsuMate.Onnx
 {
@@ -10,12 +9,11 @@ namespace KitsuMate.Onnx
     public readonly struct ModelIdentity : IEquatable<ModelIdentity>
     {
         public readonly string Family, ModelId, Revision, Variant, ContentHash;
-        public readonly int ContractVersion;
-        public ModelIdentity(string family, string modelId, string revision, string variant, string contentHash, int contractVersion = 1)
-        { Family = family ?? ""; ModelId = modelId ?? ""; Revision = revision ?? ""; Variant = variant ?? ""; ContentHash = contentHash ?? ""; ContractVersion = contractVersion; }
-        public bool Equals(ModelIdentity other) => Family == other.Family && ModelId == other.ModelId && Revision == other.Revision && Variant == other.Variant && ContentHash == other.ContentHash && ContractVersion == other.ContractVersion;
+        public ModelIdentity(string family, string modelId, string revision, string variant, string contentHash)
+        { Family = family ?? ""; ModelId = modelId ?? ""; Revision = revision ?? ""; Variant = variant ?? ""; ContentHash = contentHash ?? ""; }
+        public bool Equals(ModelIdentity other) => Family == other.Family && ModelId == other.ModelId && Revision == other.Revision && Variant == other.Variant && ContentHash == other.ContentHash;
         public override bool Equals(object obj) => obj is ModelIdentity other && Equals(other);
-        public override int GetHashCode() => HashCode.Combine(Family, ModelId, Revision, Variant, ContentHash, ContractVersion);
+        public override int GetHashCode() => HashCode.Combine(Family, ModelId, Revision, Variant, ContentHash);
         public override string ToString() => $"{Family}/{ModelId}@{Revision}:{Variant}#{ContentHash}";
     }
 
@@ -26,21 +24,6 @@ namespace KitsuMate.Onnx
         public ModelCapabilities(IEnumerable<string> values) { this.values = values?.ToArray() ?? Array.Empty<string>(); }
         public IReadOnlyList<string> Values => values ?? Array.Empty<string>();
         public bool Contains(string value) => Values.Contains(value);
-    }
-    [Serializable]
-    public struct ModelProviderCompatibility
-    {
-        // Preserves the serialized integer written by pre-1.0 assets without
-        // reintroducing an ONNX Runtime type into the shared contract.
-        [SerializeField, FormerlySerializedAs("Provider")] private int legacyProvider;
-        public string BackendId;
-        public bool Supported;
-        public int RecommendedRamMb;
-        public int RecommendedVramMb;
-        public string[] RequiredOperators;
-
-        public bool HasLegacyProvider => string.IsNullOrWhiteSpace(BackendId);
-        public int LegacyProviderValue => legacyProvider;
     }
     public enum ModelDiagnosticSeverity { Warning, Error }
     public readonly struct ModelDiagnostic { public readonly ModelDiagnosticSeverity Severity; public readonly string Code, Message; public ModelDiagnostic(ModelDiagnosticSeverity severity, string code, string message) { Severity = severity; Code = code; Message = message; } public override string ToString() => Message; }
@@ -64,7 +47,6 @@ namespace KitsuMate.Onnx
         public abstract string DisplayName { get; }
         public abstract ModelIdentity Identity { get; }
         public abstract ModelCapabilities Capabilities { get; }
-        public abstract IReadOnlyList<ModelProviderCompatibility> ProviderCompatibility { get; }
         public abstract bool IsComplete { get; }
         public abstract IOnnxModelSource[] GetAllModels();
         public abstract ModelValidationResult Validate(ModelValidationContext context);
@@ -78,29 +60,22 @@ namespace KitsuMate.Onnx
         [SerializeField] private string revision = "main";
         [SerializeField] private string variant = "fp32";
         [SerializeField] private string contentHash;
-        [SerializeField, Min(1)] private int contractVersion = 1;
-        [Header("Compatibility")]
         [SerializeField] private ModelCapabilities capabilities;
-        [SerializeField] private ModelProviderCompatibility[] providerCompatibility = Array.Empty<ModelProviderCompatibility>();
 
         protected virtual string DefaultFamily => GetType().Namespace ?? "onnx";
         protected virtual string DefaultModelId => GetType().Name;
-        public override ModelIdentity Identity => new(string.IsNullOrWhiteSpace(family) ? DefaultFamily : family, string.IsNullOrWhiteSpace(modelId) ? DefaultModelId : modelId, revision, variant, contentHash, contractVersion);
+        public override ModelIdentity Identity => new(string.IsNullOrWhiteSpace(family) ? DefaultFamily : family, string.IsNullOrWhiteSpace(modelId) ? DefaultModelId : modelId, revision, variant, contentHash);
         public override ModelCapabilities Capabilities => capabilities;
-        public override IReadOnlyList<ModelProviderCompatibility> ProviderCompatibility => providerCompatibility;
 
 #if UNITY_EDITOR
-        public void SetDownloadMetadata(ModelIdentity identity, IEnumerable<string> downloadedCapabilities,
-            IEnumerable<ModelProviderCompatibility> downloadedCompatibility)
+        public void SetDownloadMetadata(ModelIdentity identity, IEnumerable<string> downloadedCapabilities)
         {
             family = identity.Family;
             modelId = identity.ModelId;
             revision = identity.Revision;
             variant = identity.Variant;
             contentHash = identity.ContentHash;
-            contractVersion = identity.ContractVersion;
             capabilities = new ModelCapabilities(downloadedCapabilities);
-            providerCompatibility = downloadedCompatibility?.ToArray() ?? Array.Empty<ModelProviderCompatibility>();
             UnityEditor.EditorUtility.SetDirty(this);
         }
 #endif
@@ -110,16 +85,6 @@ namespace KitsuMate.Onnx
             result ??= new ModelValidationResult();
             foreach (IOnnxModelSource model in GetAllModels())
                 if (model != null && !model.IsAvailable) result.Error("unresolved_model", $"Model '{model.SourceName}' has no resolvable data.");
-            // Empty backend identifiers can exist in assets authored before the
-            // backend-neutral contract.  Treat them as unspecified rather than
-            // rejecting an otherwise usable model; the backend-specific package
-            // can provide an explicit compatibility entry on the next save.
-            bool hasExplicitBackendCompatibility = providerCompatibility.Any(x => !string.IsNullOrWhiteSpace(x.BackendId));
-            if (context.Backend != null && hasExplicitBackendCompatibility)
-            {
-                bool found = providerCompatibility.Any(x => string.Equals(x.BackendId, context.Backend.BackendId, StringComparison.OrdinalIgnoreCase) && x.Supported);
-                if (!found) result.Error("unsupported_backend", $"Model variant '{Identity.Variant}' does not support {context.Backend.DisplayName}.");
-            }
             return result;
         }
 

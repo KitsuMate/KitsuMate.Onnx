@@ -47,7 +47,7 @@ Examples:
 feat(core): add backend session contract
 fix(unity-inference): reject unsupported tensor element types
 ci(repo): run integration suites through GameCI
-refactor(motion)!: replace legacy model compatibility metadata
+refactor(motion)!: simplify model metadata
 ```
 
 ## Release and changelog policy

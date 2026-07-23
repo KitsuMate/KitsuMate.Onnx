@@ -68,6 +68,7 @@ namespace KitsuMate.Onnx
         public override string DisplayName => "Unity AI Inference";
         public override IReadOnlyList<RuntimePlatform> SupportedPlatforms => Supported;
         public override bool IsAvailable => true;
+        public override bool RequiresMainThread => true;
         public override int Priority => 50;
         public UnityAiInferenceDevice Device { get => device; set => device = value; }
 
@@ -128,17 +129,28 @@ namespace KitsuMate.Onnx
         public IReadOnlyDictionary<string, OnnxTensor> Run(IReadOnlyList<OnnxNamedValue> inputs)
         {
             if (inputs == null) throw new ArgumentNullException(nameof(inputs));
-            foreach (OnnxNamedValue input in inputs)
+            var convertedInputs = new List<Tensor>(inputs.Count);
+            try
             {
-                if (input.Value == null) throw new ArgumentException($"Input '{input.Name}' has no tensor.", nameof(inputs));
-                worker.SetInput(input.Name, CreateTensor(input.Value));
-            }
+                foreach (OnnxNamedValue input in inputs)
+                {
+                    if (input.Value == null)
+                        throw new ArgumentException($"Input '{input.Name}' has no tensor.", nameof(inputs));
+                    Tensor tensor = CreateTensor(input.Value);
+                    convertedInputs.Add(tensor);
+                    worker.SetInput(input.Name, tensor);
+                }
 
-            worker.Schedule();
-            var results = new Dictionary<string, OnnxTensor>(outputNames.Length);
-            foreach (string outputName in outputNames)
-                results[outputName] = ToOnnxTensor(outputName, worker.PeekOutput(outputName));
-            return results;
+                worker.Schedule();
+                var results = new Dictionary<string, OnnxTensor>(outputNames.Length);
+                foreach (string outputName in outputNames)
+                    results[outputName] = ToOnnxTensor(outputName, worker.PeekOutput(outputName));
+                return results;
+            }
+            finally
+            {
+                foreach (Tensor tensor in convertedInputs) tensor.Dispose();
+            }
         }
 
         public async Awaitable<IReadOnlyDictionary<string, OnnxTensor>> RunAsync(IReadOnlyDictionary<string, OnnxTensor> inputs)

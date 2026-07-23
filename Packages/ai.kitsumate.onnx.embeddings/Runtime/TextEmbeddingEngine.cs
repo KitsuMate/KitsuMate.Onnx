@@ -6,14 +6,13 @@ using System.Threading;
 using System.Threading.Tasks;
 using KitsuMate.Tokenizers;
 using UnityEngine;
-using UnityEngine.Serialization;
 
 namespace KitsuMate.Onnx.Embeddings
 {
     [CreateAssetMenu(fileName = "TextEmbeddingEngine", menuName = "KitsuMate/ONNX/Embeddings/Text Embedding Engine")]
     public class TextEmbeddingEngine : EmbeddingEngine
     {
-        [FormerlySerializedAs("_modelSet"), SerializeField] protected TextEmbeddingModelSet modelSet;
+        [SerializeField] protected TextEmbeddingModelSet modelSet;
         public TextEmbeddingModelSet TypedModelSet => modelSet;
         public override ModelSet ModelSet => modelSet;
         public override int EmbeddingDimension => modelSet != null ? modelSet.EmbeddingDimension : 0;

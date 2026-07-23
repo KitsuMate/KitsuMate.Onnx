@@ -7,10 +7,10 @@ using System.Threading.Tasks;
 using KitsuMate.Tokenizers;
 using UnityEngine;
 
-namespace KitsuMate.Onnx.Embeddings.UnityAiInference
+namespace KitsuMate.Onnx.Embeddings.Sentis
 {
-    [CreateAssetMenu(fileName = "UnityAiInferenceTextEmbeddingModelSet", menuName = "KitsuMate/ONNX/Embeddings/Unity AI Inference Model Set")]
-    public sealed class UnityAiInferenceTextEmbeddingModelSet : StandardModelSet
+    [CreateAssetMenu(fileName = "SentisEmbeddingModelSet", menuName = "KitsuMate/ONNX/Embeddings/Sentis Model Set")]
+    public sealed class SentisEmbeddingModelSet : StandardModelSet
     {
         [SerializeField] private UnityAiInferenceModelAsset embeddingModel;
         [SerializeField] private TextAsset vocabulary;
@@ -27,7 +27,7 @@ namespace KitsuMate.Onnx.Embeddings.UnityAiInference
         public int MaxSequenceLength => maxSequenceLength;
         public bool UseMeanPooling => useMeanPooling;
         public bool NormalizeEmbeddings => normalizeEmbeddings;
-        public override string DisplayName => string.IsNullOrEmpty(name) ? "Unity AI Inference Text Embedding Model Set" : name;
+        public override string DisplayName => string.IsNullOrEmpty(name) ? "Sentis Embedding Model Set" : name;
         public override bool IsComplete => embeddingModel != null && embeddingModel.IsAvailable && (vocabulary != null || tokenizerModel != null);
         public override IOnnxModelSource[] GetAllModels() => embeddingModel == null ? Array.Empty<IOnnxModelSource>() : new IOnnxModelSource[] { embeddingModel };
 
@@ -54,22 +54,22 @@ namespace KitsuMate.Onnx.Embeddings.UnityAiInference
         }
     }
 
-    [CreateAssetMenu(fileName = "UnityAiInferenceTextEmbeddingEngine", menuName = "KitsuMate/ONNX/Embeddings/Unity AI Inference Engine")]
-    public sealed class UnityAiInferenceTextEmbeddingEngine : EmbeddingEngine
+    [CreateAssetMenu(fileName = "SentisEmbeddingEngine", menuName = "KitsuMate/ONNX/Embeddings/Sentis Engine")]
+    public sealed class SentisEmbeddingEngine : EmbeddingEngine
     {
-        [SerializeField] private UnityAiInferenceTextEmbeddingModelSet modelSet;
+        [SerializeField] private SentisEmbeddingModelSet modelSet;
         public override ModelSet ModelSet => modelSet;
         public override int EmbeddingDimension => modelSet != null ? modelSet.EmbeddingDimension : 0;
-        protected override InferenceEngineRuntime<EmbeddingRequest, EmbeddingResult> CreateRuntime() => new UnityAiInferenceTextEmbeddingRuntime(modelSet);
+        protected override InferenceEngineRuntime<EmbeddingRequest, EmbeddingResult> CreateRuntime() => new SentisEmbeddingRuntime(modelSet);
     }
 
-    internal sealed class UnityAiInferenceTextEmbeddingRuntime : EmbeddingEngineRuntime
+    internal sealed class SentisEmbeddingRuntime : EmbeddingEngineRuntime
     {
-        private readonly UnityAiInferenceTextEmbeddingModelSet modelSet;
+        private readonly SentisEmbeddingModelSet modelSet;
         private IOnnxSession session;
         private Tokenizer tokenizer;
 
-        public UnityAiInferenceTextEmbeddingRuntime(UnityAiInferenceTextEmbeddingModelSet modelSet)
+        public SentisEmbeddingRuntime(SentisEmbeddingModelSet modelSet)
         {
             this.modelSet = modelSet;
         }
@@ -78,7 +78,7 @@ namespace KitsuMate.Onnx.Embeddings.UnityAiInference
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (Backend is not UnityAiInferenceBackend)
-                throw new InvalidOperationException("UnityAiInferenceTextEmbeddingEngine requires a UnityAiInferenceBackend.");
+                throw new InvalidOperationException("SentisEmbeddingEngine requires a UnityAiInferenceBackend.");
 
             tokenizer = CreateTokenizer(modelSet);
             session = Backend.CreateSession(modelSet.EmbeddingModel);
@@ -133,7 +133,7 @@ namespace KitsuMate.Onnx.Embeddings.UnityAiInference
             tokenizer = null;
         }
 
-        private static Tokenizer CreateTokenizer(UnityAiInferenceTextEmbeddingModelSet modelSet)
+        private static Tokenizer CreateTokenizer(SentisEmbeddingModelSet modelSet)
         {
             TextAsset tokenizerAsset = modelSet.TokenizerModel;
             if (tokenizerAsset != null && tokenizerAsset.text.TrimStart().StartsWith("{"))
