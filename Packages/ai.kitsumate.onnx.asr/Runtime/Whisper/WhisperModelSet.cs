@@ -6,7 +6,7 @@ using KitsuMate.Onnx;
 namespace KitsuMate.Onnx.Asr.Whisper
 {
     /// <summary>
-    /// Groups Whisper ONNX models together for easy variant swapping.
+    /// Groups the ONNX models required by Whisper.
     /// Contains encoder, decoder models. Mel spectrogram processor is bundled in the package.
     /// </summary>
     [CreateAssetMenu(fileName = "WhisperModelSet", menuName = "KitsuMate/ONNX/ASR/Whisper Model Set")]

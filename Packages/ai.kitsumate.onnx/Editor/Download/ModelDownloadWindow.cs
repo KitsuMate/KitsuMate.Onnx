@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using UnityEditor;
 using UnityEngine;
@@ -12,31 +13,43 @@ namespace KitsuMate.Onnx.Editor.Download
         private Action<ModelDownloadResult> completed;
         private string repository;
         private string revision;
-        private string destination;
         private string expectedFamily;
         private string token;
-        private string[] variants = Array.Empty<string>();
-        private int selectedVariant;
+        private bool sentis;
+        private DiscoveredRepository discovered;
+        private readonly Dictionary<string, string> selected = new(StringComparer.Ordinal);
         private string message;
         private float progress;
         private bool busy;
         private CancellationTokenSource cancellation;
-        private bool HasFixedVariant => !string.IsNullOrWhiteSpace(initialRequest?.Variant);
 
-        public static ModelDownloadWindow Show(ModelDownloadRequest request, Action<ModelDownloadResult> onCompleted)
+        public static ModelDownloadWindow Show(ModelDownloadRequest request,
+            Action<ModelDownloadResult> onCompleted)
+        {
+            return Show(request, onCompleted, false);
+        }
+
+        public static ModelDownloadWindow ShowForSentis(ModelDownloadRequest request,
+            Action<ModelDownloadResult> onCompleted)
+        {
+            return Show(request, onCompleted, true);
+        }
+
+        private static ModelDownloadWindow Show(ModelDownloadRequest request,
+            Action<ModelDownloadResult> onCompleted, bool useSentis)
         {
             if (request == null) throw new ArgumentNullException(nameof(request));
             var window = GetWindow<ModelDownloadWindow>(true, "Download Models", true);
-            window.minSize = new Vector2(460, 260);
+            window.minSize = new Vector2(560, 340);
             window.initialRequest = request;
             window.completed = onCompleted;
             window.repository = request.Repository;
             window.revision = request.Revision;
-            window.destination = request.Destination;
             window.expectedFamily = request.ExpectedFamily;
+            window.sentis = useSentis;
             window.token = TokenStorage.LoadToken("huggingface.co") ?? string.Empty;
             window.Show();
-            _ = window.LoadVariantsAsync();
+            _ = window.ScanAsync();
             return window;
         }
 
@@ -55,19 +68,22 @@ namespace KitsuMate.Onnx.Editor.Download
                 EditorGUI.BeginChangeCheck();
                 repository = EditorGUILayout.TextField("Hugging Face", repository);
                 revision = EditorGUILayout.TextField("Revision", revision);
-                destination = EditorGUILayout.TextField("Destination", destination);
                 token = EditorGUILayout.PasswordField("Access Token", token);
-                if (EditorGUI.EndChangeCheck()) variants = Array.Empty<string>();
+                if (EditorGUI.EndChangeCheck())
+                {
+                    discovered = null;
+                    selected.Clear();
+                }
 
                 EditorGUILayout.Space();
-                if (variants.Length == 0)
+                if (discovered == null)
                 {
-                    if (GUILayout.Button("Load Variants")) _ = LoadVariantsAsync();
+                    if (GUILayout.Button("Scan Repository")) _ = ScanAsync();
                 }
                 else
                 {
-                    using (new EditorGUI.DisabledScope(HasFixedVariant))
-                        selectedVariant = EditorGUILayout.Popup("Variant", Mathf.Clamp(selectedVariant, 0, variants.Length - 1), variants);
+                    DrawArtifacts();
+                    EditorGUILayout.Space();
                     if (GUILayout.Button("Download Models")) _ = DownloadAsync();
                 }
             }
@@ -82,30 +98,124 @@ namespace KitsuMate.Onnx.Editor.Download
                 EditorGUILayout.HelpBox(message, MessageType.Info);
             }
 
-            EditorGUILayout.Space();
+            if (sentis && HasHiddenArtifacts())
+                EditorGUILayout.HelpBox(
+                    "Sentis setup shows only FP32 artifacts. Other ONNX artifacts are available with ONNX Runtime.",
+                    MessageType.None);
             EditorGUILayout.HelpBox(
-                "Variants are detected from the repository's onnx/ folder. Downloads are verified before the selected ModelSet is changed.",
+                $"Models are installed under {ModelDownloader.ModelRoot()}. Each ONNX role can use a different artifact type.",
                 MessageType.None);
         }
 
-        private async Awaitable LoadVariantsAsync()
+        private void DrawArtifacts()
+        {
+            EditorGUILayout.LabelField("ONNX Artifacts", EditorStyles.boldLabel);
+            foreach (string role in OrderedRoles())
+            {
+                DiscoveredArtifact[] choices = Choices(role);
+                if (choices.Length == 0)
+                {
+                    EditorGUILayout.HelpBox($"No compatible artifact is available for {Humanize(role)}.",
+                        MessageType.Error);
+                    continue;
+                }
+
+                if (!selected.TryGetValue(role, out string path) ||
+                    choices.All(choice => !string.Equals(choice.Model.Path, path,
+                        StringComparison.OrdinalIgnoreCase)))
+                {
+                    path = choices[0].Model.Path;
+                    selected[role] = path;
+                }
+
+                int current = Array.FindIndex(choices, choice =>
+                    string.Equals(choice.Model.Path, path, StringComparison.OrdinalIgnoreCase));
+                string[] labels = choices.Select(ModelDownloader.ArtifactLabel).ToArray();
+                using (new EditorGUI.DisabledScope(choices.Length == 1))
+                {
+                    int next = EditorGUILayout.Popup(Humanize(role), Math.Max(0, current), labels);
+                    if (next != current)
+                    {
+                        selected[role] = choices[next].Model.Path;
+                        if (string.Equals(role, "decoder", StringComparison.Ordinal))
+                            SelectCachedDecoder(choices[next]);
+                    }
+                }
+            }
+        }
+
+        private IEnumerable<string> OrderedRoles()
+        {
+            foreach (string role in discovered.RequiredRoles)
+                yield return role;
+            if (ShowCachedDecoder())
+                yield return "decoder-with-past";
+            foreach (string role in discovered.Artifacts.Keys.OrderBy(value => value, StringComparer.Ordinal))
+                if (!discovered.RequiredRoles.Contains(role) &&
+                    !string.Equals(role, "decoder-with-past", StringComparison.Ordinal))
+                    yield return role;
+        }
+
+        private bool ShowCachedDecoder()
+        {
+            if (!discovered.Artifacts.ContainsKey("decoder-with-past")) return false;
+            if (!selected.TryGetValue("decoder", out string path)) return true;
+            DiscoveredArtifact decoder = discovered.Artifacts["decoder"].FirstOrDefault(choice =>
+                string.Equals(choice.Model.Path, path, StringComparison.OrdinalIgnoreCase));
+            return decoder == null || !decoder.IsMerged;
+        }
+
+        private void SelectCachedDecoder(DiscoveredArtifact decoder)
+        {
+            if (decoder.IsMerged || !discovered.Artifacts.ContainsKey("decoder-with-past")) return;
+            DiscoveredArtifact[] choices = Choices("decoder-with-past");
+            if (choices.Length == 0) return;
+            DiscoveredArtifact match = choices.FirstOrDefault(choice =>
+                    string.Equals(choice.Type, decoder.Type, StringComparison.OrdinalIgnoreCase)) ??
+                choices.FirstOrDefault(choice =>
+                    string.Equals(choice.Type, "default", StringComparison.OrdinalIgnoreCase)) ??
+                choices[0];
+            selected["decoder-with-past"] = match.Model.Path;
+        }
+
+        private DiscoveredArtifact[] Choices(string role)
+        {
+            if (!discovered.Artifacts.TryGetValue(role, out DiscoveredArtifact[] artifacts))
+                return Array.Empty<DiscoveredArtifact>();
+            return sentis
+                ? artifacts.Where(artifact => ModelDownloader.IsSentisArtifact(artifact.Type)).ToArray()
+                : artifacts;
+        }
+
+        private bool HasHiddenArtifacts()
+        {
+            return discovered != null && discovered.Artifacts.Values
+                .SelectMany(artifacts => artifacts)
+                .Any(artifact => !ModelDownloader.IsSentisArtifact(artifact.Type));
+        }
+
+        private async Awaitable ScanAsync()
         {
             if (!Begin("Scanning repository...")) return;
             try
             {
-                ModelDownloadRequest request = Request(string.Empty);
-                IReadOnlyList<string> names = await ModelDownloader.GetVariantsAsync(request, token, cancellation.Token);
-                variants = names is string[] array ? array : new List<string>(names).ToArray();
-                if (variants.Length == 0) throw new InvalidOperationException("The repository contains no supported variants.");
-                int requested = Array.FindIndex(variants, name => string.Equals(name, initialRequest?.Variant, StringComparison.OrdinalIgnoreCase));
-                if (HasFixedVariant && requested < 0)
-                    throw new InvalidOperationException($"Model variant '{initialRequest.Variant}' was not found.");
-                selectedVariant = requested >= 0 ? requested : 0;
+                discovered = await ModelDownloader.ScanAsync(Request(), token, cancellation.Token);
+                revision = discovered.Revision;
+                selected.Clear();
+                foreach (string role in discovered.Artifacts.Keys)
+                {
+                    DiscoveredArtifact[] choices = Choices(role);
+                    if (choices.Length > 0) selected[role] = choices[0].Model.Path;
+                }
+                if (selected.TryGetValue("decoder", out string decoderPath))
+                    SelectCachedDecoder(discovered.Artifacts["decoder"].First(choice =>
+                        string.Equals(choice.Model.Path, decoderPath, StringComparison.OrdinalIgnoreCase)));
+                EnsureRequiredChoices();
                 SaveToken();
-                message = $"Found {variants.Length} model variant{(variants.Length == 1 ? string.Empty : "s")}.";
+                message = $"Found {selected.Count} model role{(selected.Count == 1 ? string.Empty : "s")}.";
             }
             catch (OperationCanceledException) { message = "Cancelled."; }
-            catch (Exception exception) { ShowError(exception); }
+            catch (Exception exception) { discovered = null; ShowError(exception); }
             finally { End(); }
         }
 
@@ -114,21 +224,43 @@ namespace KitsuMate.Onnx.Editor.Download
             if (!Begin("Downloading models...")) return;
             try
             {
-                string variant = variants[Mathf.Clamp(selectedVariant, 0, variants.Length - 1)];
+                EnsureRequiredChoices();
                 var reporter = new Progress<float>(value => { progress = value; Repaint(); });
-                ModelDownloadResult result = await ModelDownloader.DownloadAsync(Request(variant), token, reporter, cancellation.Token);
+                ModelDownloadResult result = sentis
+                    ? await ModelDownloader.DownloadForSentisAsync(Request(), SelectedArtifacts(), token, reporter,
+                        cancellation.Token)
+                    : await ModelDownloader.DownloadAsync(Request(), SelectedArtifacts(), token, reporter,
+                        cancellation.Token);
                 completed?.Invoke(result);
                 SaveToken();
-                message = $"Installed {result.Identity.ModelId} ({result.Identity.Variant}).";
+                message = $"Installed {result.Identity.ModelId}.";
             }
             catch (OperationCanceledException) { message = "Cancelled."; }
             catch (Exception exception) { ShowError(exception); }
             finally { End(); }
         }
 
-        private ModelDownloadRequest Request(string variant)
+        private IReadOnlyDictionary<string, string> SelectedArtifacts()
         {
-            return new ModelDownloadRequest(repository, revision, variant, destination, expectedFamily);
+            var result = new Dictionary<string, string>(selected, StringComparer.Ordinal);
+            if (!ShowCachedDecoder()) result.Remove("decoder-with-past");
+            return result;
+        }
+
+        private void EnsureRequiredChoices()
+        {
+            foreach (string role in discovered.RequiredRoles)
+                if (Choices(role).Length == 0)
+                    throw new InvalidOperationException(
+                        $"Repository has no {Humanize(role)} artifact compatible with this engine.");
+            if (ShowCachedDecoder() && Choices("decoder-with-past").Length == 0)
+                throw new InvalidOperationException(
+                    "The selected initial decoder requires a compatible Decoder With Past artifact.");
+        }
+
+        private ModelDownloadRequest Request()
+        {
+            return new ModelDownloadRequest(repository, revision, expectedFamily);
         }
 
         private bool Begin(string status)
@@ -161,6 +293,12 @@ namespace KitsuMate.Onnx.Editor.Download
             message = exception.Message;
             Debug.LogException(exception);
             EditorUtility.DisplayDialog("Model download failed", exception.Message, "OK");
+        }
+
+        private static string Humanize(string role)
+        {
+            return string.Join(" ", role.Split('-')
+                .Select(part => char.ToUpperInvariant(part[0]) + part.Substring(1)));
         }
     }
 }

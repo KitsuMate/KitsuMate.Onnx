@@ -26,9 +26,13 @@ namespace KitsuMate.Onnx.Embeddings.Editor
 
         internal static void ShowDownload(Llm2VecModelSet set)
         {
-            ModelDownloadWindow.Show(new ModelDownloadRequest("KitsuMate/Llama-3-LLM2Vec-MNTP-Supervised-ONNX", "e00d62a8f3604bfab74b54a2a64f3b9fc1a13a74", string.Empty,
-                ModelRoot(), "llm2vec"), result =>
+            ModelDownloadWindow.Show(new ModelDownloadRequest(
+                "KitsuMate/Llama-3-LLM2Vec-MNTP-Supervised-ONNX",
+                "e00d62a8f3604bfab74b54a2a64f3b9fc1a13a74", "llm2vec"), result =>
             {
+                result.RequireGraph("encoder",
+                    new[] { "input_ids", "attention_mask", "pooling_mask" },
+                    new[] { "embedding" });
                 result.ConfigureModel(set.Encoder, "encoder");
                 TextAsset config = result.ProjectPaths.ContainsKey("tokenizer-config") ? result.LoadAsset<TextAsset>("tokenizer-config") : null;
                 set.SetFiles(result.LoadAsset<TextAsset>("tokenizer"), config);
@@ -38,11 +42,6 @@ namespace KitsuMate.Onnx.Embeddings.Editor
             });
         }
 
-        private static string ModelRoot()
-        {
-            OnnxSettings settings = OnnxSettings.Load();
-            return settings != null ? settings.ModelStorageRoot : "Assets/StreamingAssets/KitsuMateModels";
-        }
     }
 
     [CustomEditor(typeof(Llm2VecEmbeddingEngine))]

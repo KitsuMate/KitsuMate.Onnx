@@ -1,5 +1,7 @@
 #if UNITY_EDITOR
 using System.IO;
+using System;
+using System.Linq;
 using KitsuMate.Onnx.Editor;
 using KitsuMate.Onnx.Editor.Download;
 using Unity.InferenceEngine;
@@ -21,10 +23,19 @@ namespace KitsuMate.Onnx.Embeddings.Sentis.Editor
 
         internal static void ShowDownload(SentisEmbeddingModelSet set)
         {
-            ModelDownloadWindow.Show(new ModelDownloadRequest("KitsuMate/all-MiniLM-L6-v2-onnx", "caa577297ce0c15e94a2116d2f9228c640d1224c", "unity-fp32",
-                ModelRoot(), "text-embedding"), result =>
+            ModelDownloadWindow.ShowForSentis(new ModelDownloadRequest("KitsuMate/all-MiniLM-L6-v2-onnx",
+                "9ec4eb6ad90ebff9e819a807468f37926836816f", "text-embedding"), result =>
             {
                 ModelAsset imported = result.LoadAsset<ModelAsset>("model");
+                Model model = ModelLoader.Load(imported);
+                using (var worker = new Worker(model, BackendType.CPU)) { }
+                string[] inputs = model.inputs.Select(input => input.name).ToArray();
+                foreach (string input in new[] { "input_ids", "attention_mask" })
+                    if (!inputs.Contains(input))
+                        throw new InvalidOperationException(
+                            $"Model '{imported.name}' is missing input '{input}'.");
+                if (model.outputs.Count == 0)
+                    throw new InvalidOperationException($"Model '{imported.name}' has no outputs.");
                 string directory = Path.GetDirectoryName(AssetDatabase.GetAssetPath(set))?.Replace('\\', '/') ?? "Assets";
                 var source = CreateInstance<UnityAiInferenceModelAsset>();
                 source.SetModelAsset(imported);
@@ -38,11 +49,6 @@ namespace KitsuMate.Onnx.Embeddings.Sentis.Editor
             });
         }
 
-        private static string ModelRoot()
-        {
-            OnnxSettings settings = OnnxSettings.Load();
-            return settings != null ? settings.ModelStorageRoot : "Assets/StreamingAssets/KitsuMateModels";
-        }
     }
 
     [CustomEditor(typeof(SentisEmbeddingEngine))]

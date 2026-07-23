@@ -14,20 +14,13 @@ namespace KitsuMate.Onnx.LipSync.Uni2005
         [SerializeField, Tooltip("Phone vocabulary JSON file")]
         private TextAsset _vocabulary;
         
-        [Header("Model Info")]
-        [SerializeField, Tooltip("Model variant description")]
-        private string _variantDescription = "Allosaurus Universal Phone Recognizer";
-        
         /// <summary>Acoustic model for phoneme detection.</summary>
         public OnnxModelReference AcousticModel => _acousticModelSource;
         
         /// <summary>Vocabulary JSON file.</summary>
         public TextAsset Vocabulary => _vocabulary;
         
-        public override string DisplayName => 
-            string.IsNullOrEmpty(_variantDescription) 
-                ? "Uni2005" 
-                : $"Uni2005 ({_variantDescription})";
+        public override string DisplayName => string.IsNullOrWhiteSpace(name) ? "Uni2005" : name;
         
         public override bool IsComplete => 
             _acousticModelSource.IsAvailable && _vocabulary != null;

@@ -11,12 +11,12 @@ namespace KitsuMate.Onnx.Tts.Chatterbox.Editor
     [CustomEditor(typeof(ChatterboxModelSet))]
     public sealed class ChatterboxModelSetEditor : UnityEditor.Editor
     {
-        private static readonly (string Label, string Repository, string Revision, string Variant)[] Downloads =
+        private static readonly (string Label, string Repository, string Revision)[] Downloads =
         {
-            ("Chatterbox Turbo — Q4F16", "KitsuMate/chatterbox-turbo-onnx",
-                "89b9d3a64cd1ff1bfc2c90c13771f6550790a6aa", "q4f16"),
-            ("Chatterbox Nano — Q4", "KitsuMate/chatterbox-nano-onnx",
-                "b70ba9ceb90a146e93af372d805ec76baaa48b0b", "q4")
+            ("Chatterbox Turbo", "KitsuMate/chatterbox-turbo-onnx",
+                "89b9d3a64cd1ff1bfc2c90c13771f6550790a6aa"),
+            ("Chatterbox Nano", "KitsuMate/chatterbox-nano-onnx",
+                "b70ba9ceb90a146e93af372d805ec76baaa48b0b")
         };
 
         private int downloadIndex;
@@ -46,9 +46,24 @@ namespace KitsuMate.Onnx.Tts.Chatterbox.Editor
         private static void ShowDownload(ChatterboxModelSet set, int index)
         {
             var download = Downloads[Mathf.Clamp(index, 0, Downloads.Length - 1)];
-            ModelDownloadWindow.Show(new ModelDownloadRequest(download.Repository, download.Revision, download.Variant,
-                ModelRoot(), "chatterbox"), result =>
+            ModelDownloadWindow.Show(new ModelDownloadRequest(download.Repository, download.Revision, "chatterbox"),
+                result =>
             {
+                result.RequireGraph("speech-encoder", new[] { "audio_values" },
+                    new[] { "audio_features", "audio_tokens", "speaker_embeddings", "speaker_features" });
+                result.RequireGraph("embed-tokens", new[] { "input_ids" });
+                result.RequireGraph("language-model", new[] { "inputs_embeds", "attention_mask" },
+                    new[] { "logits" });
+                result.RequireGraph("conditional-decoder",
+                    new[] { "speech_tokens", "speaker_embeddings", "speaker_features" },
+                    new[] { "waveform" });
+                int cacheInputCount = result.GetInputNames("language-model")
+                    .Count(name => name.StartsWith("past_key_values.", System.StringComparison.Ordinal));
+                int cacheOutputCount = result.GetOutputNames("language-model")
+                    .Count(name => name.StartsWith("present.", System.StringComparison.Ordinal));
+                if (cacheInputCount == 0 || cacheInputCount != cacheOutputCount)
+                    throw new System.InvalidOperationException(
+                        "Chatterbox language model cache inputs and outputs do not match.");
                 result.ConfigureModel(set.SpeechEncoder, "speech-encoder");
                 result.ConfigureModel(set.EmbedTokens, "embed-tokens");
                 result.ConfigureModel(set.LanguageModel, "language-model");
@@ -61,11 +76,6 @@ namespace KitsuMate.Onnx.Tts.Chatterbox.Editor
             });
         }
 
-        private static string ModelRoot()
-        {
-            OnnxSettings settings = OnnxSettings.Load();
-            return settings != null ? settings.ModelStorageRoot : "Assets/StreamingAssets/KitsuMateModels";
-        }
     }
 
     [CustomEditor(typeof(ChatterboxEngine))]

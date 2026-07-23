@@ -23,11 +23,11 @@ namespace KitsuMate.Onnx.Editor.Download
         public IReadOnlyDictionary<string, string> ProjectPaths => projectPaths;
         public IReadOnlyList<string> Capabilities { get; } = Array.Empty<string>();
 
-        internal ModelDownloadResult(ModelIdentity identity, DiscoveredVariant variant,
+        internal ModelDownloadResult(ModelIdentity identity, DiscoveredFile[] selectedFiles,
             IReadOnlyDictionary<string, string> paths, string root)
         {
             Identity = identity;
-            files = variant.Files;
+            files = selectedFiles;
             projectPaths = paths;
             modelRoot = root.TrimEnd('/', '\\');
         }
@@ -44,7 +44,8 @@ namespace KitsuMate.Onnx.Editor.Download
             string path = GetProjectPath(role);
             T asset = AssetDatabase.LoadAssetAtPath<T>(path);
             if (asset == null)
-                throw new InvalidOperationException($"Downloaded '{role}' file was not imported as {typeof(T).Name} at '{path}'.");
+                throw new InvalidOperationException(
+                    $"Downloaded '{role}' file was not imported as {typeof(T).Name} at '{path}'.");
             return asset;
         }
 
@@ -65,6 +66,31 @@ namespace KitsuMate.Onnx.Editor.Download
             target.SetDownloadMetadata(Identity, Capabilities);
         }
 
+        public IReadOnlyList<string> GetInputNames(string role)
+        {
+            return FindFile(role).Inputs.Select(input => input.Name).ToArray();
+        }
+
+        public IReadOnlyList<string> GetOutputNames(string role)
+        {
+            return FindFile(role).Outputs.Select(output => output.Name).ToArray();
+        }
+
+        public void RequireGraph(string role, IEnumerable<string> inputs = null,
+            IEnumerable<string> outputs = null)
+        {
+            IReadOnlyList<string> availableInputs = GetInputNames(role);
+            IReadOnlyList<string> availableOutputs = GetOutputNames(role);
+            foreach (string input in inputs ?? Array.Empty<string>())
+                if (!availableInputs.Contains(input))
+                    throw new InvalidDataException(
+                        $"Downloaded '{role}' graph is missing input '{input}'.");
+            foreach (string output in outputs ?? Array.Empty<string>())
+                if (!availableOutputs.Contains(output))
+                    throw new InvalidDataException(
+                        $"Downloaded '{role}' graph is missing output '{output}'.");
+        }
+
         private DiscoveredFile FindFile(string role)
         {
             DiscoveredFile file = files.FirstOrDefault(candidate =>
@@ -77,37 +103,70 @@ namespace KitsuMate.Onnx.Editor.Download
 
     public static class ModelDownloader
     {
-        private static readonly HttpClient Client = new HttpClient();
+        private static readonly HttpClient Client = new();
 
-        public static async Task<IReadOnlyList<string>> GetVariantsAsync(ModelDownloadRequest request,
-            string token = null, CancellationToken cancellationToken = default)
+        public static async Task<(string Revision,
+            IReadOnlyDictionary<string, IReadOnlyList<string>> Artifacts)> GetArtifactsAsync(
+            ModelDownloadRequest request, string token = null, CancellationToken cancellationToken = default)
         {
             DiscoveredRepository repository = await ScanAsync(request, token, cancellationToken);
-            return repository.Variants.Select(variant => variant.Name).ToArray();
+            var artifacts = repository.Artifacts.ToDictionary(
+                pair => pair.Key,
+                pair => (IReadOnlyList<string>)pair.Value.Select(artifact => artifact.Model.Path).ToArray(),
+                StringComparer.Ordinal);
+            return (repository.Revision, artifacts);
         }
 
-        public static async Task<ModelDownloadResult> DownloadAsync(ModelDownloadRequest request,
-            string token = null, IProgress<float> progress = null, CancellationToken cancellationToken = default)
+        public static Task<ModelDownloadResult> DownloadAsync(ModelDownloadRequest request,
+            IReadOnlyDictionary<string, string> artifacts, string token = null, IProgress<float> progress = null,
+            CancellationToken cancellationToken = default)
+        {
+            return DownloadAsync(request, artifacts, false, token, progress, cancellationToken);
+        }
+
+        public static Task<ModelDownloadResult> DownloadForSentisAsync(ModelDownloadRequest request,
+            IReadOnlyDictionary<string, string> artifacts, string token = null, IProgress<float> progress = null,
+            CancellationToken cancellationToken = default)
+        {
+            return DownloadAsync(request, artifacts, true, token, progress, cancellationToken);
+        }
+
+        private static async Task<ModelDownloadResult> DownloadAsync(ModelDownloadRequest request,
+            IReadOnlyDictionary<string, string> selection, bool importWithSentis, string token,
+            IProgress<float> progress, CancellationToken cancellationToken)
         {
             if (request == null) throw new ArgumentNullException(nameof(request));
+            if (selection == null) throw new ArgumentNullException(nameof(selection));
+
             DiscoveredRepository repository = await ScanAsync(request, token, cancellationToken);
-            DiscoveredVariant variant = SelectVariant(repository, request.Variant);
-            SafeProjectDirectory(request.Destination);
+            DiscoveredArtifact[] artifacts = SelectArtifacts(repository, selection);
+            DiscoveredFile[] files = artifacts.SelectMany(artifact => artifact.Files)
+                .Concat(repository.CommonFiles)
+                .GroupBy(file => file.Path, StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.First())
+                .ToArray();
+            var sentisEligible = new HashSet<string>(
+                artifacts.Where(artifact => IsSentisArtifact(artifact.Type))
+                    .Select(artifact => artifact.Model.Path),
+                StringComparer.OrdinalIgnoreCase);
+
+            string modelRoot = ModelRoot();
+            SafeProjectDirectory(modelRoot);
             string projectRoot = Path.GetFullPath(Directory.GetCurrentDirectory());
             string cacheRoot = CacheRoot(projectRoot);
             Directory.CreateDirectory(cacheRoot);
 
             var installed = new Dictionary<string, string>(StringComparer.Ordinal);
-            long total = variant.Files.Sum(file => Math.Max(0, file.Size));
+            long total = files.Sum(file => Math.Max(0, file.Size));
             long completed = 0;
 
-            foreach (DiscoveredFile file in variant.Files)
+            foreach (DiscoveredFile file in files)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 ValidateFile(file);
                 string relative = SafeRelativePath(file.Path);
-                string projectPath = Path.Combine(request.Destination, repository.Family, repository.ModelId,
-                    variant.Name, relative).Replace('\\', '/');
+                string projectPath = Path.Combine(modelRoot, repository.Owner, repository.Name, relative)
+                    .Replace('\\', '/');
                 string destination = SafeChildPath(projectRoot, projectPath);
                 string cache = Path.Combine(cacheRoot, file.Sha256.ToLowerInvariant());
 
@@ -119,34 +178,29 @@ namespace KitsuMate.Onnx.Editor.Download
                     CopyVerifiedFile(cache, destination);
                 }
 
+                SetImporter(projectPath, file, importWithSentis || sentisEligible.Contains(file.Path));
                 completed += Math.Max(0, file.Size);
-                progress?.Report(total > 0 ? Math.Min(1f, (float)completed / total) :
-                    (float)(installed.Count + 1) / variant.Files.Length);
-                installed.Add(file.Role, projectPath);
+                progress?.Report(total > 0
+                    ? Math.Min(1f, (float)completed / total)
+                    : (float)(installed.Count + 1) / files.Length);
+                installed[file.Role] = projectPath;
             }
 
             AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
-            var identity = new ModelIdentity(repository.Family, repository.ModelId, repository.Revision,
-                variant.Name, ContentHash(variant));
-            return new ModelDownloadResult(identity, variant, installed, request.Destination);
+            InspectModels(artifacts, installed);
+            if (!importWithSentis) ValidateWithOnnxRuntime(artifacts, installed);
+            var identity = new ModelIdentity(repository.Family, repository.Name, repository.Revision,
+                ContentHash(files));
+            return new ModelDownloadResult(identity, files, installed, modelRoot);
         }
 
-        internal static string SafeRelativePath(string path)
-        {
-            if (string.IsNullOrWhiteSpace(path) || Path.IsPathRooted(path))
-                throw new InvalidDataException("Repository file paths must be relative.");
-            string normalized = path.Replace('\\', '/').TrimStart('/');
-            if (normalized.Split('/').Any(part => part == ".." || part.Length == 0))
-                throw new InvalidDataException($"Repository contains an unsafe file path: '{path}'.");
-            return normalized;
-        }
-
-        private static async Task<DiscoveredRepository> ScanAsync(ModelDownloadRequest request, string token,
+        internal static async Task<DiscoveredRepository> ScanAsync(ModelDownloadRequest request, string token,
             CancellationToken cancellationToken)
         {
             if (request == null) throw new ArgumentNullException(nameof(request));
             string[] repository = RepositoryParts(request.Repository);
-            string url = $"https://huggingface.co/api/models/{Uri.EscapeDataString(repository[0])}/{Uri.EscapeDataString(repository[1])}/revision/{Uri.EscapeDataString(request.Revision)}?blobs=true";
+            string url =
+                $"https://huggingface.co/api/models/{Uri.EscapeDataString(repository[0])}/{Uri.EscapeDataString(repository[1])}/revision/{Uri.EscapeDataString(request.Revision)}?blobs=true";
             using var message = new HttpRequestMessage(HttpMethod.Get, url);
             AddToken(message, token);
             using HttpResponseMessage response = await Client.SendAsync(message, cancellationToken);
@@ -166,177 +220,186 @@ namespace KitsuMate.Onnx.Editor.Download
             if (onnxFiles.Length == 0)
                 throw new InvalidDataException($"Repository '{request.Repository}' has no ONNX files under onnx/.");
 
-            DiscoveredFile[] common = await DiscoverCommonFilesAsync(request, info.sha, byPath, token,
-                cancellationToken);
-            List<DiscoveredVariant> variants;
+            Dictionary<string, DiscoveredArtifact[]> artifacts;
+            string[] requiredRoles;
             if (IsChatterbox(request, onnxFiles))
-                variants = await DiscoverChatterboxAsync(request, info.sha, byPath, onnxFiles, common, token,
+            {
+                artifacts = await DiscoverChatterboxAsync(request, info.sha, byPath, onnxFiles, token,
                     cancellationToken);
-            else if (onnxFiles.Any(file => FileStem(file).StartsWith("encoder_model", StringComparison.OrdinalIgnoreCase)))
-                variants = await DiscoverWhisperAsync(request, info.sha, byPath, onnxFiles, common, token,
-                    cancellationToken);
-            else
-                variants = await DiscoverModelsAsync(request, info.sha, byPath, onnxFiles, common, token,
-                    cancellationToken);
-
-            if (variants.Count == 0)
-                throw new InvalidDataException($"Repository '{request.Repository}' does not use a recognized ONNX layout.");
-            return new DiscoveredRepository(
-                string.IsNullOrWhiteSpace(request.ExpectedFamily) ? "onnx" : request.ExpectedFamily,
-                repository[1], info.sha,
-                variants.OrderBy(variant => variant.Name, StringComparer.OrdinalIgnoreCase).ToArray());
-        }
-
-        private static async Task<List<DiscoveredVariant>> DiscoverWhisperAsync(ModelDownloadRequest request,
-            string revision, Dictionary<string, HfSibling> byPath, HfSibling[] onnxFiles, DiscoveredFile[] common,
-            string token, CancellationToken cancellationToken)
-        {
-            var variants = new List<DiscoveredVariant>();
-            foreach (HfSibling encoder in onnxFiles.Where(file =>
+                requiredRoles = new[] { "speech-encoder", "embed-tokens", "language-model", "conditional-decoder" };
+            }
+            else if (onnxFiles.Any(file =>
                 FileStem(file).StartsWith("encoder_model", StringComparison.OrdinalIgnoreCase)))
             {
-                string suffix = FileStem(encoder).Substring("encoder_model".Length);
-                string directory = PathPrefix(encoder.rfilename);
-                HfSibling decoderWithPast = null;
-                bool split = byPath.TryGetValue(directory + "decoder_model" + suffix + ".onnx", out HfSibling decoder) &&
-                    byPath.TryGetValue(directory + "decoder_with_past_model" + suffix + ".onnx", out decoderWithPast);
-                if (!split && !byPath.TryGetValue(directory + "decoder_model_merged" + suffix + ".onnx", out decoder) &&
-                    !byPath.TryGetValue(directory + "decoder_model" + suffix + ".onnx", out decoder))
+                artifacts = await DiscoverWhisperAsync(request, info.sha, byPath, onnxFiles, token,
+                    cancellationToken);
+                requiredRoles = new[] { "encoder", "decoder" };
+            }
+            else
+            {
+                artifacts = await DiscoverModelsAsync(request, info.sha, byPath, onnxFiles, token,
+                    cancellationToken);
+                requiredRoles = artifacts.Keys.ToArray();
+            }
+
+            if (requiredRoles.Any(role => !artifacts.TryGetValue(role, out DiscoveredArtifact[] choices) ||
+                    choices.Length == 0))
+                throw new InvalidDataException(
+                    $"Repository '{request.Repository}' does not use a complete recognized ONNX layout.");
+
+            DiscoveredFile[] common = await DiscoverCommonFilesAsync(request, info.sha, byPath, token,
+                cancellationToken);
+            return new DiscoveredRepository(repository[0], repository[1],
+                string.IsNullOrWhiteSpace(request.ExpectedFamily) ? "onnx" : request.ExpectedFamily,
+                info.sha, artifacts, common, requiredRoles);
+        }
+
+        internal static string ArtifactType(string path, string baseStem)
+        {
+            string stem = Path.GetFileNameWithoutExtension(path);
+            if (!stem.StartsWith(baseStem, StringComparison.OrdinalIgnoreCase)) return null;
+            string suffix = stem.Substring(baseStem.Length).TrimStart('_', '-');
+            return string.IsNullOrWhiteSpace(suffix) ? "default" : suffix;
+        }
+
+        internal static string ArtifactLabel(DiscoveredArtifact artifact)
+        {
+            string type = string.Equals(artifact.Type, "default", StringComparison.OrdinalIgnoreCase)
+                ? "Default"
+                : artifact.Type;
+            return $"{type} — {Path.GetFileName(artifact.Model.Path)}";
+        }
+
+        internal static bool IsSentisArtifact(string type)
+        {
+            return string.Equals(type, "default", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(type, "fp32", StringComparison.OrdinalIgnoreCase);
+        }
+
+        internal static string ModelRoot()
+        {
+            OnnxSettings settings = OnnxSettings.Load();
+            return settings != null ? settings.ModelStorageRoot : "Assets/StreamingAssets/KitsuMateModels";
+        }
+
+        internal static string SafeRelativePath(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path) || Path.IsPathRooted(path))
+                throw new InvalidDataException("Repository file paths must be relative.");
+            string normalized = path.Replace('\\', '/').TrimStart('/');
+            if (normalized.Split('/').Any(part => part == ".." || part.Length == 0))
+                throw new InvalidDataException($"Repository contains an unsafe file path: '{path}'.");
+            return normalized;
+        }
+
+        private static async Task<Dictionary<string, DiscoveredArtifact[]>> DiscoverWhisperAsync(
+            ModelDownloadRequest request, string revision, Dictionary<string, HfSibling> byPath,
+            HfSibling[] models, string token, CancellationToken cancellationToken)
+        {
+            var result = new Dictionary<string, List<DiscoveredArtifact>>(StringComparer.Ordinal);
+            foreach (HfSibling model in models)
+            {
+                string stem = FileStem(model);
+                string role;
+                string baseStem;
+                bool merged = false;
+                if (stem.StartsWith("decoder_with_past_model", StringComparison.OrdinalIgnoreCase))
+                    (role, baseStem) = ("decoder-with-past", "decoder_with_past_model");
+                else if (stem.StartsWith("decoder_model_merged", StringComparison.OrdinalIgnoreCase))
+                {
+                    (role, baseStem) = ("decoder", "decoder_model_merged");
+                    merged = true;
+                }
+                else if (stem.StartsWith("decoder_model", StringComparison.OrdinalIgnoreCase))
+                    (role, baseStem) = ("decoder", "decoder_model");
+                else if (stem.StartsWith("encoder_model", StringComparison.OrdinalIgnoreCase))
+                    (role, baseStem) = ("encoder", "encoder_model");
+                else if (stem.StartsWith("mel", StringComparison.OrdinalIgnoreCase))
+                    (role, baseStem) = ("mel", "mel");
+                else
                     continue;
 
-                var files = new List<DiscoveredFile>
-                {
-                    await DiscoverFileAsync(request, revision, encoder, "encoder", token, cancellationToken),
-                    await DiscoverFileAsync(request, revision, decoder, "decoder", token, cancellationToken)
-                };
-                await AddExternalDataAsync(request, revision, byPath, encoder, "encoder-data", files, token,
+                await AddArtifactAsync(result, request, revision, byPath, model, role, baseStem, merged, token,
                     cancellationToken);
-                await AddExternalDataAsync(request, revision, byPath, decoder, "decoder-data", files, token,
-                    cancellationToken);
-                if (split)
-                {
-                    files.Add(await DiscoverFileAsync(request, revision, decoderWithPast, "decoder-with-past", token,
-                        cancellationToken));
-                    await AddExternalDataAsync(request, revision, byPath, decoderWithPast, "decoder-with-past-data",
-                        files, token, cancellationToken);
-                }
-                files.AddRange(common);
-                variants.Add(new DiscoveredVariant(VariantName(suffix, "fp32"), files.ToArray()));
             }
-            return variants;
+            return Finish(result);
         }
 
-        private static async Task<List<DiscoveredVariant>> DiscoverChatterboxAsync(ModelDownloadRequest request,
-            string revision, Dictionary<string, HfSibling> byPath, HfSibling[] onnxFiles, DiscoveredFile[] common,
-            string token, CancellationToken cancellationToken)
+        private static async Task<Dictionary<string, DiscoveredArtifact[]>> DiscoverChatterboxAsync(
+            ModelDownloadRequest request, string revision, Dictionary<string, HfSibling> byPath,
+            HfSibling[] models, string token, CancellationToken cancellationToken)
         {
-            var components = new[]
+            var result = new Dictionary<string, List<DiscoveredArtifact>>(StringComparer.Ordinal);
+            var roles = new[]
             {
-                (Prefix: "speech_encoder", Role: "speech-encoder"),
-                (Prefix: "embed_tokens", Role: "embed-tokens"),
-                (Prefix: "language_model", Role: "language-model"),
-                (Prefix: "conditional_decoder", Role: "conditional-decoder")
+                (Stem: "speech_encoder", Role: "speech-encoder"),
+                (Stem: "embed_tokens", Role: "embed-tokens"),
+                (Stem: "language_model", Role: "language-model"),
+                (Stem: "conditional_decoder", Role: "conditional-decoder")
             };
-            var groups = new Dictionary<string, Dictionary<string, HfSibling>>(StringComparer.OrdinalIgnoreCase);
-            foreach (HfSibling model in onnxFiles)
+            foreach (HfSibling model in models)
             {
-                var component = components.FirstOrDefault(item =>
-                    FileStem(model).StartsWith(item.Prefix, StringComparison.OrdinalIgnoreCase));
-                if (component.Prefix == null) continue;
-                string suffix = FileStem(model).Substring(component.Prefix.Length);
-                string name = VariantName(suffix, "default");
-                if (!groups.TryGetValue(name, out Dictionary<string, HfSibling> files))
-                    groups.Add(name, files = new Dictionary<string, HfSibling>(StringComparer.Ordinal));
-                files[component.Role] = model;
-            }
-
-            var variants = new List<DiscoveredVariant>();
-            foreach (var group in groups)
-            {
-                if (components.Any(component => !group.Value.ContainsKey(component.Role))) continue;
-                variants.Add(new DiscoveredVariant(group.Key,
-                    await DiscoverChatterboxFilesAsync(request, revision, byPath, components, group.Value, common,
-                        token, cancellationToken)));
-            }
-
-            if (variants.Count > 0) return variants;
-
-            var mixed = new Dictionary<string, HfSibling>(StringComparer.Ordinal);
-            foreach (var component in components)
-            {
-                HfSibling[] matches = onnxFiles.Where(model =>
-                    FileStem(model).StartsWith(component.Prefix, StringComparison.OrdinalIgnoreCase)).ToArray();
-                if (matches.Length != 1) return variants;
-                mixed[component.Role] = matches[0];
-            }
-
-            HfSibling largest = mixed.Values.OrderByDescending(model => FileSizeWithExternalData(byPath, model))
-                .First();
-            string largestPrefix = components.First(component =>
-                FileStem(largest).StartsWith(component.Prefix, StringComparison.OrdinalIgnoreCase)).Prefix;
-            string mixedName = VariantName(FileStem(largest).Substring(largestPrefix.Length), "default");
-            variants.Add(new DiscoveredVariant(mixedName,
-                await DiscoverChatterboxFilesAsync(request, revision, byPath, components, mixed, common, token,
-                    cancellationToken)));
-            return variants;
-        }
-
-        private static async Task<DiscoveredFile[]> DiscoverChatterboxFilesAsync(ModelDownloadRequest request,
-            string revision, Dictionary<string, HfSibling> byPath,
-            (string Prefix, string Role)[] components, Dictionary<string, HfSibling> models,
-            DiscoveredFile[] common, string token, CancellationToken cancellationToken)
-        {
-            var files = new List<DiscoveredFile>();
-            foreach (var component in components)
-            {
-                HfSibling model = models[component.Role];
-                files.Add(await DiscoverFileAsync(request, revision, model, component.Role, token,
-                    cancellationToken));
-                await AddExternalDataAsync(request, revision, byPath, model, component.Role + "-data", files,
+                var match = roles.FirstOrDefault(candidate =>
+                    FileStem(model).StartsWith(candidate.Stem, StringComparison.OrdinalIgnoreCase));
+                if (match.Stem == null) continue;
+                await AddArtifactAsync(result, request, revision, byPath, model, match.Role, match.Stem, false,
                     token, cancellationToken);
             }
-            files.AddRange(common);
-            return files.ToArray();
+            return Finish(result);
         }
 
-        private static long FileSizeWithExternalData(Dictionary<string, HfSibling> byPath, HfSibling model)
+        private static async Task<Dictionary<string, DiscoveredArtifact[]>> DiscoverModelsAsync(
+            ModelDownloadRequest request, string revision, Dictionary<string, HfSibling> byPath,
+            HfSibling[] models, string token, CancellationToken cancellationToken)
         {
-            long size = SiblingSize(model);
-            foreach (string candidate in new[] { model.rfilename + "_data", model.rfilename + ".data" })
-                if (byPath.TryGetValue(candidate, out HfSibling data))
-                    return size + SiblingSize(data);
-            return size;
+            var result = new Dictionary<string, List<DiscoveredArtifact>>(StringComparer.Ordinal);
+            bool llm2vec = string.Equals(request.ExpectedFamily, "llm2vec", StringComparison.OrdinalIgnoreCase);
+            foreach (HfSibling model in models)
+            {
+                string stem = FileStem(model);
+                string baseStem;
+                if (llm2vec && stem.StartsWith("encoder", StringComparison.OrdinalIgnoreCase))
+                    baseStem = "encoder";
+                else if (stem.StartsWith("model", StringComparison.OrdinalIgnoreCase))
+                    baseStem = "model";
+                else
+                    continue;
+                await AddArtifactAsync(result, request, revision, byPath, model, llm2vec ? "encoder" : "model",
+                    baseStem, false, token, cancellationToken);
+            }
+            return Finish(result);
         }
 
-        private static long SiblingSize(HfSibling file)
-        {
-            return file.lfs != null && file.lfs.size > 0 ? file.lfs.size : file.size;
-        }
-
-        private static async Task<List<DiscoveredVariant>> DiscoverModelsAsync(ModelDownloadRequest request,
-            string revision, Dictionary<string, HfSibling> byPath, HfSibling[] onnxFiles, DiscoveredFile[] common,
+        private static async Task AddArtifactAsync(
+            Dictionary<string, List<DiscoveredArtifact>> result, ModelDownloadRequest request, string revision,
+            Dictionary<string, HfSibling> byPath, HfSibling source, string role, string baseStem, bool merged,
             string token, CancellationToken cancellationToken)
         {
-            var variants = new List<DiscoveredVariant>();
-            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            string role = string.Equals(request.ExpectedFamily, "llm2vec", StringComparison.OrdinalIgnoreCase)
-                ? "encoder"
-                : "model";
-            foreach (HfSibling model in onnxFiles.Where(file =>
-                !string.Equals(Path.GetFileName(file.rfilename), "mel.onnx", StringComparison.OrdinalIgnoreCase)))
+            var files = new List<DiscoveredFile>
             {
-                string name = ModelVariantName(model.rfilename);
-                if (!names.Add(name)) continue;
-                var files = new List<DiscoveredFile>
-                {
-                    await DiscoverFileAsync(request, revision, model, role, token, cancellationToken)
-                };
-                await AddExternalDataAsync(request, revision, byPath, model, role + "-data", files, token,
-                    cancellationToken);
-                files.AddRange(common);
-                variants.Add(new DiscoveredVariant(name, files.ToArray()));
-            }
-            return variants;
+                await DiscoverFileAsync(request, revision, source, role, token, cancellationToken)
+            };
+            await AddExternalDataAsync(request, revision, byPath, source, role + "-data", files, token,
+                cancellationToken);
+            if (!result.TryGetValue(role, out List<DiscoveredArtifact> artifacts))
+                result.Add(role, artifacts = new List<DiscoveredArtifact>());
+            artifacts.Add(new DiscoveredArtifact(role, ArtifactType(source.rfilename, baseStem), merged,
+                files.ToArray()));
+        }
+
+        private static Dictionary<string, DiscoveredArtifact[]> Finish(
+            Dictionary<string, List<DiscoveredArtifact>> source)
+        {
+            return source.ToDictionary(
+                pair => pair.Key,
+                pair => pair.Value
+                    .OrderBy(artifact => string.Equals(artifact.Type, "default", StringComparison.OrdinalIgnoreCase)
+                        ? 0
+                        : 1)
+                    .ThenBy(artifact => artifact.Type, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(artifact => artifact.Model.Path, StringComparer.OrdinalIgnoreCase)
+                    .ToArray(),
+                StringComparer.Ordinal);
         }
 
         private static async Task<DiscoveredFile[]> DiscoverCommonFilesAsync(ModelDownloadRequest request,
@@ -346,9 +409,13 @@ namespace KitsuMate.Onnx.Editor.Download
             var files = new List<DiscoveredFile>();
             foreach (var item in new[]
             {
-                (Path: "onnx/mel.onnx", Role: "mel"),
                 (Path: "tokenizer.json", Role: "tokenizer"),
                 (Path: "tokenizer_config.json", Role: "tokenizer-config"),
+                (Path: "config.json", Role: "config"),
+                (Path: "generation_config.json", Role: "generation-config"),
+                (Path: "preprocessor_config.json", Role: "preprocessor-config"),
+                (Path: "special_tokens_map.json", Role: "special-tokens"),
+                (Path: "added_tokens.json", Role: "added-tokens"),
                 (Path: "vocab.json", Role: "vocabulary"),
                 (Path: "vocab.txt", Role: "vocabulary"),
                 (Path: "merges.txt", Role: "merges"),
@@ -383,7 +450,8 @@ namespace KitsuMate.Onnx.Editor.Download
             long size = source.lfs != null && source.lfs.size > 0 ? source.lfs.size : source.size;
             if (string.IsNullOrWhiteSpace(hash))
             {
-                using var message = new HttpRequestMessage(HttpMethod.Get, FileUrl(request, revision, source.rfilename));
+                using var message =
+                    new HttpRequestMessage(HttpMethod.Get, FileUrl(request, revision, source.rfilename));
                 AddToken(message, token);
                 using HttpResponseMessage response = await Client.SendAsync(message, cancellationToken);
                 response.EnsureSuccessStatusCode();
@@ -393,6 +461,105 @@ namespace KitsuMate.Onnx.Editor.Download
                 size = bytes.LongLength;
             }
             return new DiscoveredFile(role, source.rfilename, hash, size);
+        }
+
+        internal static DiscoveredArtifact[] SelectArtifacts(DiscoveredRepository repository,
+            IReadOnlyDictionary<string, string> selection)
+        {
+            var selected = new Dictionary<string, DiscoveredArtifact>(StringComparer.Ordinal);
+            foreach (string role in repository.RequiredRoles)
+                selected[role] = SelectArtifact(repository, selection, role);
+
+            if (string.Equals(repository.Family, "whisper", StringComparison.OrdinalIgnoreCase))
+            {
+                DiscoveredArtifact decoder = selected["decoder"];
+                if (!decoder.IsMerged)
+                    selected["decoder-with-past"] = SelectArtifact(repository, selection, "decoder-with-past");
+            }
+
+            foreach (string role in selection.Keys)
+                if (!repository.Artifacts.ContainsKey(role))
+                    throw new InvalidDataException($"Repository does not contain model role '{role}'.");
+            return selected.Values.ToArray();
+        }
+
+        private static DiscoveredArtifact SelectArtifact(DiscoveredRepository repository,
+            IReadOnlyDictionary<string, string> selection, string role)
+        {
+            if (!repository.Artifacts.TryGetValue(role, out DiscoveredArtifact[] choices) || choices.Length == 0)
+                throw new InvalidDataException($"Repository does not contain model role '{role}'.");
+            if (!selection.TryGetValue(role, out string path) || string.IsNullOrWhiteSpace(path))
+                throw new InvalidDataException($"Select an artifact for '{role}'.");
+            DiscoveredArtifact selected = choices.FirstOrDefault(candidate =>
+                string.Equals(candidate.Model.Path, path, StringComparison.OrdinalIgnoreCase));
+            return selected ?? throw new InvalidDataException(
+                $"Selected artifact '{path}' is not available for role '{role}'.");
+        }
+
+        private static void SetImporter(string projectPath, DiscoveredFile file, bool importWithSentis)
+        {
+            if (file.Path.EndsWith(".onnx", StringComparison.OrdinalIgnoreCase))
+            {
+                if (importWithSentis) AssetDatabase.ClearImporterOverride(projectPath);
+                else OnnxImporterAssignment.AssignFrameworkImporter(projectPath);
+                return;
+            }
+
+            if (file.Path.EndsWith(".onnx_data", StringComparison.OrdinalIgnoreCase))
+                OnnxImporterAssignment.AssignFrameworkImporter(projectPath);
+        }
+
+        private static void InspectModels(IEnumerable<DiscoveredArtifact> artifacts,
+            IReadOnlyDictionary<string, string> installed)
+        {
+            foreach (DiscoveredArtifact artifact in artifacts)
+            {
+                string path = Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(),
+                    installed[artifact.Role]));
+                ExternalOnnxModelAssetUtility.InspectionResult metadata =
+                    ExternalOnnxModelAssetUtility.Inspect(path);
+                artifact.Model.SetMetadata(metadata.Inputs, metadata.Outputs);
+            }
+        }
+
+        private static void ValidateWithOnnxRuntime(IEnumerable<DiscoveredArtifact> artifacts,
+            IReadOnlyDictionary<string, string> installed)
+        {
+            OnnxBackend backend = CreateOnnxRuntimeBackend();
+            try
+            {
+                foreach (DiscoveredArtifact artifact in artifacts)
+                {
+                    string path = Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(),
+                        installed[artifact.Role]));
+                    using IOnnxSession session = backend.CreateSession(path);
+                }
+            }
+            finally
+            {
+                backend.Dispose();
+                UnityEngine.Object.DestroyImmediate(backend);
+            }
+        }
+
+        private static OnnxBackend CreateOnnxRuntimeBackend()
+        {
+            OnnxBackend configured = OnnxSettings.Load()?.DefaultBackend;
+            if (configured != null &&
+                string.Equals(configured.BackendId, "onnxruntime", StringComparison.OrdinalIgnoreCase))
+                return UnityEngine.Object.Instantiate(configured);
+
+            foreach (Type type in TypeCache.GetTypesDerivedFrom<OnnxBackend>())
+            {
+                if (type.IsAbstract) continue;
+                var candidate = ScriptableObject.CreateInstance(type) as OnnxBackend;
+                if (candidate != null &&
+                    string.Equals(candidate.BackendId, "onnxruntime", StringComparison.OrdinalIgnoreCase))
+                    return candidate;
+                if (candidate != null) UnityEngine.Object.DestroyImmediate(candidate);
+            }
+            throw new InvalidOperationException(
+                "ONNX Runtime is required to validate downloaded ONNX artifacts before assignment.");
         }
 
         private static bool IsChatterbox(ModelDownloadRequest request, IEnumerable<HfSibling> files)
@@ -406,37 +573,6 @@ namespace KitsuMate.Onnx.Editor.Download
             return Path.GetFileNameWithoutExtension(file.rfilename);
         }
 
-        private static string PathPrefix(string path)
-        {
-            int slash = path.LastIndexOf('/');
-            return slash < 0 ? string.Empty : path.Substring(0, slash + 1);
-        }
-
-        private static string ModelVariantName(string path)
-        {
-            string stem = Path.GetFileNameWithoutExtension(path);
-            if (string.Equals(stem, "model", StringComparison.OrdinalIgnoreCase)) return "default";
-            return stem.StartsWith("model_", StringComparison.OrdinalIgnoreCase)
-                ? VariantName(stem.Substring("model".Length), "default")
-                : VariantName(stem, "default");
-        }
-
-        private static string VariantName(string suffix, string fallback)
-        {
-            string value = suffix?.Trim().TrimStart('_', '-') ?? string.Empty;
-            return string.IsNullOrWhiteSpace(value) ? fallback : value.Replace('_', '-').ToLowerInvariant();
-        }
-
-        private static DiscoveredVariant SelectVariant(DiscoveredRepository repository, string name)
-        {
-            DiscoveredVariant selected = string.IsNullOrWhiteSpace(name)
-                ? repository.Variants.FirstOrDefault()
-                : repository.Variants.FirstOrDefault(variant =>
-                    string.Equals(variant.Name, name, StringComparison.OrdinalIgnoreCase));
-            if (selected == null) throw new InvalidDataException($"Model variant '{name}' was not found.");
-            return selected;
-        }
-
         private static void ValidateFile(DiscoveredFile file)
         {
             if (file == null || string.IsNullOrWhiteSpace(file.Role) || string.IsNullOrWhiteSpace(file.Path) ||
@@ -448,7 +584,8 @@ namespace KitsuMate.Onnx.Editor.Download
         private static string FileUrl(ModelDownloadRequest request, string revision, string path)
         {
             string[] parts = RepositoryParts(request.Repository);
-            return $"https://huggingface.co/{Uri.EscapeDataString(parts[0])}/{Uri.EscapeDataString(parts[1])}/resolve/{Uri.EscapeDataString(revision)}/{EscapePath(path)}";
+            return
+                $"https://huggingface.co/{Uri.EscapeDataString(parts[0])}/{Uri.EscapeDataString(parts[1])}/resolve/{Uri.EscapeDataString(revision)}/{EscapePath(path)}";
         }
 
         private static string[] RepositoryParts(string value)
@@ -488,7 +625,8 @@ namespace KitsuMate.Onnx.Editor.Download
             if (file.Size > 0 && new FileInfo(partial).Length != file.Size)
             {
                 File.Delete(partial);
-                throw new InvalidDataException($"Downloaded size does not match repository metadata for '{file.Path}'.");
+                throw new InvalidDataException(
+                    $"Downloaded size does not match repository metadata for '{file.Path}'.");
             }
             if (!await HasExpectedHashAsync(partial, file.Sha256, cancellationToken))
             {
@@ -513,7 +651,8 @@ namespace KitsuMate.Onnx.Editor.Download
         {
             if (!File.Exists(path)) return false;
             using var sha = SHA256.Create();
-            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 1024 * 1024, true);
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 1024 * 1024,
+                true);
             byte[] hash = await Task.Run(() =>
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -555,10 +694,10 @@ namespace KitsuMate.Onnx.Editor.Download
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.Trim());
         }
 
-        private static string ContentHash(DiscoveredVariant variant)
+        private static string ContentHash(IEnumerable<DiscoveredFile> files)
         {
-            string value = string.Join("\n", variant.Files.OrderBy(file => file.Path, StringComparer.Ordinal)
-                .Select(file => file.Path + ":" + file.Sha256));
+            string value = string.Join("\n", files.OrderBy(file => file.Path, StringComparer.Ordinal)
+                .Select(file => file.Role + ":" + file.Path + ":" + file.Sha256));
             using var sha = SHA256.Create();
             return ToHex(sha.ComputeHash(Encoding.UTF8.GetBytes(value)));
         }
@@ -571,28 +710,41 @@ namespace KitsuMate.Onnx.Editor.Download
 
     internal sealed class DiscoveredRepository
     {
+        public string Owner { get; }
+        public string Name { get; }
         public string Family { get; }
-        public string ModelId { get; }
         public string Revision { get; }
-        public DiscoveredVariant[] Variants { get; }
+        public Dictionary<string, DiscoveredArtifact[]> Artifacts { get; }
+        public DiscoveredFile[] CommonFiles { get; }
+        public string[] RequiredRoles { get; }
 
-        public DiscoveredRepository(string family, string modelId, string revision, DiscoveredVariant[] variants)
+        public DiscoveredRepository(string owner, string name, string family, string revision,
+            Dictionary<string, DiscoveredArtifact[]> artifacts, DiscoveredFile[] commonFiles,
+            string[] requiredRoles)
         {
+            Owner = owner;
+            Name = name;
             Family = family;
-            ModelId = modelId;
             Revision = revision;
-            Variants = variants;
+            Artifacts = artifacts;
+            CommonFiles = commonFiles;
+            RequiredRoles = requiredRoles;
         }
     }
 
-    internal sealed class DiscoveredVariant
+    internal sealed class DiscoveredArtifact
     {
-        public string Name { get; }
+        public string Role { get; }
+        public string Type { get; }
+        public bool IsMerged { get; }
         public DiscoveredFile[] Files { get; }
+        public DiscoveredFile Model => Files[0];
 
-        public DiscoveredVariant(string name, DiscoveredFile[] files)
+        public DiscoveredArtifact(string role, string type, bool isMerged, DiscoveredFile[] files)
         {
-            Name = name;
+            Role = role;
+            Type = type;
+            IsMerged = isMerged;
             Files = files;
         }
     }
@@ -603,8 +755,10 @@ namespace KitsuMate.Onnx.Editor.Download
         public string Path { get; }
         public string Sha256 { get; }
         public long Size { get; }
-        public OnnxModelAsset.TensorInfo[] Inputs { get; } = Array.Empty<OnnxModelAsset.TensorInfo>();
-        public OnnxModelAsset.TensorInfo[] Outputs { get; } = Array.Empty<OnnxModelAsset.TensorInfo>();
+        public OnnxModelAsset.TensorInfo[] Inputs { get; private set; } =
+            Array.Empty<OnnxModelAsset.TensorInfo>();
+        public OnnxModelAsset.TensorInfo[] Outputs { get; private set; } =
+            Array.Empty<OnnxModelAsset.TensorInfo>();
 
         public DiscoveredFile(string role, string path, string sha256, long size)
         {
@@ -612,6 +766,12 @@ namespace KitsuMate.Onnx.Editor.Download
             Path = path;
             Sha256 = sha256;
             Size = size;
+        }
+
+        public void SetMetadata(OnnxModelAsset.TensorInfo[] inputs, OnnxModelAsset.TensorInfo[] outputs)
+        {
+            Inputs = inputs ?? Array.Empty<OnnxModelAsset.TensorInfo>();
+            Outputs = outputs ?? Array.Empty<OnnxModelAsset.TensorInfo>();
         }
     }
 

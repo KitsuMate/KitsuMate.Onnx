@@ -17,7 +17,7 @@ Consumer
 - Engine assets contain immutable serialized configuration and no sessions.
 - Runtime instances own sessions, cancellation, state, and serialized inference.
 - Disposing a runtime never disposes its caller-owned backend.
-- One model-set asset represents one installed model variant or quantization.
+- A model-set asset selects one repository artifact independently for each required ONNX role.
 - Stable model identity and structured diagnostics drive cache invalidation and compatibility checks.
 - ONNX models may be imported or external-file-backed under StreamingAssets.
 
@@ -34,9 +34,11 @@ Inference is asynchronous. Synchronous forwarding APIs are intentionally not pro
 
 ## Model installation
 
-Create a `ModelCatalog` asset, select a target feature model set, and install a variant through its inspector. The shared Editor installer supports resumable partial files, cancellation, SHA-256 verification, atomic finalization, external ONNX data, and automatic model-set assignment.
+Use a feature ModelSet inspector to scan a Hugging Face repository and select an artifact for each ONNX role. Standard filenames such as `model.onnx`, `model_fp16.onnx`, and `model_q4.onnx` are detected without a repository manifest. The Editor installer uses partial files, cancellation, SHA-256 verification, external ONNX data, engine validation, and automatic model-set assignment.
 
 The default storage root is `Assets/StreamingAssets/KitsuMateModels` and can be changed in `OnnxSettings`. Player builds use installed models read-only; runtime downloading is not included.
+
+ONNX Runtime setup exposes every discovered suffix. Sentis setup exposes only unsuffixed and explicit `fp32` artifacts, imports the raw ONNX as a Unity `ModelAsset`, and validates it before assigning the ModelSet. The same unsuffixed raw file can also be opened directly by ONNX Runtime.
 
 ## ONNX Runtime
 

@@ -32,9 +32,16 @@ namespace KitsuMate.Onnx.Motion.Editor
 
         internal static void ShowDownload(KimodoModelSet modelSet)
         {
-            ModelDownloadWindow.Show(new ModelDownloadRequest("KitsuMate/Kimodo-SOMA-RP-v1.1-ONNX", "0c68c5599781a1a17cd61b1e0ed13f0a0029da90", string.Empty,
-                ModelRoot(), "kimodo"), result =>
+            ModelDownloadWindow.Show(new ModelDownloadRequest("KitsuMate/Kimodo-SOMA-RP-v1.1-ONNX",
+                "0c68c5599781a1a17cd61b1e0ed13f0a0029da90", "kimodo"), result =>
             {
+                result.RequireGraph("model",
+                    new[]
+                    {
+                        "motion", "motion_valid", "text_embedding", "timestep", "first_heading_angle",
+                        "constraint_mask", "observed_motion"
+                    },
+                    new[] { "predicted_clean_motion" });
                 result.ConfigureModel(modelSet.MotionModel, "model");
                 result.ApplyMetadata(modelSet);
                 AssetDatabase.SaveAssets();
@@ -44,9 +51,13 @@ namespace KitsuMate.Onnx.Motion.Editor
 
         internal static void ShowEmbeddingDownload(Llm2VecModelSet embedding, KimodoModelSet kimodo)
         {
-            ModelDownloadWindow.Show(new ModelDownloadRequest("KitsuMate/Llama-3-LLM2Vec-MNTP-Supervised-ONNX", "e00d62a8f3604bfab74b54a2a64f3b9fc1a13a74", string.Empty,
-                ModelRoot(), "llm2vec"), result =>
+            ModelDownloadWindow.Show(new ModelDownloadRequest(
+                "KitsuMate/Llama-3-LLM2Vec-MNTP-Supervised-ONNX",
+                "e00d62a8f3604bfab74b54a2a64f3b9fc1a13a74", "llm2vec"), result =>
             {
+                result.RequireGraph("encoder",
+                    new[] { "input_ids", "attention_mask", "pooling_mask" },
+                    new[] { "embedding" });
                 result.ConfigureModel(embedding.Encoder, "encoder");
                 TextAsset config = result.ProjectPaths.ContainsKey("tokenizer-config") ? result.LoadAsset<TextAsset>("tokenizer-config") : null;
                 embedding.SetFiles(result.LoadAsset<TextAsset>("tokenizer"), config);
@@ -56,11 +67,6 @@ namespace KitsuMate.Onnx.Motion.Editor
             });
         }
 
-        private static string ModelRoot()
-        {
-            OnnxSettings settings = OnnxSettings.Load();
-            return settings != null ? settings.ModelStorageRoot : "Assets/StreamingAssets/KitsuMateModels";
-        }
     }
 
     [CustomEditor(typeof(KimodoEngine))]
