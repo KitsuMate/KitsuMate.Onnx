@@ -254,19 +254,63 @@ namespace KitsuMate.Onnx.Editor.Download
             foreach (var group in groups)
             {
                 if (components.Any(component => !group.Value.ContainsKey(component.Role))) continue;
-                var files = new List<DiscoveredFile>();
-                foreach (var component in components)
-                {
-                    HfSibling model = group.Value[component.Role];
-                    files.Add(await DiscoverFileAsync(request, revision, model, component.Role, token,
-                        cancellationToken));
-                    await AddExternalDataAsync(request, revision, byPath, model, component.Role + "-data", files,
-                        token, cancellationToken);
-                }
-                files.AddRange(common);
-                variants.Add(new DiscoveredVariant(group.Key, files.ToArray()));
+                variants.Add(new DiscoveredVariant(group.Key,
+                    await DiscoverChatterboxFilesAsync(request, revision, byPath, components, group.Value, common,
+                        token, cancellationToken)));
             }
+
+            if (variants.Count > 0) return variants;
+
+            var mixed = new Dictionary<string, HfSibling>(StringComparer.Ordinal);
+            foreach (var component in components)
+            {
+                HfSibling[] matches = onnxFiles.Where(model =>
+                    FileStem(model).StartsWith(component.Prefix, StringComparison.OrdinalIgnoreCase)).ToArray();
+                if (matches.Length != 1) return variants;
+                mixed[component.Role] = matches[0];
+            }
+
+            HfSibling largest = mixed.Values.OrderByDescending(model => FileSizeWithExternalData(byPath, model))
+                .First();
+            string largestPrefix = components.First(component =>
+                FileStem(largest).StartsWith(component.Prefix, StringComparison.OrdinalIgnoreCase)).Prefix;
+            string mixedName = VariantName(FileStem(largest).Substring(largestPrefix.Length), "default");
+            variants.Add(new DiscoveredVariant(mixedName,
+                await DiscoverChatterboxFilesAsync(request, revision, byPath, components, mixed, common, token,
+                    cancellationToken)));
             return variants;
+        }
+
+        private static async Task<DiscoveredFile[]> DiscoverChatterboxFilesAsync(ModelDownloadRequest request,
+            string revision, Dictionary<string, HfSibling> byPath,
+            (string Prefix, string Role)[] components, Dictionary<string, HfSibling> models,
+            DiscoveredFile[] common, string token, CancellationToken cancellationToken)
+        {
+            var files = new List<DiscoveredFile>();
+            foreach (var component in components)
+            {
+                HfSibling model = models[component.Role];
+                files.Add(await DiscoverFileAsync(request, revision, model, component.Role, token,
+                    cancellationToken));
+                await AddExternalDataAsync(request, revision, byPath, model, component.Role + "-data", files,
+                    token, cancellationToken);
+            }
+            files.AddRange(common);
+            return files.ToArray();
+        }
+
+        private static long FileSizeWithExternalData(Dictionary<string, HfSibling> byPath, HfSibling model)
+        {
+            long size = SiblingSize(model);
+            foreach (string candidate in new[] { model.rfilename + "_data", model.rfilename + ".data" })
+                if (byPath.TryGetValue(candidate, out HfSibling data))
+                    return size + SiblingSize(data);
+            return size;
+        }
+
+        private static long SiblingSize(HfSibling file)
+        {
+            return file.lfs != null && file.lfs.size > 0 ? file.lfs.size : file.size;
         }
 
         private static async Task<List<DiscoveredVariant>> DiscoverModelsAsync(ModelDownloadRequest request,

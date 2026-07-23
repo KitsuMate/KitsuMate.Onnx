@@ -39,5 +39,37 @@ namespace KitsuMate.Onnx.Tests
             Assert.That(variants.Contains("bnb4"), Is.True);
             Assert.That(variants.Contains("q4"), Is.True);
         }
+
+        [Test]
+        [Category("Integration")]
+        public async Task ScansChatterboxTurboVariant()
+        {
+            var request = new ModelDownloadRequest(
+                "KitsuMate/chatterbox-turbo-onnx",
+                "89b9d3a64cd1ff1bfc2c90c13771f6550790a6aa",
+                string.Empty,
+                "Assets/StreamingAssets/KitsuMateModels",
+                "chatterbox");
+
+            var variants = await ModelDownloader.GetVariantsAsync(request);
+
+            Assert.That(variants, Is.EqualTo(new[] { "q4f16" }));
+        }
+
+        [Test]
+        [Category("Integration")]
+        public async Task ScansMixedChatterboxNanoVariantByLargestComponent()
+        {
+            var request = new ModelDownloadRequest(
+                "KitsuMate/chatterbox-nano-onnx",
+                "b70ba9ceb90a146e93af372d805ec76baaa48b0b",
+                string.Empty,
+                "Assets/StreamingAssets/KitsuMateModels",
+                "chatterbox");
+
+            var variants = await ModelDownloader.GetVariantsAsync(request);
+
+            Assert.That(variants, Is.EqualTo(new[] { "q4" }));
+        }
     }
 }

@@ -153,64 +153,76 @@
       "destination": "ExampleProject/KitsuMateOnnxFixtures/kimodo/model_fp16_b3_t60.onnx"
     },
     {
-      "id": "chatterbox-speech",
-      "url": "https://huggingface.co/KitsuMate/chatterbox-onnx/resolve/f1c7a1ca9ad781ecf6fa60a6b2bcda8f4e316f70/onnx/speech_encoder_q4f16.onnx",
-      "sha256": "11f9068d15282d7f9b3c6adaa25e1f3ff9182777609b5ef3bb26c318b4aa02ef",
-      "destination": "ExampleProject/KitsuMateOnnxFixtures/chatterbox/speech_encoder_q4f16.onnx"
+      "id": "chatterbox-nano-speech",
+      "url": "https://huggingface.co/KitsuMate/chatterbox-nano-onnx/resolve/b70ba9ceb90a146e93af372d805ec76baaa48b0b/onnx/speech_encoder_q4f16.onnx",
+      "sha256": "29e249f59eaf95015527588b955e5286c7ee4524e7bb54a2f8d589b838e8aed2",
+      "destination": "ExampleProject/KitsuMateOnnxFixtures/chatterbox-ci/speech_encoder_q4f16.onnx"
     },
     {
-      "id": "chatterbox-speech-data",
-      "url": "https://huggingface.co/KitsuMate/chatterbox-onnx/resolve/f1c7a1ca9ad781ecf6fa60a6b2bcda8f4e316f70/onnx/speech_encoder_q4f16.onnx_data",
-      "sha256": "04431dcef6325c54b02de2219845888b464bcd1f1ac2f8839c2fecd1ed2ef294",
-      "destination": "ExampleProject/KitsuMateOnnxFixtures/chatterbox/speech_encoder_q4f16.onnx_data"
+      "id": "chatterbox-nano-speech-data",
+      "url": "https://huggingface.co/KitsuMate/chatterbox-nano-onnx/resolve/b70ba9ceb90a146e93af372d805ec76baaa48b0b/onnx/speech_encoder_q4f16.onnx_data",
+      "sha256": "55d89bd87fd36be48b2e831c99c2e309d432169119049066f9f22fcfe517798d",
+      "destination": "ExampleProject/KitsuMateOnnxFixtures/chatterbox-ci/speech_encoder_q4f16.onnx_data"
     },
     {
-      "id": "chatterbox-embed",
-      "url": "https://huggingface.co/KitsuMate/chatterbox-onnx/resolve/f1c7a1ca9ad781ecf6fa60a6b2bcda8f4e316f70/onnx/embed_tokens_q4f16.onnx",
-      "sha256": "409d40d94b1130ede7a0df95bdf581b1c3ff8e8a2f22157363a42ecb4808b906",
-      "destination": "ExampleProject/KitsuMateOnnxFixtures/chatterbox/embed_tokens_q4f16.onnx"
+      "id": "chatterbox-nano-embed",
+      "url": "https://huggingface.co/KitsuMate/chatterbox-nano-onnx/resolve/b70ba9ceb90a146e93af372d805ec76baaa48b0b/onnx/embed_tokens_fp16.onnx",
+      "sha256": "019d257243774091d78c2ad91c2c0f61e4e442740cb7b3b00b5a89109417b18d",
+      "destination": "ExampleProject/KitsuMateOnnxFixtures/chatterbox-ci/embed_tokens_fp16.onnx"
     },
     {
-      "id": "chatterbox-embed-data",
-      "url": "https://huggingface.co/KitsuMate/chatterbox-onnx/resolve/f1c7a1ca9ad781ecf6fa60a6b2bcda8f4e316f70/onnx/embed_tokens_q4f16.onnx_data",
-      "sha256": "898c563c3a5ca1b9ea10ce89b0cdcf252b0bb5ab460dfc4eadea003b56e5d2ee",
-      "destination": "ExampleProject/KitsuMateOnnxFixtures/chatterbox/embed_tokens_q4f16.onnx_data"
+      "id": "chatterbox-nano-embed-data",
+      "url": "https://huggingface.co/KitsuMate/chatterbox-nano-onnx/resolve/b70ba9ceb90a146e93af372d805ec76baaa48b0b/onnx/embed_tokens_fp16.onnx_data",
+      "sha256": "bcd7b35ae4f206932e2491cb60b42ebb80f6d8facfdb53ba7d7449ad00a3237b",
+      "destination": "ExampleProject/KitsuMateOnnxFixtures/chatterbox-ci/embed_tokens_fp16.onnx_data"
     },
     {
-      "id": "chatterbox-language",
-      "url": "https://huggingface.co/KitsuMate/chatterbox-onnx/resolve/f1c7a1ca9ad781ecf6fa60a6b2bcda8f4e316f70/onnx/language_model_q4f16.onnx",
-      "sha256": "3b78e9235be5e2e2a811e482399155cb30415f6d87c98c21d12bf48843fc928f",
-      "destination": "ExampleProject/KitsuMateOnnxFixtures/chatterbox/language_model_q4f16.onnx"
+      "id": "chatterbox-nano-language",
+      "url": "https://huggingface.co/KitsuMate/chatterbox-nano-onnx/resolve/b70ba9ceb90a146e93af372d805ec76baaa48b0b/onnx/language_model_q4f16.onnx",
+      "sha256": "8fe9620856d86b8a0235041d7fd2a8a47292da50828044bab5740b246e66e65b",
+      "destination": "ExampleProject/KitsuMateOnnxFixtures/chatterbox-ci/language_model_q4f16.onnx"
     },
     {
-      "id": "chatterbox-language-data",
-      "url": "https://huggingface.co/KitsuMate/chatterbox-onnx/resolve/f1c7a1ca9ad781ecf6fa60a6b2bcda8f4e316f70/onnx/language_model_q4f16.onnx_data",
-      "sha256": "2480da95471e4cd41a6b1876686e65e8a594c82459f2e5d6fd7592a5bad4e6da",
-      "destination": "ExampleProject/KitsuMateOnnxFixtures/chatterbox/language_model_q4f16.onnx_data"
+      "id": "chatterbox-nano-language-data",
+      "url": "https://huggingface.co/KitsuMate/chatterbox-nano-onnx/resolve/b70ba9ceb90a146e93af372d805ec76baaa48b0b/onnx/language_model_q4f16.onnx_data",
+      "sha256": "8f2fdc616373c9ccaebbf2db3210dc80c860922a672898bca111eb75f6d3abd2",
+      "destination": "ExampleProject/KitsuMateOnnxFixtures/chatterbox-ci/language_model_q4f16.onnx_data"
     },
     {
-      "id": "chatterbox-decoder",
-      "url": "https://huggingface.co/KitsuMate/chatterbox-onnx/resolve/f1c7a1ca9ad781ecf6fa60a6b2bcda8f4e316f70/onnx/conditional_decoder_q4f16.onnx",
-      "sha256": "5292579c54d0b85acf367f9f596113a16b9935235770353a6c123e256e1b9c35",
-      "destination": "ExampleProject/KitsuMateOnnxFixtures/chatterbox/conditional_decoder_q4f16.onnx"
+      "id": "chatterbox-nano-decoder",
+      "url": "https://huggingface.co/KitsuMate/chatterbox-nano-onnx/resolve/b70ba9ceb90a146e93af372d805ec76baaa48b0b/onnx/conditional_decoder_q4.onnx",
+      "sha256": "745faa9c2e2494a81e47f2a72601ac248639fd417ae53d999c5068bc441d1f97",
+      "destination": "ExampleProject/KitsuMateOnnxFixtures/chatterbox-ci/conditional_decoder_q4.onnx"
     },
     {
-      "id": "chatterbox-decoder-data",
-      "url": "https://huggingface.co/KitsuMate/chatterbox-onnx/resolve/f1c7a1ca9ad781ecf6fa60a6b2bcda8f4e316f70/onnx/conditional_decoder_q4f16.onnx_data",
-      "sha256": "51d58345a272747665ec9d5bb61e01835258a940e321a288582ac4c18cf01b5a",
-      "destination": "ExampleProject/KitsuMateOnnxFixtures/chatterbox/conditional_decoder_q4f16.onnx_data"
+      "id": "chatterbox-nano-decoder-data",
+      "url": "https://huggingface.co/KitsuMate/chatterbox-nano-onnx/resolve/b70ba9ceb90a146e93af372d805ec76baaa48b0b/onnx/conditional_decoder_q4.onnx_data",
+      "sha256": "b5c5317e0b79a1a19dd3d5e2b2091ea06b15716716ab801a54eaeb906c6971ec",
+      "destination": "ExampleProject/KitsuMateOnnxFixtures/chatterbox-ci/conditional_decoder_q4.onnx_data"
     },
     {
-      "id": "chatterbox-tokenizer",
+      "id": "chatterbox-nano-tokenizer",
+      "url": "https://huggingface.co/KitsuMate/chatterbox-nano-onnx/resolve/b70ba9ceb90a146e93af372d805ec76baaa48b0b/tokenizer.json",
+      "sha256": "3f04e34bea22f9144d1a19151154095bc9ce0430bf421304f5797e716288a906",
+      "destination": "ExampleProject/KitsuMateOnnxFixtures/chatterbox-ci/tokenizer.json"
+    },
+    {
+      "id": "chatterbox-nano-voice",
+      "url": "https://huggingface.co/KitsuMate/chatterbox-nano-onnx/resolve/b70ba9ceb90a146e93af372d805ec76baaa48b0b/default_voice.wav",
+      "sha256": "3ebc531cdaba358a327099c1c4f0448026719957bcf4d8e9868767f227e02f4e",
+      "destination": "ExampleProject/KitsuMateOnnxFixtures/chatterbox-ci/default_voice.wav"
+    },
+    {
+      "id": "chatterbox-nano-parity",
+      "url": "https://huggingface.co/KitsuMate/chatterbox-nano-onnx/resolve/b70ba9ceb90a146e93af372d805ec76baaa48b0b/test-fixtures/official-parity.json.gz",
+      "sha256": "8d9944a26453fe2c3b5cde02b11cdead879b24f7ae275db46782eacaecd44894",
+      "destination": "ExampleProject/KitsuMateOnnxFixtures/chatterbox-ci/official-parity.json.gz"
+    },
+    {
+      "id": "chatterbox-classic-tokenizer",
       "url": "https://huggingface.co/KitsuMate/chatterbox-onnx/resolve/f1c7a1ca9ad781ecf6fa60a6b2bcda8f4e316f70/tokenizer.json",
       "sha256": "ecddf6aaae85e271610a2743409f7e447886957d0b0836687c1eaec5ccac2891",
       "destination": "ExampleProject/KitsuMateOnnxFixtures/chatterbox/tokenizer.json"
-    },
-    {
-      "id": "chatterbox-voice",
-      "url": "https://huggingface.co/KitsuMate/chatterbox-onnx/resolve/f1c7a1ca9ad781ecf6fa60a6b2bcda8f4e316f70/default_voice.wav",
-      "sha256": "3ebc531cdaba358a327099c1c4f0448026719957bcf4d8e9868767f227e02f4e",
-      "destination": "ExampleProject/KitsuMateOnnxFixtures/chatterbox/default_voice.wav"
     }
   ]
 }

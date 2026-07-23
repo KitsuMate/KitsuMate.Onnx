@@ -26,10 +26,13 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
         /// <summary>Token ID for [STOP_SPEECH] — marks the end of speech generation.</summary>
         public const int StopSpeechToken = 6562;
 
-        /// <summary>Number of hidden layers in the Llama backbone.</summary>
+        /// <summary>Token used to pad Turbo and Nano speech before decoding.</summary>
+        public const int SilenceToken = 4299;
+
+        /// <summary>Number of hidden layers in the classic Chatterbox backbone.</summary>
         public const int NumHiddenLayers = 30;
 
-        /// <summary>Number of key-value heads per layer.</summary>
+        /// <summary>Number of key-value heads in classic Chatterbox.</summary>
         public const int NumKeyValueHeads = 16;
 
         /// <summary>Dimension of each attention head.</summary>

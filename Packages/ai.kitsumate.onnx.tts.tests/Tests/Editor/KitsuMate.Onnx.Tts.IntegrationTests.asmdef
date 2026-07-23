@@ -4,6 +4,6 @@
   "optionalUnityReferences": ["TestAssemblies"],
   "includePlatforms": ["Editor"],
   "overrideReferences": true,
-  "precompiledReferences": ["KitsuMate.Tokenizers.dll"],
+  "precompiledReferences": ["KitsuMate.Tokenizers.dll", "Newtonsoft.Json.dll"],
   "autoReferenced": false
 }
