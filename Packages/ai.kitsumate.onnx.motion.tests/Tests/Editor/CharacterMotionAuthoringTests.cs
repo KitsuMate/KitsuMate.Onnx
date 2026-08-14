@@ -633,11 +633,8 @@ namespace KitsuMate.Onnx.Motion.Tests
 
         private static void AssignMotion(CharacterMotion motion, CharacterMotionIntent intent, Animator animator, Transform origin)
         {
-            var serialized = new SerializedObject(motion);
-            serialized.FindProperty("intent").objectReferenceValue = intent;
-            serialized.FindProperty("targetAnimator").objectReferenceValue = animator;
-            serialized.FindProperty("actionOrigin").objectReferenceValue = origin;
-            serialized.ApplyModifiedPropertiesWithoutUndo();
+            motion.SetParts(new[] { new CharacterMotionPart(intent) });
+            motion.ConfigureTarget(animator, origin);
         }
 
         private static string RelativePath(Transform root, Transform child)
