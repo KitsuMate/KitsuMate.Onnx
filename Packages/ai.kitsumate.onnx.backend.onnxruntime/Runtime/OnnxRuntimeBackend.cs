@@ -12,100 +12,106 @@ using Debug = UnityEngine.Debug;
 namespace KitsuMate.Onnx
 {
     /// <summary>
-    /// GPU execution provider preference for Windows/Linux.
-    /// </summary>
-    public enum GpuProvider
-    {
-        /// <summary>Automatically detect best available provider.</summary>
-        Auto,
-        /// <summary>NVIDIA CUDA (requires NVIDIA GPU and CUDA toolkit).</summary>
-        CUDA,
-        /// <summary>DirectML - Works with any GPU on Windows (AMD, Intel, NVIDIA).</summary>
-        DirectML,
-        /// <summary>NVIDIA TensorRT (requires NVIDIA GPU and TensorRT).</summary>
-        TensorRT,
-        /// <summary>Force CPU only.</summary>
-        CPU
-    }
-    
-    /// <summary>
     /// ONNX Runtime backend implementation.
     /// Uses Microsoft.ML.OnnxRuntime for CPU and GPU inference.
     /// 
-    /// Supported platforms: Windows, macOS, Linux, Android, iOS
+    /// Supported platforms: Windows x64, Linux x64, and Android ARM.
     /// 
     /// GPU Support:
-    /// - Windows: CUDA (NVIDIA), DirectML (AMD, Intel, NVIDIA), TensorRT (NVIDIA)
+    /// - Windows: CUDA (NVIDIA), TensorRT (NVIDIA)
     /// - Linux: CUDA (NVIDIA), TensorRT (NVIDIA)
-    /// - macOS: CoreML (Apple Silicon/Intel)
-    /// - Android: NNAPI
-    /// - iOS: CoreML
+    /// - Android: NNAPI with CPU fallback
     /// </summary>
     [CreateAssetMenu(fileName = "OnnxRuntimeBackend", menuName = "KitsuMate/ONNX/Backends/ONNX Runtime")]
     public class OnnxRuntimeBackend : OnnxBackend
     {
         public override string BackendId => "onnxruntime";
-        [SerializeField, Tooltip("Enable GPU acceleration if available.")]
-        private bool _enableGpu = true;
-        
-        [SerializeField, Tooltip("Preferred GPU provider. Auto will try providers in order of performance.")]
-        private GpuProvider _preferredProvider = GpuProvider.Auto;
+        [SerializeField, Tooltip("Providers are attempted in order. Include CPU explicitly to allow initialization fallback.")]
+        private List<OnnxExecutionProvider> _providerOrder = new()
+        {
+            OnnxExecutionProvider.TensorRt,
+            OnnxExecutionProvider.Cuda,
+            OnnxExecutionProvider.DirectMl,
+            OnnxExecutionProvider.OpenVino,
+            OnnxExecutionProvider.Nnapi,
+            OnnxExecutionProvider.Cpu,
+        };
         
         [SerializeField, Tooltip("GPU device ID (for multi-GPU systems).")]
         private int _gpuDeviceId;
-        
-        // Tracks the active GPU provider name for IO Binding (e.g., "Cuda", "DML")
-        private string _activeGpuProviderName;
         
         private static readonly RuntimePlatform[] _supportedPlatforms =
         {
             RuntimePlatform.WindowsPlayer,
             RuntimePlatform.WindowsEditor,
-            RuntimePlatform.OSXPlayer,
-            RuntimePlatform.OSXEditor,
             RuntimePlatform.LinuxPlayer,
             RuntimePlatform.LinuxEditor,
             RuntimePlatform.Android,
-            RuntimePlatform.IPhonePlayer,
         };
         
         /// <summary>Display name for Editor UI.</summary>
-        public override string DisplayName => _enableGpu ? $"ONNX Runtime ({_preferredProvider})" : "ONNX Runtime (CPU)";
-        
-        /// <summary>Preferred GPU provider.</summary>
-        public GpuProvider PreferredProvider
+        public override string DisplayName => $"ONNX Runtime ({string.Join(" > ", EffectiveProviderOrder)})";
+
+        /// <summary>
+        /// Ordered initialization policy. CPU must be present to permit initialization fallback.
+        /// ONNX Runtime can still assign unsupported graph nodes to its CPU implementation.
+        /// </summary>
+        public IReadOnlyList<OnnxExecutionProvider> ProviderOrder => EffectiveProviderOrder;
+
+        public int DeviceId
         {
-            get => _preferredProvider;
-            set => _preferredProvider = value;
+            get => _gpuDeviceId;
+            set
+            {
+                if (value < 0) throw new ArgumentOutOfRangeException(nameof(value));
+                _gpuDeviceId = value;
+            }
         }
+
+        public void SetProviderOrder(params OnnxExecutionProvider[] providers)
+        {
+            if (providers == null) throw new ArgumentNullException(nameof(providers));
+            ValidateProviderOrder(providers);
+            _providerOrder = new List<OnnxExecutionProvider>(providers);
+        }
+
+        private IReadOnlyList<OnnxExecutionProvider> EffectiveProviderOrder =>
+            _providerOrder != null
+                ? _providerOrder
+                : Array.Empty<OnnxExecutionProvider>();
         
         /// <summary>Platforms this backend supports.</summary>
         public override IReadOnlyList<RuntimePlatform> SupportedPlatforms => _supportedPlatforms;
         
-        /// <summary>Whether ONNX Runtime is available.</summary>
-        public override bool IsAvailable => true; // DLLs are embedded
+        /// <summary>Whether this platform is supported and the native ONNX Runtime can be loaded.</summary>
+        public override bool IsAvailable
+        {
+            get
+            {
+                if (!_supportedPlatforms.Contains(Application.platform)) return false;
+                try
+                {
+                    _ = OrtEnv.Instance();
+                    return true;
+                }
+                catch (Exception)
+                {
+                    return false;
+                }
+            }
+        }
         
         /// <summary>Priority - prefer ONNX Runtime over fallbacks.</summary>
         public override int Priority => 100;
         
-        /// <summary>Whether GPU acceleration is enabled.</summary>
-        public bool EnableGpu
-        {
-            get => _enableGpu;
-            set => _enableGpu = value;
-        }
-        
         /// <summary>Create an inference session from model bytes.</summary>
         public override IOnnxSession CreateSession(byte[] modelData, OnnxSessionOptions options)
         {
+            if (modelData == null || modelData.Length == 0)
+                throw new ArgumentException("Model data is required.", nameof(modelData));
             options ??= OnnxSessionOptions.Default;
-            
-            var sw = Stopwatch.StartNew();
-            using var ortOptions = CreateOrtSessionOptions(options);
-            var session = new InferenceSession(modelData, ortOptions);
-            var elapsed = sw.ElapsedMilliseconds;
-            UnityEngine.Debug.Log($"[OnnxRuntimeBackend] Session created in {elapsed}ms (model={modelData.Length / (1024f * 1024f):F1}MB)");
-            return new OnnxRuntimeSession(session, _activeGpuProviderName, _gpuDeviceId);
+            return CreateSessionCore(options, ortOptions => new InferenceSession(modelData, ortOptions),
+                $"model={modelData.Length / (1024f * 1024f):F1}MB");
         }
 
         /// <summary>Create a session without copying a large model into managed memory.</summary>
@@ -119,24 +125,68 @@ namespace KitsuMate.Onnx
                 throw new FileNotFoundException("ONNX model was not found.", modelPath);
 
             options ??= OnnxSessionOptions.Default;
-            var sw = Stopwatch.StartNew();
-            using var ortOptions = CreateOrtSessionOptions(options);
-            var session = new InferenceSession(modelPath, ortOptions);
-            UnityEngine.Debug.Log(
-                $"[OnnxRuntimeBackend] Session created in {sw.ElapsedMilliseconds}ms " +
-                $"(path={Path.GetFileName(modelPath)})");
-            return new OnnxRuntimeSession(session, _activeGpuProviderName, _gpuDeviceId);
+            return CreateSessionCore(options, ortOptions => new InferenceSession(modelPath, ortOptions),
+                $"path={Path.GetFileName(modelPath)}");
         }
-        
-        private SessionOptions CreateOrtSessionOptions(OnnxSessionOptions options)
+
+        private IOnnxSession CreateSessionCore(
+            OnnxSessionOptions options,
+            Func<SessionOptions, InferenceSession> create,
+            string modelDescription)
+        {
+            IReadOnlyList<OnnxExecutionProvider> requested = EffectiveProviderOrder.ToArray();
+            IReadOnlyList<OnnxExecutionProvider> packaged = GetPackagedProviders();
+            ValidateProviderOrder(requested);
+            ResolveProviderOrder(requested, packaged, Application.platform,
+                out IReadOnlyList<OnnxExecutionProvider> eligible,
+                out IReadOnlyList<OnnxProviderSkip> skipped);
+
+            var failures = new List<string>();
+            var attempted = new List<OnnxExecutionProvider>();
+            for (int index = 0; index < eligible.Count; index++)
+            {
+                OnnxExecutionProvider provider = eligible[index];
+                attempted.Add(provider);
+                var sw = Stopwatch.StartNew();
+                try
+                {
+                    using SessionOptions ortOptions = CreateOrtSessionOptions(options, provider);
+                    InferenceSession session = create(ortOptions);
+                    var diagnostics = new OnnxSessionDiagnostics(
+                        requested, eligible, skipped, attempted, failures, packaged, provider,
+                        typeof(InferenceSession).Assembly.GetName().Version?.ToString(), _gpuDeviceId);
+                    Debug.Log($"[OnnxRuntimeBackend] Session created in {sw.ElapsedMilliseconds}ms " +
+                              $"({modelDescription}, provider={provider})");
+                    return new OnnxRuntimeSession(session, diagnostics, GetDeviceProviderName(provider), _gpuDeviceId);
+                }
+                catch (Exception exception) when (index + 1 < eligible.Count)
+                {
+                    string failure = $"{provider}: {exception.GetBaseException().Message}";
+                    failures.Add(failure);
+                    Debug.LogWarning($"[OnnxRuntimeBackend] Provider initialization failed; trying {eligible[index + 1]}. {failure}");
+                }
+                catch (Exception exception)
+                {
+                    throw new OnnxProviderUnavailableException(provider,
+                        $"Required ONNX execution provider '{provider}' failed to initialize and no fallback remains.", exception);
+                }
+            }
+
+            throw new OnnxProviderUnavailableException(requested[0], "No eligible ONNX execution provider could be initialized.");
+        }
+
+        private SessionOptions CreateOrtSessionOptions(OnnxSessionOptions options, OnnxExecutionProvider provider)
         {
             var ortOptions = new SessionOptions
             {
                 GraphOptimizationLevel = ToOrtOptimizationLevel(options.OptimizationLevel),
-                EnableMemoryPattern = options.EnableMemoryPattern,
+                EnableMemoryPattern = provider == OnnxExecutionProvider.DirectMl ? false : options.EnableMemoryPattern,
                 EnableCpuMemArena = options.EnableCpuMemArena,
                 LogSeverityLevel = OrtLoggingLevel.ORT_LOGGING_LEVEL_ERROR
             };
+
+            if (provider == OnnxExecutionProvider.DirectMl)
+                ortOptions.ExecutionMode = ExecutionMode.ORT_SEQUENTIAL;
             
             if (options.IntraOpThreads > 0)
                 ortOptions.IntraOpNumThreads = options.IntraOpThreads;
@@ -144,15 +194,7 @@ namespace KitsuMate.Onnx
             if (options.InterOpThreads > 0)
                 ortOptions.InterOpNumThreads = options.InterOpThreads;
             
-            // Configure execution providers
-            if (_enableGpu)
-            {
-                TryAddGpuProvider(ortOptions);
-            }
-            
-            // Always add CPU as fallback
-            ortOptions.AppendExecutionProvider_CPU(0);
-            
+            AppendProvider(ortOptions, provider);
             return ortOptions;
         }
 
@@ -167,213 +209,157 @@ namespace KitsuMate.Onnx
             };
         }
         
-        private void TryAddGpuProvider(SessionOptions options)
+        private void AppendProvider(SessionOptions options, OnnxExecutionProvider provider)
         {
-            _activeGpuProviderName = null;
-            if (_preferredProvider == GpuProvider.CPU)
-                return;
-                
-            #if UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN
-            TryAddWindowsGpuProvider(options);
-            #elif UNITY_EDITOR_LINUX || UNITY_STANDALONE_LINUX
-            TryAddLinuxGpuProvider(options);
-            #elif UNITY_EDITOR_OSX || UNITY_STANDALONE_OSX
-            TryAddMacOSGpuProvider(options);
-            #elif UNITY_ANDROID
-            TryAddAndroidGpuProvider(options);
-            #elif UNITY_IOS
-            TryAddIOSGpuProvider(options);
-            #endif
-        }
-        
-        #if UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN
-        private void TryAddWindowsGpuProvider(SessionOptions options)
-        {
-            switch (_preferredProvider)
+            switch (provider)
             {
-                case GpuProvider.CUDA:
-                    if (TryAddCuda(options)) return;
-                    break;
-                    
-                case GpuProvider.DirectML:
-                    if (TryAddDirectML(options)) return;
-                    break;
-                    
-                case GpuProvider.TensorRT:
-                    if (TryAddTensorRT(options)) return;
-                    if (TryAddCuda(options)) return; // Fallback to CUDA
-                    break;
-                    
-                case GpuProvider.Auto:
+                case OnnxExecutionProvider.Cpu:
+                    options.AppendExecutionProvider_CPU(0);
+                    return;
+                case OnnxExecutionProvider.Cuda:
+                    options.AppendExecutionProvider_CUDA(_gpuDeviceId);
+                    return;
+                case OnnxExecutionProvider.TensorRt:
+                    options.AppendExecutionProvider_Tensorrt(_gpuDeviceId);
+                    return;
+                case OnnxExecutionProvider.Nnapi:
+#if UNITY_ANDROID && !UNITY_EDITOR
+                    EnsureNnapiApiLevel();
+                    options.AppendExecutionProvider_Nnapi();
+                    return;
+#else
+                    throw new PlatformNotSupportedException("NNAPI is only available in Android players.");
+#endif
+                case OnnxExecutionProvider.DirectMl:
+                    InvokeProviderMethod(options, "AppendExecutionProvider_DML", _gpuDeviceId);
+                    return;
+                case OnnxExecutionProvider.OpenVino:
+                    InvokeProviderMethod(options, "AppendExecutionProvider_OpenVINO", "CPU_FP32");
+                    return;
                 default:
-                    // Auto: Try TensorRT -> CUDA -> DirectML
-                    // TensorRT is fastest for NVIDIA, CUDA is good fallback
-                    // DirectML works with ALL GPUs (AMD, Intel, NVIDIA)
-                    if (TryAddTensorRT(options)) return;
-                    if (TryAddCuda(options)) return;
-                    if (TryAddDirectML(options)) return;
-                    break;
+                    throw new ArgumentOutOfRangeException(nameof(provider), provider, null);
             }
-            
-            Debug.LogWarning("[OnnxRuntimeBackend] No GPU provider available on Windows. Using CPU.");
         }
-        
-        private bool TryAddCuda(SessionOptions options)
+
+        private static void InvokeProviderMethod(SessionOptions options, string methodName, object argument)
         {
-            try
-            {
-                options.AppendExecutionProvider_CUDA(_gpuDeviceId);
-                _activeGpuProviderName = "Cuda";
-                Debug.Log($"[OnnxRuntimeBackend] Using CUDA execution provider (device {_gpuDeviceId})");
-                return true;
-            }
-            catch (Exception e)
-            {
-                Debug.Log($"[OnnxRuntimeBackend] CUDA not available: {e.Message}");
-                return false;
-            }
+            System.Reflection.MethodInfo method = typeof(SessionOptions).GetMethods()
+                .FirstOrDefault(candidate => candidate.Name == methodName && candidate.GetParameters().Length == 1);
+            if (method == null)
+                throw new MissingMethodException(typeof(SessionOptions).FullName, methodName);
+            method.Invoke(options, new[] { argument });
         }
-        
-        private bool TryAddDirectML(SessionOptions options)
+
+        private static void ValidateProviderOrder(IReadOnlyList<OnnxExecutionProvider> providers)
         {
-            try
-            {
-                options.AppendExecutionProvider_DML(_gpuDeviceId);
-                _activeGpuProviderName = "DML";
-                Debug.Log($"[OnnxRuntimeBackend] Using DirectML execution provider (device {_gpuDeviceId}) - supports AMD, Intel, and NVIDIA GPUs");
-                return true;
-            }
-            catch (Exception e)
-            {
-                Debug.Log($"[OnnxRuntimeBackend] DirectML not available: {e.Message}");
-                return false;
-            }
+            if (providers == null || providers.Count == 0)
+                throw new ArgumentException("Provider order must contain at least one provider.", nameof(providers));
+            var unique = new HashSet<OnnxExecutionProvider>();
+            foreach (OnnxExecutionProvider provider in providers)
+                if (!unique.Add(provider))
+                    throw new ArgumentException($"Provider order contains duplicate provider '{provider}'.", nameof(providers));
         }
-        
-        private bool TryAddTensorRT(SessionOptions options)
+
+        public static bool IsProviderValidForPlatform(OnnxExecutionProvider provider, RuntimePlatform platform)
         {
-            try
+            return platform switch
             {
-                options.AppendExecutionProvider_Tensorrt(_gpuDeviceId);
-                _activeGpuProviderName = "Tensorrt";
-                Debug.Log($"[OnnxRuntimeBackend] Using TensorRT execution provider (device {_gpuDeviceId})");
-                return true;
-            }
-            catch (Exception e)
-            {
-                Debug.Log($"[OnnxRuntimeBackend] TensorRT not available: {e.Message}");
-                return false;
-            }
+                RuntimePlatform.WindowsEditor or RuntimePlatform.WindowsPlayer =>
+                    provider is OnnxExecutionProvider.Cpu or OnnxExecutionProvider.DirectMl or OnnxExecutionProvider.Cuda or OnnxExecutionProvider.TensorRt,
+                RuntimePlatform.LinuxEditor or RuntimePlatform.LinuxPlayer =>
+                    provider is OnnxExecutionProvider.Cpu or OnnxExecutionProvider.Cuda or OnnxExecutionProvider.TensorRt or OnnxExecutionProvider.OpenVino,
+                RuntimePlatform.Android => provider is OnnxExecutionProvider.Cpu or OnnxExecutionProvider.Nnapi,
+                _ => false
+            };
         }
-        #endif
-        
-        #if UNITY_EDITOR_LINUX || UNITY_STANDALONE_LINUX
-        private void TryAddLinuxGpuProvider(SessionOptions options)
+
+        public static IReadOnlyList<OnnxExecutionProvider> ResolveProviderOrder(
+            IReadOnlyList<OnnxExecutionProvider> configured,
+            IReadOnlyList<OnnxExecutionProvider> packaged,
+            RuntimePlatform platform)
         {
-            switch (_preferredProvider)
-            {
-                case GpuProvider.CUDA:
-                    if (TryAddCudaLinux(options)) return;
-                    break;
-                    
-                case GpuProvider.TensorRT:
-                    if (TryAddTensorRTLinux(options)) return;
-                    if (TryAddCudaLinux(options)) return;
-                    break;
-                    
-                case GpuProvider.DirectML:
-                    Debug.LogWarning("[OnnxRuntimeBackend] DirectML is not available on Linux. Use CUDA for NVIDIA GPUs.");
-                    if (TryAddCudaLinux(options)) return;
-                    break;
-                    
-                case GpuProvider.Auto:
-                default:
-                    // Auto: Try TensorRT -> CUDA
-                    if (TryAddTensorRTLinux(options)) return;
-                    if (TryAddCudaLinux(options)) return;
-                    break;
-            }
-            
-            Debug.LogWarning("[OnnxRuntimeBackend] No GPU provider available on Linux. Using CPU. Note: AMD GPUs require ROCm build of ONNX Runtime.");
+            ResolveProviderOrder(configured, packaged, platform, out IReadOnlyList<OnnxExecutionProvider> eligible, out _);
+            return eligible;
         }
-        
-        private bool TryAddCudaLinux(SessionOptions options)
+
+        private static void ResolveProviderOrder(
+            IReadOnlyList<OnnxExecutionProvider> configured,
+            IReadOnlyList<OnnxExecutionProvider> packaged,
+            RuntimePlatform platform,
+            out IReadOnlyList<OnnxExecutionProvider> eligible,
+            out IReadOnlyList<OnnxProviderSkip> skipped)
         {
-            try
+            ValidateProviderOrder(configured);
+            if (packaged == null) throw new ArgumentNullException(nameof(packaged));
+
+            var resolved = new List<OnnxExecutionProvider>();
+            var omitted = new List<OnnxProviderSkip>();
+            foreach (OnnxExecutionProvider provider in configured)
             {
-                options.AppendExecutionProvider_CUDA(_gpuDeviceId);
-                _activeGpuProviderName = "Cuda";
-                Debug.Log($"[OnnxRuntimeBackend] Using CUDA execution provider (device {_gpuDeviceId})");
-                return true;
+                if (!IsProviderValidForPlatform(provider, platform))
+                {
+                    omitted.Add(new OnnxProviderSkip(provider, $"Not supported on {platform}."));
+                    continue;
+                }
+                if (!packaged.Contains(provider))
+                {
+                    omitted.Add(new OnnxProviderSkip(provider, "Not included by the active Unity Build Profile."));
+                    continue;
+                }
+                resolved.Add(provider);
             }
-            catch (Exception e)
-            {
-                Debug.Log($"[OnnxRuntimeBackend] CUDA not available: {e.Message}");
-                return false;
-            }
+
+            if (resolved.Count == 0)
+                throw new OnnxProviderUnavailableException(configured[0],
+                    $"None of the configured ONNX providers [{string.Join(", ", configured)}] are eligible on {platform} " +
+                    $"with packaged providers [{string.Join(", ", packaged)}].");
+
+            eligible = resolved.AsReadOnly();
+            skipped = omitted.AsReadOnly();
         }
-        
-        private bool TryAddTensorRTLinux(SessionOptions options)
+
+        public static IReadOnlyList<OnnxExecutionProvider> GetPackagedProviders()
         {
-            try
-            {
-                options.AppendExecutionProvider_Tensorrt(_gpuDeviceId);
-                _activeGpuProviderName = "Tensorrt";
-                Debug.Log($"[OnnxRuntimeBackend] Using TensorRT execution provider (device {_gpuDeviceId})");
-                return true;
-            }
-            catch (Exception e)
-            {
-                Debug.Log($"[OnnxRuntimeBackend] TensorRT not available: {e.Message}");
-                return false;
-            }
+            var providers = new List<OnnxExecutionProvider> { OnnxExecutionProvider.Cpu };
+#if KITSUMATE_ORT_DIRECTML
+            providers.Add(OnnxExecutionProvider.DirectMl);
+#endif
+#if KITSUMATE_ORT_CUDA
+            providers.Add(OnnxExecutionProvider.Cuda);
+#endif
+#if KITSUMATE_ORT_TENSORRT
+            providers.Add(OnnxExecutionProvider.TensorRt);
+#endif
+#if KITSUMATE_ORT_OPENVINO
+            providers.Add(OnnxExecutionProvider.OpenVino);
+#endif
+#if UNITY_ANDROID && !UNITY_EDITOR && KITSUMATE_ORT_NNAPI
+            providers.Add(OnnxExecutionProvider.Nnapi);
+#endif
+            return providers.AsReadOnly();
         }
-        #endif
-        
-        #if UNITY_EDITOR_OSX || UNITY_STANDALONE_OSX
-        private void TryAddMacOSGpuProvider(SessionOptions options)
+
+        private static string GetDeviceProviderName(OnnxExecutionProvider provider)
         {
-            try
+            return provider switch
             {
-                options.AppendExecutionProvider_CoreML();
-                Debug.Log("[OnnxRuntimeBackend] Using CoreML execution provider");
-            }
-            catch (Exception e)
-            {
-                Debug.LogWarning($"[OnnxRuntimeBackend] CoreML not available: {e.Message}. Using CPU.");
-            }
+                OnnxExecutionProvider.Cuda => "Cuda",
+                OnnxExecutionProvider.TensorRt => "Tensorrt",
+                OnnxExecutionProvider.DirectMl => "DML",
+                _ => null
+            };
         }
-        #endif
-        
-        #if UNITY_ANDROID
-        private void TryAddAndroidGpuProvider(SessionOptions options)
+
+#if UNITY_ANDROID && !UNITY_EDITOR
+        private static void EnsureNnapiApiLevel()
         {
-            try
-            {
-                options.AppendExecutionProvider_Nnapi();
-                Debug.Log("[OnnxRuntimeBackend] Using NNAPI execution provider");
-            }
-            catch (Exception e)
-            {
-                Debug.LogWarning($"[OnnxRuntimeBackend] NNAPI not available: {e.Message}. Using CPU.");
-            }
+            using var version = new AndroidJavaClass("android.os.Build$VERSION");
+            int sdkVersion = version.GetStatic<int>("SDK_INT");
+            if (sdkVersion < 27)
+                throw new PlatformNotSupportedException($"NNAPI requires Android API 27; device API is {sdkVersion}.");
         }
-        #endif
-        
-        #if UNITY_IOS
-        private void TryAddIOSGpuProvider(SessionOptions options)
-        {
-            try
-            {
-                options.AppendExecutionProvider_CoreML();
-                Debug.Log("[OnnxRuntimeBackend] Using CoreML execution provider");
-            }
-            catch (Exception e)
-            {
-                Debug.LogWarning($"[OnnxRuntimeBackend] CoreML not available: {e.Message}. Using CPU.");
-            }
-        }
-        #endif
+#endif
+
     }
     
     /// <summary>
@@ -402,19 +388,20 @@ namespace KitsuMate.Onnx
         
         public IReadOnlyList<string> InputNames => _inputNames;
         public IReadOnlyList<string> OutputNames => _outputNames;
+        public OnnxSessionDiagnostics Diagnostics { get; }
         
-        public OnnxRuntimeSession(InferenceSession session, string gpuProviderName = null, int gpuDeviceId = 0)
+        public OnnxRuntimeSession(
+            InferenceSession session,
+            OnnxSessionDiagnostics diagnostics,
+            string gpuProviderName = null,
+            int gpuDeviceId = 0)
         {
             _session = session ?? throw new ArgumentNullException(nameof(session));
+            Diagnostics = diagnostics ?? throw new ArgumentNullException(nameof(diagnostics));
             _gpuProviderName = gpuProviderName;
             _gpuDeviceId = gpuDeviceId;
             _inputNames = session.InputMetadata.Keys.ToList();
             _outputNames = session.OutputMetadata.Keys.ToList();
-            
-            // Prevent InferenceSession's native finalizer from ever running.
-            // We control disposal explicitly; a leak is preferable to a crash
-            // during domain reload when native DLLs may already be unloaded.
-            GC.SuppressFinalize(_session);
         }
         
         public IReadOnlyDictionary<string, OnnxTensor> Run(IReadOnlyDictionary<string, OnnxTensor> inputs)
@@ -519,7 +506,7 @@ namespace KitsuMate.Onnx
                 var src = tensor.AsLongArray();
                 var dst = new int[src.Length];
                 for (int i = 0; i < src.Length; i++)
-                    dst[i] = (int)src[i];
+                    dst[i] = checked((int)src[i]);
                 return OnnxTensor.FromArray(dst, tensor.Shape, tensor.Name);
             }
             
@@ -537,66 +524,7 @@ namespace KitsuMate.Onnx
         }
         
         /// <summary>Convert float32 to IEEE 754 half-precision (ushort).</summary>
-        private static ushort FloatToHalf(float value)
-        {
-            uint bits = unchecked((uint)BitConverter.SingleToInt32Bits(value));
-            uint sign = (bits >> 16) & 0x8000;
-            int exp = (int)((bits >> 23) & 0xFF) - 127 + 15;
-            uint mantissa = bits & 0x7FFFFF;
-            
-            if (exp <= 0)
-            {
-                if (exp < -10) return (ushort)sign; // too small → ±0
-                mantissa |= 0x800000;
-                int shift = 14 - exp;
-                mantissa >>= shift;
-                return (ushort)(sign | mantissa);
-            }
-            if (exp == 0xFF - 127 + 15)
-            {
-                // Inf/NaN
-                return mantissa == 0
-                    ? (ushort)(sign | 0x7C00)
-                    : (ushort)(sign | 0x7C00 | (mantissa >> 13));
-            }
-            if (exp > 30) return (ushort)(sign | 0x7C00); // overflow → ±Inf
-            
-            return (ushort)(sign | ((uint)exp << 10) | (mantissa >> 13));
-        }
-        
         /// <summary>Convert IEEE 754 half-precision (ushort) to float32.</summary>
-        private static float HalfToFloat(ushort value)
-        {
-            uint sign = (uint)(value & 0x8000) << 16;
-            uint exp = (uint)(value >> 10) & 0x1F;
-            uint mantissa = (uint)(value & 0x3FF);
-            
-            uint bits;
-            if (exp == 0)
-            {
-                if (mantissa == 0) { bits = sign; } // ±0
-                else
-                {
-                    // denormalized → normalize
-                    exp = 1;
-                    while ((mantissa & 0x400) == 0) { mantissa <<= 1; exp--; }
-                    mantissa &= 0x3FF;
-                    bits = sign | ((127 - 15 + exp) << 23) | (mantissa << 13);
-                }
-            }
-            else if (exp == 31)
-            {
-                // Inf/NaN
-                bits = sign | 0x7F800000 | (mantissa << 13);
-            }
-            else
-            {
-                bits = sign | ((exp + 127 - 15) << 23) | (mantissa << 13);
-            }
-            
-            return BitConverter.Int32BitsToSingle(unchecked((int)bits));
-        }
-        
         private static NamedOnnxValue ConvertToOrtValue(string name, OnnxTensor tensor)
         {
             var shape = tensor.Shape;
@@ -651,6 +579,11 @@ namespace KitsuMate.Onnx
                 var shape = longTensor.Dimensions.ToArray();
                 var data = longTensor.ToArray();
                 return OnnxTensor.FromArray(data, shape, value.Name);
+            }
+
+            if (value.Value is Tensor<byte> byteTensor)
+            {
+                return OnnxTensor.FromArray(byteTensor.ToArray(), byteTensor.Dimensions.ToArray(), value.Name);
             }
 
             if (value.Value is Tensor<bool> boolTensor)
@@ -720,7 +653,9 @@ namespace KitsuMate.Onnx
                 // Bind device inputs (KV cache from previous step — already on GPU)
                 foreach (var dt in deviceInputs)
                 {
-                    var ortDt = (OrtDeviceTensor)dt;
+                    if (dt is not OrtDeviceTensor ortDt)
+                        throw new ArgumentException($"Device input '{dt?.Name}' was created by an incompatible backend.", nameof(deviceInputs));
+                    ortDt.ValidateFor(this, _session.InputMetadata.TryGetValue(dt.Name, out var metadata) ? metadata : null);
                     binding.BindInput(dt.Name, ortDt.Value);
                 }
                 
@@ -754,17 +689,22 @@ namespace KitsuMate.Onnx
                 // Extract output OrtValues
                 var resultCollection = binding.GetOutputValues();
                 
-                // Wrap each output as IDeviceTensor
+                // Wrap each output as IDeviceTensor and dispose partial ownership on failure.
                 var outputs = new List<IDeviceTensor>(_outputNames.Count);
-                for (int i = 0; i < resultCollection.Count; i++)
+                try
                 {
-                    var ortValue = resultCollection[i];
-                    // Take ownership: suppress SafeHandle finalizer to prevent crashes
-                    // during domain reload. We dispose explicitly in OrtDeviceTensor.Dispose().
-                    GC.SuppressFinalize(ortValue);
-                    var deviceTensor = new OrtDeviceTensor(ortValue, _outputNames[i], this);
-                    lock (_trackedDeviceTensors) _trackedDeviceTensors.Add(deviceTensor);
-                    outputs.Add(deviceTensor);
+                    for (int i = 0; i < resultCollection.Count; i++)
+                    {
+                        var deviceTensor = new OrtDeviceTensor(resultCollection[i], _outputNames[i], this);
+                        lock (_trackedDeviceTensors) _trackedDeviceTensors.Add(deviceTensor);
+                        outputs.Add(deviceTensor);
+                    }
+                }
+                catch
+                {
+                    foreach (IDeviceTensor output in outputs) output.Dispose();
+                    for (int i = outputs.Count; i < resultCollection.Count; i++) resultCollection[i].Dispose();
+                    throw;
                 }
                 
                 if (sw != null)
@@ -796,9 +736,13 @@ namespace KitsuMate.Onnx
                 allInputs[dt.Name] = dt.ToCpu();
             
             var result = Run(allInputs);
-            var outputs = new List<IDeviceTensor>(result.Count);
-            foreach (var kv in result)
-                outputs.Add(new CpuDeviceTensor(kv.Value) { Name = kv.Key });
+            var outputs = new List<IDeviceTensor>(_outputNames.Count);
+            foreach (string outputName in _outputNames)
+            {
+                if (!result.TryGetValue(outputName, out OnnxTensor tensor))
+                    throw new OnnxModelContractException($"ONNX Runtime did not return declared output '{outputName}'.");
+                outputs.Add(new CpuDeviceTensor(tensor) { Name = outputName });
+            }
             return outputs;
         }
         
@@ -911,6 +855,8 @@ namespace KitsuMate.Onnx
                     _value.GetTensorDataAsSpan<int>().ToArray(), shape, Name),
                 TensorElementType.Int64 => OnnxTensor.FromArray(
                     _value.GetTensorDataAsSpan<long>().ToArray(), shape, Name),
+                TensorElementType.UInt8 => OnnxTensor.FromArray(
+                    _value.GetTensorDataAsSpan<byte>().ToArray(), shape, Name),
                 TensorElementType.Bool => OnnxTensor.FromArray(
                     _value.GetTensorDataAsSpan<bool>().ToArray(), shape, Name),
                 TensorElementType.Float16 => ConvertFloat16ToCpu(shape),
@@ -926,6 +872,25 @@ namespace KitsuMate.Onnx
             for (int i = 0; i < f16Span.Length; i++)
                 floats[i] = (float)f16Span[i];
             return OnnxTensor.FromArray(floats, shape, Name);
+        }
+
+        internal void ValidateFor(OnnxRuntimeSession session, NodeMetadata metadata)
+        {
+            if (_value == null) throw new ObjectDisposedException(nameof(OrtDeviceTensor));
+            if (!ReferenceEquals(_ownerSession, session))
+                throw new ArgumentException($"Device tensor '{Name}' belongs to a different ONNX Runtime session.");
+            if (metadata == null)
+                throw new OnnxModelContractException($"Model does not declare device input '{Name}'.");
+            var actual = _value.GetTensorTypeAndShape();
+            if (actual.ElementDataType != metadata.ElementDataType)
+                throw new OnnxModelContractException(
+                    $"Device tensor '{Name}' has type {actual.ElementDataType}; model requires {metadata.ElementDataType}.");
+            if (metadata.Dimensions.Length != actual.Shape.Length)
+                throw new OnnxModelContractException($"Device tensor '{Name}' has rank {actual.Shape.Length}; model requires {metadata.Dimensions.Length}.");
+            for (int i = 0; i < metadata.Dimensions.Length; i++)
+                if (metadata.Dimensions[i] > 0 && metadata.Dimensions[i] != actual.Shape[i])
+                    throw new OnnxModelContractException(
+                        $"Device tensor '{Name}' dimension {i} is {actual.Shape[i]}; model requires {metadata.Dimensions[i]}.");
         }
         
         public void Dispose()

@@ -118,6 +118,16 @@ namespace KitsuMate.Onnx
 
         public IReadOnlyList<string> InputNames => inputNames;
         public IReadOnlyList<string> OutputNames => outputNames;
+        public OnnxSessionDiagnostics Diagnostics { get; } = new(
+            new[] { OnnxExecutionProvider.Cpu },
+            new[] { OnnxExecutionProvider.Cpu },
+            Array.Empty<OnnxProviderSkip>(),
+            new[] { OnnxExecutionProvider.Cpu },
+            Array.Empty<string>(),
+            new[] { OnnxExecutionProvider.Cpu },
+            OnnxExecutionProvider.Cpu,
+            typeof(Model).Assembly.GetName().Version?.ToString(),
+            0);
         public bool VerboseLogging { get; set; }
 
         public IReadOnlyDictionary<string, OnnxTensor> Run(IReadOnlyDictionary<string, OnnxTensor> inputs)

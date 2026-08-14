@@ -60,14 +60,17 @@ def main() -> int:
         fixture_id = fixture["id"]
         if not fixture_id.replace("-", "").replace("_", "").isalnum():
             raise ValueError(f"Fixture id must be alphanumeric, '-' or '_': {fixture_id}")
+        target = destination_path(repository_root, fixture["destination"])
         cache_file = args.cache / fixture["sha256"]
+        if not cache_file.exists() and target.exists() and sha256(target) == fixture["sha256"]:
+            shutil.copyfile(target, cache_file)
+            print(f"seeded cache from {target.relative_to(repository_root)}")
         fetched = download(fixture["url"], cache_file)
         actual = sha256(cache_file)
         if actual != fixture["sha256"]:
             cache_file.unlink(missing_ok=True)
             raise RuntimeError(f"Checksum mismatch for fixture {fixture_id}: {actual}")
         print(f"{'fetched' if fetched else 'cache hit'} {fixture_id}")
-        target = destination_path(repository_root, fixture["destination"])
         if target.exists() and sha256(target) == fixture["sha256"]:
             print(f"reused {target.relative_to(repository_root)}")
             continue

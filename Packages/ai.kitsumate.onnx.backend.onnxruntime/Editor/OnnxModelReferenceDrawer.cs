@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 using UnityEditor;
 using UnityEditorInternal;
@@ -14,8 +15,17 @@ namespace KitsuMate.Onnx.Editor
     [CustomPropertyDrawer(typeof(OnnxModelReference))]
     public sealed class OnnxModelReferenceDrawer : PropertyDrawer
     {
-        private sealed class TestState { public GpuProvider Provider; public bool Running; public string Message; public MessageType Type; }
+        private sealed class TestState { public OnnxExecutionProvider Provider; public bool Running; public string Message; public MessageType Type; public CancellationTokenSource Cancellation; }
         private static readonly Dictionary<string, TestState> States = new();
+
+        static OnnxModelReferenceDrawer()
+        {
+            AssemblyReloadEvents.beforeAssemblyReload += () =>
+            {
+                foreach (TestState state in States.Values) state.Cancellation?.Cancel();
+                States.Clear();
+            };
+        }
 
         public override float GetPropertyHeight(SerializedProperty property, GUIContent label)
         {
@@ -54,7 +64,7 @@ namespace KitsuMate.Onnx.Editor
             line.y += h + gap;
             var state = GetState(property);
             float third = (line.width - 8) / 3f;
-            state.Provider = (GpuProvider)EditorGUI.EnumPopup(new Rect(line.x, line.y, third, h), state.Provider);
+            state.Provider = (OnnxExecutionProvider)EditorGUI.EnumPopup(new Rect(line.x, line.y, third, h), state.Provider);
             using (new EditorGUI.DisabledScope(state.Running || reference?.Kind != OnnxModelReference.SourceKind.File || reference?.IsAvailable != true))
                 if (GUI.Button(new Rect(line.x + third + 4, line.y, third, h), "Refresh Metadata")) RefreshAsync(property, reference, state);
             using (new EditorGUI.DisabledScope(state.Running || reference?.IsAvailable != true))
@@ -83,29 +93,40 @@ namespace KitsuMate.Onnx.Editor
 
         private static async void TestAsync(SerializedProperty property, OnnxModelReference reference, TestState state)
         {
+            state.Cancellation?.Cancel();
+            state.Cancellation?.Dispose();
+            state.Cancellation = new CancellationTokenSource();
+            CancellationToken cancellationToken = state.Cancellation.Token;
+            UnityEngine.Object owner = property.serializedObject.targetObject;
             state.Running = true; state.Message = $"Creating {state.Provider} session in the background..."; state.Type = MessageType.Info;
             string path = reference.ResolveModelPath();
             byte[] data = string.IsNullOrWhiteSpace(path) ? reference.ImportedAsset?.CopyModelData() : null;
             var backend = ScriptableObject.CreateInstance<OnnxRuntimeBackend>();
-            backend.EnableGpu = state.Provider != GpuProvider.CPU; backend.PreferredProvider = state.Provider;
+            backend.SetProviderOrder(state.Provider);
             try
             {
-                state.Message = await Task.Run(() => { var sw = Stopwatch.StartNew(); using IOnnxSession session = data != null ? backend.CreateSession(data) : backend.CreateSession(path); return $"Created in {sw.ElapsedMilliseconds} ms. {session.InputNames.Count} inputs, {session.OutputNames.Count} outputs."; });
+                state.Message = await Task.Run(() => { cancellationToken.ThrowIfCancellationRequested(); var sw = Stopwatch.StartNew(); using IOnnxSession session = data != null ? backend.CreateSession(data) : backend.CreateSession(path); cancellationToken.ThrowIfCancellationRequested(); return $"Created in {sw.ElapsedMilliseconds} ms. {session.InputNames.Count} inputs, {session.OutputNames.Count} outputs."; }, cancellationToken);
                 state.Type = MessageType.Info;
             }
-            catch (Exception e) { state.Message = e.Message; state.Type = MessageType.Error; Debug.LogException(e, property.serializedObject.targetObject); }
-            finally { backend.Dispose(); UnityEngine.Object.DestroyImmediate(backend); state.Running = false; InternalEditorUtility.RepaintAllViews(); }
+            catch (OperationCanceledException) { state.Message = "Session test cancelled."; state.Type = MessageType.Warning; }
+            catch (Exception e) { state.Message = e.Message; state.Type = MessageType.Error; if (owner != null) Debug.LogException(e, owner); }
+            finally { backend.Dispose(); UnityEngine.Object.DestroyImmediate(backend); state.Running = false; state.Cancellation?.Dispose(); state.Cancellation = null; InternalEditorUtility.RepaintAllViews(); }
         }
 
         private static async void RefreshAsync(SerializedProperty property, OnnxModelReference reference, TestState state)
         {
+            state.Cancellation?.Cancel();
+            state.Cancellation?.Dispose();
+            state.Cancellation = new CancellationTokenSource();
+            CancellationToken cancellationToken = state.Cancellation.Token;
             state.Running = true; state.Message = "Inspecting model metadata in the background..."; state.Type = MessageType.Info;
             string path = reference.ResolveModelPath(); string relative = reference.RelativePath;
             string propertyPath = property.propertyPath;
             UnityEngine.Object owner = property.serializedObject.targetObject;
             try
             {
-                var result = await Task.Run(() => ExternalOnnxModelAssetUtility.Inspect(path));
+                var result = await Task.Run(() => { cancellationToken.ThrowIfCancellationRequested(); return ExternalOnnxModelAssetUtility.Inspect(path); }, cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
                 if (owner == null) return;
                 Undo.RecordObject(owner, "Refresh ONNX Metadata");
                 var serialized = new SerializedObject(owner);
@@ -124,8 +145,9 @@ namespace KitsuMate.Onnx.Editor
                 state.Message = $"Metadata refreshed: {result.Inputs.Length} inputs, {result.Outputs.Length} outputs.";
                 state.Type = MessageType.Info;
             }
+            catch (OperationCanceledException) { state.Message = "Metadata refresh cancelled."; state.Type = MessageType.Warning; }
             catch (Exception e) { state.Message = e.Message; state.Type = MessageType.Error; }
-            finally { state.Running = false; InternalEditorUtility.RepaintAllViews(); }
+            finally { state.Running = false; state.Cancellation?.Dispose(); state.Cancellation = null; InternalEditorUtility.RepaintAllViews(); }
         }
 
         private static void SetTensorInfos(SerializedProperty target, OnnxModelAsset.TensorInfo[] values)

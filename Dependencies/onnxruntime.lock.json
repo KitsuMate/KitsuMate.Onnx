@@ -14,6 +14,24 @@
       ]
     },
     {
+      "id": "Microsoft.ML.OnnxRuntime",
+      "url": "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/1.24.4/microsoft.ml.onnxruntime.1.24.4.nupkg",
+      "files": [
+        {
+          "archive": "runtimes/android/native/onnxruntime.aar",
+          "source": "jni/arm64-v8a/libonnxruntime.so",
+          "destination": "Android/arm64-v8a/libonnxruntime.so",
+          "sha256": "7f2f5c400f70a70bc4dce907752c48e2691de5e70d4c08cff45639e0e98f480e"
+        },
+        {
+          "archive": "runtimes/android/native/onnxruntime.aar",
+          "source": "jni/armeabi-v7a/libonnxruntime.so",
+          "destination": "Android/armeabi-v7a/libonnxruntime.so",
+          "sha256": "dc58198cde17426b194645f8d933cff44ec92a3acff6e24fa29cf7e49c2fb50e"
+        }
+      ]
+    },
+    {
       "id": "Microsoft.ML.OnnxRuntime.Gpu.Linux",
       "url": "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime.gpu.linux/1.24.4/microsoft.ml.onnxruntime.gpu.linux.1.24.4.nupkg",
       "files": [
@@ -21,6 +39,21 @@
           "source": "runtimes/linux-x64/native/libonnxruntime.so",
           "destination": "Linux/x86_64/libonnxruntime.so",
           "sha256": "1aacefdf0b4afa145d410b2381bbc3db3d978c485fb182c42a2b0b09f91f5310"
+        },
+        {
+          "source": "runtimes/linux-x64/native/libonnxruntime_providers_shared.so",
+          "destination": "Linux/x86_64/libonnxruntime_providers_shared.so",
+          "sha256": "c6a12593396095f5670160e284c35d1700b7708cf3037b7042e2a5200ccae772"
+        },
+        {
+          "source": "runtimes/linux-x64/native/libonnxruntime_providers_cuda.so",
+          "destination": "Linux/x86_64/libonnxruntime_providers_cuda.so",
+          "sha256": "1defa2f82f2195a0667f2003e14c6715107af7d2716364cfdfa1a8c5e708ddaa"
+        },
+        {
+          "source": "runtimes/linux-x64/native/libonnxruntime_providers_tensorrt.so",
+          "destination": "Linux/x86_64/libonnxruntime_providers_tensorrt.so",
+          "sha256": "2cb90c774517105fbbfd91b03a79f8ce9ee4cfe74c55d4221f85cb8fec870cc6"
         }
       ]
     },
@@ -32,6 +65,21 @@
           "source": "runtimes/win-x64/native/onnxruntime.dll",
           "destination": "Windows/x86_64/onnxruntime.dll",
           "sha256": "3b46571d12a9567791a42a2b2967a79c4e2e957aacdba09a2ddb4fb391707baa"
+        },
+        {
+          "source": "runtimes/win-x64/native/onnxruntime_providers_shared.dll",
+          "destination": "Windows/x86_64/onnxruntime_providers_shared.dll",
+          "sha256": "1bcbad19d14bc8395c1422c752e9e4cdd79e316e2582cdcd767bb8f500cdae99"
+        },
+        {
+          "source": "runtimes/win-x64/native/onnxruntime_providers_cuda.dll",
+          "destination": "Windows/x86_64/onnxruntime_providers_cuda.dll",
+          "sha256": "ce1c698cae708fd4ed9ab36eddf256213df40779d0806d20f32132c5d422da72"
+        },
+        {
+          "source": "runtimes/win-x64/native/onnxruntime_providers_tensorrt.dll",
+          "destination": "Windows/x86_64/onnxruntime_providers_tensorrt.dll",
+          "sha256": "f22e863b26a69d30004ebb2157a06d9581fa593c74463b2991ba720a3be33608"
         }
       ]
     }

@@ -1,6 +1,6 @@
 {
   "name": "KitsuMate.Onnx.Motion.IntegrationTests",
-  "references": ["KitsuMate.Onnx", "KitsuMate.Onnx.Backend.OnnxRuntime", "KitsuMate.Onnx.Embeddings", "KitsuMate.Onnx.Motion"],
+  "references": ["KitsuMate.Onnx", "KitsuMate.Onnx.Backend.OnnxRuntime", "KitsuMate.Onnx.Embeddings", "KitsuMate.Onnx.Motion", "KitsuMate.Onnx.Motion.Editor"],
   "optionalUnityReferences": ["TestAssemblies"],
   "includePlatforms": ["Editor"],
   "autoReferenced": false

@@ -31,7 +31,7 @@ namespace KitsuMate.Onnx.Tests
                 Assert.That(sentisSession.InputNames, Is.Not.Empty);
                 Assert.That(sentisSession.OutputNames, Is.Not.Empty);
 
-                onnxRuntime.EnableGpu = false;
+                onnxRuntime.SetProviderOrder(OnnxExecutionProvider.Cpu);
                 string rawOnnxPath = Path.GetFullPath(Path.Combine(
                     Directory.GetCurrentDirectory(), FixturePath));
                 using IOnnxSession onnxRuntimeSession = onnxRuntime.CreateSession(rawOnnxPath);
