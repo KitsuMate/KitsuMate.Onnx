@@ -219,7 +219,7 @@ namespace KitsuMate.Onnx.Motion
 
         private void OnDrawGizmos()
         {
-            if (guideAnimator == null) return;
+            if (guideAnimator == null || guideAnimator.avatar == null || !guideAnimator.isHuman) return;
             Gizmos.color = HasUnsavedChanges() ? Color.yellow : new Color(0.25f, 0.9f, 0.9f);
             Draw(HumanBodyBones.Hips, HumanBodyBones.Spine); Draw(HumanBodyBones.Spine, HumanBodyBones.Chest);
             Draw(HumanBodyBones.Chest, HumanBodyBones.Neck); Draw(HumanBodyBones.Neck, HumanBodyBones.Head);
