@@ -25,7 +25,7 @@ namespace KitsuMate.Onnx.LipSync.Tests
             try
             {
                 backend.SetProviderOrder(OnnxExecutionProvider.Cpu);
-                modelSet.AcousticModel.ConfigureFile("uni2005/model_fp32.onnx", string.Empty, null, null);
+                modelSet.AcousticModel.ConfigureFile("uni2005/model_quantized.onnx", string.Empty, null, null);
                 modelSet.SetVocabulary(vocabulary);
                 SetField(engine, "modelSet", modelSet);
                 SetField(engine, "volumeThreshold", 0f);

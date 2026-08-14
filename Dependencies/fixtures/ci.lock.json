@@ -136,13 +136,13 @@
     },
     {
       "id": "uni2005-model",
-      "url": "https://huggingface.co/KitsuMate/uni2005-onnx/resolve/018d386ed6000d0fdc0c962cbceacb30c7a7e3a4/onnx/model_fp32.onnx",
-      "sha256": "517b07ccd197b8acb2c18c3f6ca19e1e8fd489b81853e386720917e01d43de1e",
-      "destination": "ExampleProject/KitsuMateOnnxFixtures/uni2005/model_fp32.onnx"
+      "url": "https://huggingface.co/KitsuMate/uni2005-onnx/resolve/6218cd475c82f60ae6910832f1a713936a327006/onnx/model_quantized.onnx",
+      "sha256": "b078a37029c2b9e074b0efe699b751d80fc70b325c1648295f290a239399b8af",
+      "destination": "ExampleProject/KitsuMateOnnxFixtures/uni2005/model_quantized.onnx"
     },
     {
       "id": "uni2005-vocab",
-      "url": "https://huggingface.co/KitsuMate/uni2005-onnx/resolve/018d386ed6000d0fdc0c962cbceacb30c7a7e3a4/vocab.json",
+      "url": "https://huggingface.co/KitsuMate/uni2005-onnx/resolve/6218cd475c82f60ae6910832f1a713936a327006/vocab.json",
       "sha256": "8dbf53951b7ac3379b4f6dcfdb9f6b659f588fac7d4fa04c1395876f0462a338",
       "destination": "ExampleProject/KitsuMateOnnxFixtures/uni2005/vocab.json"
     },

@@ -24,7 +24,7 @@ namespace KitsuMate.Onnx.Embeddings.Sentis.Editor
         internal static void ShowDownload(SentisEmbeddingModelSet set)
         {
             ModelDownloadWindow.ShowForSentis(new ModelDownloadRequest("KitsuMate/all-MiniLM-L6-v2-onnx",
-                "9ec4eb6ad90ebff9e819a807468f37926836816f", "text-embedding"), result =>
+                "d0c533e5999da1c893a0bba27d6336d423ba117d", "text-embedding"), result =>
             {
                 ModelAsset imported = result.LoadAsset<ModelAsset>("model");
                 Model model = ModelLoader.Load(imported);

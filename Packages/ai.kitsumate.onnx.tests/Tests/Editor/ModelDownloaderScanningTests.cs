@@ -119,7 +119,7 @@ namespace KitsuMate.Onnx.Tests
         [Category("Integration")]
         public async Task ScansKitsuMateDefaultModelUsingStandardFilename()
         {
-            const string revision = "9ec4eb6ad90ebff9e819a807468f37926836816f";
+            const string revision = "d0c533e5999da1c893a0bba27d6336d423ba117d";
             var request = new ModelDownloadRequest(
                 "KitsuMate/all-MiniLM-L6-v2-onnx", revision, "text-embedding");
 
@@ -157,7 +157,7 @@ namespace KitsuMate.Onnx.Tests
         {
             var request = new ModelDownloadRequest(
                 "KitsuMate/chatterbox-turbo-onnx",
-                "89b9d3a64cd1ff1bfc2c90c13771f6550790a6aa",
+                "7320dc3cfac446f5d689565d1f701fd1a0b8e516",
                 "chatterbox");
 
             var discovery = await ModelDownloader.GetArtifactsAsync(request);
@@ -167,7 +167,13 @@ namespace KitsuMate.Onnx.Tests
                 "speech-encoder", "embed-tokens", "language-model", "conditional-decoder"
             }));
             Assert.That(discovery.Artifacts.Values.All(paths =>
-                paths.Count == 1 && paths[0].Contains("_q4f16.")), Is.True);
+                paths.Any(path => path.Contains("_q4f16."))), Is.True);
+            Assert.That(discovery.Artifacts.Values.All(paths =>
+                paths.Any(path => path.Contains("_fp16."))), Is.True);
+            Assert.That(discovery.Artifacts.Values.All(paths =>
+                paths.Any(path => path.Contains("_q4."))), Is.True);
+            Assert.That(discovery.Artifacts.Values.All(paths =>
+                paths.Any(path => path.Contains("_quantized."))), Is.True);
         }
 
         [Test]

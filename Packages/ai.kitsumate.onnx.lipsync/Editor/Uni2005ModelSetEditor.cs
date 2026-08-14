@@ -28,7 +28,7 @@ namespace KitsuMate.Onnx.LipSync.Editor
         internal static void ShowDownload(Uni2005ModelSet set)
         {
             ModelDownloadWindow.Show(new ModelDownloadRequest("KitsuMate/uni2005-onnx",
-                "018d386ed6000d0fdc0c962cbceacb30c7a7e3a4", "uni2005"), result =>
+                "6218cd475c82f60ae6910832f1a713936a327006", "uni2005"), result =>
             {
                 result.RequireGraph("model", new[] { "mfcc" });
                 result.ConfigureModel(set.AcousticModel, "model");

@@ -14,9 +14,13 @@ namespace KitsuMate.Onnx.Tts.Chatterbox.Editor
         private static readonly (string Label, string Repository, string Revision)[] Downloads =
         {
             ("Chatterbox Turbo", "KitsuMate/chatterbox-turbo-onnx",
-                "89b9d3a64cd1ff1bfc2c90c13771f6550790a6aa"),
+                "7320dc3cfac446f5d689565d1f701fd1a0b8e516"),
             ("Chatterbox Nano", "KitsuMate/chatterbox-nano-onnx",
-                "b70ba9ceb90a146e93af372d805ec76baaa48b0b")
+                "b70ba9ceb90a146e93af372d805ec76baaa48b0b"),
+            ("Chatterbox", "KitsuMate/chatterbox-onnx",
+                "ed9d6008739dc30ff4944973944b7b3d973e054f"),
+            ("Chatterbox Multilingual", "KitsuMate/chatterbox-multilingual-ONNX",
+                "d218e7492aa91033aec45a2f5234ff0cf1afff82")
         };
 
         private int downloadIndex;
