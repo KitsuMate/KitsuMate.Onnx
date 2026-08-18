@@ -81,8 +81,7 @@ namespace KitsuMate.Onnx.Embeddings.Tests
         private static OnnxRuntimeBackend CpuBackend()
         {
             var backend = ScriptableObject.CreateInstance<OnnxRuntimeBackend>();
-            backend.EnableGpu = false;
-            backend.PreferredProvider = GpuProvider.CPU;
+            backend.SetProviderOrder(OnnxExecutionProvider.Cpu);
             return backend;
         }
 

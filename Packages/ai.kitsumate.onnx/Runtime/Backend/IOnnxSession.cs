@@ -16,6 +16,9 @@ namespace KitsuMate.Onnx
         
         /// <summary>Names of all output tensors produced by the model.</summary>
         IReadOnlyList<string> OutputNames { get; }
+
+        /// <summary>Immutable provider and runtime information captured when the session was created.</summary>
+        OnnxSessionDiagnostics Diagnostics { get; }
         
         /// <summary>
         /// When true, logs timing for input conversion, inference, and output conversion.

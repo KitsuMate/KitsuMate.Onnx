@@ -92,6 +92,10 @@ namespace KitsuMate.Onnx.Editor
                 {
                     overridesProp.InsertArrayElementAtIndex(overridesProp.arraySize);
                 }
+
+                EditorGUILayout.Space(8);
+                var modelRootProp = _serializedSettings.FindProperty("_modelStorageRoot");
+                EditorGUILayout.PropertyField(modelRootProp, new GUIContent("Model Storage Root"));
             }
             
             EditorGUILayout.Space(8);

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -17,6 +18,23 @@ CORE_RUNTIME_FORBIDDEN = (
     "Unity.InferenceEngine",
     "UnityAiInferenceBackend",
 )
+ONNXRUNTIME_DESTINATIONS = {
+    "Managed/Microsoft.ML.OnnxRuntime.dll",
+    "Android/arm64-v8a/libonnxruntime.so",
+    "Android/armeabi-v7a/libonnxruntime.so",
+    "Linux/x86_64/libonnxruntime.so",
+    "Linux/x86_64/libonnxruntime_providers_shared.so",
+    "Linux/x86_64/libonnxruntime_providers_cuda.so",
+    "Linux/x86_64/libonnxruntime_providers_tensorrt.so",
+    "Windows/x86_64/onnxruntime.dll",
+    "Windows/x86_64/onnxruntime_providers_shared.dll",
+    "Windows/x86_64/onnxruntime_providers_cuda.dll",
+    "Windows/x86_64/onnxruntime_providers_tensorrt.dll",
+}
+ANDROID_PLUGIN_METADATA = {
+    "Runtime/Plugins/Android/arm64-v8a/libonnxruntime.so.meta": "CPU: ARM64",
+    "Runtime/Plugins/Android/armeabi-v7a/libonnxruntime.so.meta": "CPU: ARMv7",
+}
 
 
 def read_json(path: Path) -> dict:
@@ -31,6 +49,28 @@ def main() -> int:
     repository_root = Path(__file__).resolve().parents[2]
     packages_root = repository_root / "Packages"
     packages: dict[str, tuple[dict, Path]] = {}
+
+    runtime_lock = read_json(repository_root / "Dependencies" / "onnxruntime.lock.json")
+    runtime_files = [file for package in runtime_lock.get("packages", []) for file in package.get("files", [])]
+    runtime_destinations = [file.get("destination") for file in runtime_files]
+    if len(runtime_destinations) != len(set(runtime_destinations)):
+        fail("ONNX Runtime lock contains duplicate destinations")
+    if set(runtime_destinations) != ONNXRUNTIME_DESTINATIONS:
+        missing = sorted(ONNXRUNTIME_DESTINATIONS.difference(runtime_destinations))
+        unexpected = sorted(set(runtime_destinations).difference(ONNXRUNTIME_DESTINATIONS))
+        fail(f"ONNX Runtime artifact set differs (missing={missing}, unexpected={unexpected})")
+    for file in runtime_files:
+        if not re.fullmatch(r"[0-9a-f]{64}", file.get("sha256", "")):
+            fail(f"ONNX Runtime artifact has invalid SHA-256: {file.get('destination')}")
+
+    onnxruntime_package = packages_root / "ai.kitsumate.onnx.backend.onnxruntime"
+    for relative_path, cpu_setting in ANDROID_PLUGIN_METADATA.items():
+        metadata_path = onnxruntime_package / relative_path
+        if not metadata_path.is_file():
+            fail(f"Missing Unity-generated Android plugin metadata: {metadata_path}")
+        metadata = metadata_path.read_text(encoding="utf-8")
+        if "PluginImporter:" not in metadata or "Android:" not in metadata or cpu_setting not in metadata:
+            fail(f"Invalid Android plugin metadata for {cpu_setting}: {metadata_path}")
 
     for manifest_path in sorted(packages_root.glob("*/package.json")):
         manifest = read_json(manifest_path)
@@ -55,6 +95,13 @@ def main() -> int:
                 unity_inference_packages.append(name)
         for extension in ARTIFACT_GLOBS:
             artifacts = [path for path in package_path.rglob(extension) if path.is_file()]
+            if name == "ai.kitsumate.onnx.backend.onnxruntime":
+                plugin_root = package_path / "Runtime" / "Plugins"
+                artifacts = [
+                    path for path in artifacts
+                    if not path.is_relative_to(plugin_root)
+                    or path.relative_to(plugin_root).as_posix() not in ONNXRUNTIME_DESTINATIONS
+                ]
             if artifacts:
                 fail(f"{name} contains forbidden binary/model artifacts: {artifacts[0]}")
 

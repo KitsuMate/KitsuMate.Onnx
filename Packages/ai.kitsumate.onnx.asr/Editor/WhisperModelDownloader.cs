@@ -21,8 +21,8 @@ namespace KitsuMate.Onnx.Asr.Editor
 
         public static readonly Source[] Sources =
         {
-            new Source("Whisper Tiny", "KitsuMate/whisper-tiny-onnx", "4c03eadcc2691a9c8b23e7e9fdbf1403e07fc0b9"),
-            new Source("Whisper Base", "KitsuMate/whisper-base-onnx", "5405863a79f8c04cb8cfd22a5ff773af1feb39b7")
+            new Source("Whisper Tiny", "KitsuMate/whisper-tiny-onnx", "d57c18f4b7d35a780cff5edf1d6967f1297c5521"),
+            new Source("Whisper Base", "KitsuMate/whisper-base-onnx", "0d4449c191a81050310938418c844d4205d9489e")
         };
 
         public static void Show(WhisperModelSet target, Source source)

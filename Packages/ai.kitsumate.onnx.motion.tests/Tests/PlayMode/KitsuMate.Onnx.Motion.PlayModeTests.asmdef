@@ -1,0 +1,22 @@
+{
+    "name": "KitsuMate.Onnx.Motion.PlayModeTests",
+    "rootNamespace": "KitsuMate.Onnx.Motion.Tests.PlayMode",
+    "references": [
+        "UnityEngine.TestRunner",
+        "KitsuMate.Onnx",
+        "KitsuMate.Onnx.Motion"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "nunit.framework.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

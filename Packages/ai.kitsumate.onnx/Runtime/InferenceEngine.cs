@@ -41,9 +41,19 @@ namespace KitsuMate.Onnx
         public async Task<InferenceEngineRuntime<TRequest, TResult>> CreateRuntimeAsync(
             OnnxBackend backend, CancellationToken cancellationToken = default)
         {
+            await Awaitable.MainThreadAsync();
+            cancellationToken.ThrowIfCancellationRequested();
             if (backend == null) throw new ArgumentNullException(nameof(backend));
             if (!backend.IsAvailable) throw new InvalidOperationException($"Backend '{backend.DisplayName}' is unavailable.");
             if (ModelSet == null) throw new InvalidOperationException($"{GetType().Name} has no model set assigned.");
+            OnnxSettings settings = OnnxSettings.Load();
+            OnnxRuntimeEnvironment environment = OnnxSettings.CaptureEnvironment(settings);
+            foreach (IOnnxModelSource source in ModelSet.GetAllModels())
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (source is OnnxModelReference reference)
+                    await reference.PrepareForRuntimeAsync(environment, cancellationToken);
+            }
             ModelValidationResult validation = ModelSet.Validate(new ModelValidationContext(backend));
             if (!validation.IsValid) throw new ModelValidationException(validation);
             InferenceEngineRuntime<TRequest, TResult> runtime = CreateRuntime();
@@ -81,6 +91,7 @@ namespace KitsuMate.Onnx
 
     public abstract class InferenceEngineRuntime<TRequest, TResult> : InferenceEngineRuntimeBase
     {
+        private readonly object lifecycleLock = new();
         private readonly SemaphoreSlim runGate;
         private readonly CancellationTokenSource lifetime = new();
         private EngineLoadState state;
@@ -88,14 +99,17 @@ namespace KitsuMate.Onnx
         private ModelIdentity identity;
         private Exception lastLoadError;
         private bool disposed;
+        private int activeOperations;
+        private TaskCompletionSource<bool> operationsDrained = CompletedDrain();
+        private Task unloadTask;
 
         protected InferenceEngineRuntime(bool supportsParallelInference = false)
         {
             runGate = supportsParallelInference ? null : new SemaphoreSlim(1, 1);
         }
 
-        public override EngineLoadState LoadState => state;
-        public bool IsLoaded => state == EngineLoadState.Loaded;
+        public override EngineLoadState LoadState { get { lock (lifecycleLock) return state; } }
+        public bool IsLoaded => LoadState == EngineLoadState.Loaded;
         public Exception LastLoadError => lastLoadError;
         public ModelIdentity LoadedModelIdentity => identity;
         protected OnnxBackend Backend => backend;
@@ -103,45 +117,90 @@ namespace KitsuMate.Onnx
 
         internal async Task LoadAsync(OnnxBackend selectedBackend, ModelIdentity modelIdentity, CancellationToken cancellationToken)
         {
-            ThrowIfDisposed();
-            if (state != EngineLoadState.Unloaded) throw new InvalidOperationException($"Runtime cannot load from state {state}.");
-            backend = selectedBackend;
-            identity = modelIdentity;
-            state = EngineLoadState.Loading;
-            lastLoadError = null;
+            lock (lifecycleLock)
+            {
+                ThrowIfDisposed();
+                if (state != EngineLoadState.Unloaded) throw new OnnxRuntimeLifecycleException($"Runtime cannot load from state {state}.");
+                backend = selectedBackend;
+                identity = modelIdentity;
+                state = EngineLoadState.Loading;
+                lastLoadError = null;
+            }
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, lifetime.Token);
             try
             {
                 await OnLoadAsync(linked.Token).ConfigureAwait(false);
-                state = EngineLoadState.Loaded;
+                lock (lifecycleLock)
+                {
+                    ThrowIfDisposed();
+                    state = EngineLoadState.Loaded;
+                }
                 Track();
             }
             catch (Exception exception)
             {
-                lastLoadError = exception;
-                state = EngineLoadState.Failed;
+                lock (lifecycleLock)
+                {
+                    lastLoadError = exception;
+                    if (!disposed) state = EngineLoadState.Failed;
+                }
                 throw;
             }
         }
 
         public async Task<TResult> RunAsync(TRequest request, CancellationToken cancellationToken = default)
         {
-            ThrowIfDisposed();
-            if (state != EngineLoadState.Loaded) throw new InvalidOperationException("Runtime is not loaded.");
+            BeginOperation();
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, lifetime.Token);
-            if (runGate != null) await runGate.WaitAsync(linked.Token).ConfigureAwait(false);
-            try { return await OnRunAsync(request, linked.Token).ConfigureAwait(false); }
-            finally { runGate?.Release(); }
+            bool gateEntered = false;
+            try
+            {
+                if (runGate != null)
+                {
+                    await runGate.WaitAsync(linked.Token).ConfigureAwait(false);
+                    gateEntered = true;
+                }
+                return await OnRunAsync(request, linked.Token).ConfigureAwait(false);
+            }
+            finally
+            {
+                if (gateEntered) runGate.Release();
+                EndOperation();
+            }
         }
 
 
-        public async Task UnloadAsync(CancellationToken cancellationToken = default)
+        public Task UnloadAsync(CancellationToken cancellationToken = default)
         {
-            if (state == EngineLoadState.Unloaded || state == EngineLoadState.Unloading) return;
-            state = EngineLoadState.Unloading;
-            lifetime.Cancel();
-            try { await OnUnloadAsync(cancellationToken).ConfigureAwait(false); }
-            finally { state = EngineLoadState.Unloaded; Untrack(); }
+            cancellationToken.ThrowIfCancellationRequested();
+            lock (lifecycleLock)
+            {
+                if (state == EngineLoadState.Unloaded) return Task.CompletedTask;
+                return unloadTask ??= UnloadCoreAsync();
+            }
+        }
+
+        private async Task UnloadCoreAsync()
+        {
+            Task drain;
+            lock (lifecycleLock)
+            {
+                if (state == EngineLoadState.Unloaded) return;
+                state = EngineLoadState.Unloading;
+                lifetime.Cancel();
+                drain = operationsDrained.Task;
+            }
+
+            await drain.ConfigureAwait(false);
+            try
+            {
+                await OnUnloadAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+            finally
+            {
+                lock (lifecycleLock) state = EngineLoadState.Unloaded;
+                Untrack();
+            }
         }
 
         protected abstract Task OnLoadAsync(CancellationToken cancellationToken);
@@ -150,13 +209,23 @@ namespace KitsuMate.Onnx
 
         public override void Dispose()
         {
-            if (disposed) return;
-            disposed = true;
-            lifetime.Cancel();
-            try { OnDispose(); }
+            Task cleanup;
+            lock (lifecycleLock)
+            {
+                if (disposed) return;
+                disposed = true;
+                lifetime.Cancel();
+                cleanup = unloadTask ??= UnloadCoreAsync();
+            }
+
+            try
+            {
+                cleanup.GetAwaiter().GetResult();
+                OnDispose();
+            }
             finally
             {
-                state = EngineLoadState.Unloaded;
+                lock (lifecycleLock) state = EngineLoadState.Unloaded;
                 Untrack();
                 runGate?.Dispose();
                 lifetime.Dispose();
@@ -166,6 +235,35 @@ namespace KitsuMate.Onnx
 
         protected virtual void OnDispose() { }
         private void ThrowIfDisposed() { if (disposed) throw new ObjectDisposedException(GetType().Name); }
+
+        private void BeginOperation()
+        {
+            lock (lifecycleLock)
+            {
+                ThrowIfDisposed();
+                if (state != EngineLoadState.Loaded)
+                    throw new OnnxRuntimeLifecycleException($"Runtime cannot run from state {state}.");
+                if (activeOperations++ == 0)
+                    operationsDrained = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            }
+        }
+
+        private void EndOperation()
+        {
+            TaskCompletionSource<bool> drained = null;
+            lock (lifecycleLock)
+            {
+                if (--activeOperations == 0) drained = operationsDrained;
+            }
+            drained?.TrySetResult(true);
+        }
+
+        private static TaskCompletionSource<bool> CompletedDrain()
+        {
+            var source = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            source.SetResult(true);
+            return source;
+        }
     }
 
     public abstract class ThreadedInferenceEngineRuntime<TRequest, TResult> : InferenceEngineRuntime<TRequest, TResult>

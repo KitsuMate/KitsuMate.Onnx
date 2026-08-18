@@ -2,7 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using UnityEngine;
+#if UNITY_ANDROID && !UNITY_EDITOR
+using UnityEngine.Networking;
+#endif
 
 namespace KitsuMate.Onnx
 {
@@ -32,7 +37,10 @@ namespace KitsuMate.Onnx
         [SerializeField, HideInInspector] private bool metadataInspected;
         [SerializeField, HideInInspector] private List<OnnxModelAsset.TensorInfo> inputs = new();
         [SerializeField, HideInInspector] private List<OnnxModelAsset.TensorInfo> outputs = new();
-        [NonSerialized] private string resolvedFilePath;
+        [NonSerialized] private string preparedRuntimePath;
+#if UNITY_ANDROID && !UNITY_EDITOR
+        private static readonly AndroidModelStager AndroidStager = new(new UnityWebRequestModelContentFetcher());
+#endif
 
         public SourceKind Kind => sourceKind;
         public OnnxModelAsset Asset => asset;
@@ -43,7 +51,7 @@ namespace KitsuMate.Onnx
             : (string.IsNullOrWhiteSpace(relativePath) ? "Unassigned ONNX file" : Path.GetFileName(relativePath));
         public bool IsAvailable => sourceKind == SourceKind.Asset
             ? asset != null && asset.HasResolvableData
-            : TryResolveFile(out _);
+            : (!string.IsNullOrWhiteSpace(preparedRuntimePath) && File.Exists(preparedRuntimePath)) || TryResolveFile(null, out _);
         public bool HasInspectedMetadata => sourceKind == SourceKind.Asset
             ? asset != null && asset.MetadataState == OnnxModelAsset.MetadataInspectionState.Succeeded
             : metadataInspected;
@@ -52,7 +60,8 @@ namespace KitsuMate.Onnx
             get
             {
                 if (sourceKind == SourceKind.Asset) return false;
-                if (!TryResolveFile(out string path) || !metadataInspected) return true;
+                string path = ResolveModelPath();
+                if (string.IsNullOrWhiteSpace(path) || !metadataInspected) return true;
                 var file = new FileInfo(path);
                 return file.Length != cachedFileSize || file.LastWriteTimeUtc.Ticks != cachedWriteTimeUtcTicks;
             }
@@ -68,43 +77,54 @@ namespace KitsuMate.Onnx
         public string ResolveModelPath()
         {
             if (sourceKind == SourceKind.Asset) return asset?.ResolveModelPath();
-            return TryResolveFile(out string path) ? path : null;
+            if (!string.IsNullOrWhiteSpace(preparedRuntimePath) && File.Exists(preparedRuntimePath)) return preparedRuntimePath;
+            return TryResolveFile(null, out string path) ? path : null;
         }
 
-        private bool TryResolveFile(out string resolved)
+        internal async Task PrepareForRuntimeAsync(OnnxRuntimeEnvironment environment, CancellationToken cancellationToken)
+        {
+            if (environment == null) throw new ArgumentNullException(nameof(environment));
+            if (sourceKind != SourceKind.File) return;
+#if UNITY_ANDROID && !UNITY_EDITOR
+            preparedRuntimePath = await AndroidStager.StageAsync(relativePath, sha256, environment, cancellationToken);
+#else
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!TryResolveFile(environment, out preparedRuntimePath))
+                throw new OnnxModelPreparationException($"ONNX model '{relativePath}' was not found in the configured model root.");
+#endif
+        }
+
+        private bool TryResolveFile(OnnxRuntimeEnvironment environment, out string resolved)
         {
             resolved = null;
             if (string.IsNullOrWhiteSpace(relativePath) || Path.IsPathRooted(relativePath)) return false;
             string normalized = relativePath.Replace('\\', '/').TrimStart('/');
             if (normalized.Split('/').Contains("..")) return false;
-            if (!string.IsNullOrWhiteSpace(resolvedFilePath))
-            {
-                resolved = resolvedFilePath;
-                return File.Exists(resolved);
-            }
 #if UNITY_EDITOR
-            OnnxSettings settings = OnnxSettings.Load();
-            string root = settings != null ? settings.ModelStorageRoot : "Assets/StreamingAssets/KitsuMateModels";
+            string root = environment?.ModelStorageRoot ?? OnnxSettings.Load()?.ModelStorageRoot ?? OnnxSettings.DefaultModelStorageRoot;
             string absoluteRoot = Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), root));
+#elif UNITY_ANDROID
+            string persistentDataPath = environment?.PersistentDataPath;
+            if (string.IsNullOrWhiteSpace(persistentDataPath)) return false;
+            string absoluteRoot = Path.GetFullPath(Path.Combine(persistentDataPath, "KitsuMateModels"));
 #else
-            string absoluteRoot = Path.GetFullPath(Path.Combine(Application.streamingAssetsPath, "KitsuMateModels"));
+            string streamingAssetsPath = environment?.StreamingAssetsPath;
+            if (string.IsNullOrWhiteSpace(streamingAssetsPath)) return false;
+            string absoluteRoot = Path.GetFullPath(Path.Combine(streamingAssetsPath, "KitsuMateModels"));
 #endif
             string candidate = Path.GetFullPath(Path.Combine(absoluteRoot, normalized));
             string prefix = absoluteRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
             if (!candidate.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return false;
             if (!File.Exists(candidate)) return false;
-            resolvedFilePath = candidate;
             resolved = candidate;
             return true;
         }
 
-#if UNITY_EDITOR
         public void Clear()
         {
             sourceKind = SourceKind.Asset;
             asset = null;
             relativePath = string.Empty;
-            resolvedFilePath = null;
             ClearFileCache();
         }
 
@@ -113,7 +133,6 @@ namespace KitsuMate.Onnx
             sourceKind = SourceKind.Asset;
             asset = value;
             relativePath = string.Empty;
-            resolvedFilePath = null;
             ClearFileCache();
         }
 
@@ -128,14 +147,13 @@ namespace KitsuMate.Onnx
             sourceKind = SourceKind.File;
             asset = null;
             relativePath = normalized;
-            resolvedFilePath = null;
             sha256 = hash ?? string.Empty;
             inputs.Clear();
             outputs.Clear();
             if (inspectedInputs != null) inputs.AddRange(inspectedInputs);
             if (inspectedOutputs != null) outputs.AddRange(inspectedOutputs);
             metadataInspected = outputs.Count > 0;
-            if (TryResolveFile(out string path))
+            if (TryResolveFile(null, out string path))
             {
                 var file = new FileInfo(path);
                 cachedFileSize = file.Length;
@@ -152,6 +170,28 @@ namespace KitsuMate.Onnx
             inputs.Clear();
             outputs.Clear();
         }
-#endif
     }
+
+#if UNITY_ANDROID && !UNITY_EDITOR
+    internal sealed class UnityWebRequestModelContentFetcher : IOnnxModelContentFetcher
+    {
+        public async Task FetchAsync(string sourceUri, string destinationPath, CancellationToken cancellationToken)
+        {
+            using var request = UnityWebRequest.Get(sourceUri);
+            request.downloadHandler = new DownloadHandlerFile(destinationPath) { removeFileOnAbort = true };
+            UnityWebRequestAsyncOperation operation = request.SendWebRequest();
+            while (!operation.isDone)
+            {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    request.Abort();
+                    cancellationToken.ThrowIfCancellationRequested();
+                }
+                await Task.Yield();
+            }
+            if (request.result != UnityWebRequest.Result.Success)
+                throw new IOException($"Failed to fetch Android model content: {request.error}");
+        }
+    }
+#endif
 }

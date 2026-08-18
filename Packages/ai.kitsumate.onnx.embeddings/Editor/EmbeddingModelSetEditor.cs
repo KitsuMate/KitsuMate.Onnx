@@ -31,7 +31,7 @@ namespace KitsuMate.Onnx.Embeddings.Editor
         internal static void ShowDownload(TextEmbeddingModelSet set)
         {
             ModelDownloadWindow.Show(new ModelDownloadRequest("KitsuMate/all-MiniLM-L6-v2-onnx",
-                "9ec4eb6ad90ebff9e819a807468f37926836816f", "text-embedding"), result =>
+                "d0c533e5999da1c893a0bba27d6336d423ba117d", "text-embedding"), result =>
             {
                 result.RequireGraph("model", new[] { "input_ids", "attention_mask" });
                 result.ConfigureModel(set.EmbeddingModel, "model");

@@ -9,6 +9,8 @@ namespace KitsuMate.Onnx
     /// </summary>
     public class OnnxSettings : ScriptableObject
     {
+        internal const string DefaultModelStorageRoot = "Assets/StreamingAssets/KitsuMateModels";
+
         [Serializable]
         public struct PlatformOverride
         {
@@ -24,7 +26,7 @@ namespace KitsuMate.Onnx
         
         [SerializeField] 
         private bool _verboseLogging;
-        [SerializeField] private string _modelStorageRoot = "Assets/StreamingAssets/KitsuMateModels";
+        [SerializeField] private string _modelStorageRoot = DefaultModelStorageRoot;
         [SerializeField] private List<InferenceEngineBase> _defaultEngines = new();
         
         /// <summary>Default ONNX backend.</summary>
@@ -43,7 +45,9 @@ namespace KitsuMate.Onnx
             get => _verboseLogging;
             set => _verboseLogging = value;
         }
-        public string ModelStorageRoot => string.IsNullOrWhiteSpace(_modelStorageRoot) ? "Assets/StreamingAssets/KitsuMateModels" : _modelStorageRoot;
+        public string ModelStorageRoot => string.IsNullOrWhiteSpace(_modelStorageRoot)
+            ? DefaultModelStorageRoot
+            : _modelStorageRoot;
         public TEngine GetDefaultEngine<TEngine>() where TEngine : InferenceEngineBase
         {
             foreach (InferenceEngineBase engine in _defaultEngines) if (engine is TEngine typed) return typed;
@@ -91,5 +95,11 @@ namespace KitsuMate.Onnx
         {
             return Resources.Load<OnnxSettings>("OnnxSettings");
         }
+
+        internal static OnnxRuntimeEnvironment CaptureEnvironment(OnnxSettings settings) => new(
+            settings != null ? settings.ModelStorageRoot : DefaultModelStorageRoot,
+            Application.streamingAssetsPath,
+            Application.persistentDataPath);
+
     }
 }

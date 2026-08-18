@@ -28,8 +28,7 @@ namespace KitsuMate.Onnx.Motion.Tests
             InferenceEngineRuntime<CharacterMotionRequest, CharacterMotionResult> runtime = null;
             try
             {
-                backend.EnableGpu = false;
-                backend.PreferredProvider = GpuProvider.CPU;
+                backend.SetProviderOrder(OnnxExecutionProvider.Cpu);
                 embeddingSet.Encoder.ConfigureFile("llm2vec/model_int4_b128_fp32act_s64.onnx", string.Empty, null, null);
                 embeddingSet.SetFiles(tokenizer, tokenizerConfig);
                 modelSet.MotionModel.ConfigureFile("kimodo/model_fp16_b3_t60.onnx", string.Empty, null, null);

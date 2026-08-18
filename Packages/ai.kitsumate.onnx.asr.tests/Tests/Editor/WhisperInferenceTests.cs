@@ -28,8 +28,7 @@ namespace KitsuMate.Onnx.Asr.Tests
             InferenceEngineRuntime<AsrRequest, TranscriptionResult> runtime = null;
             try
             {
-                backend.EnableGpu = false;
-                backend.PreferredProvider = GpuProvider.CPU;
+                backend.SetProviderOrder(OnnxExecutionProvider.Cpu);
                 modelSet.MelProcessor.ConfigureFile("whisper/mel.onnx", string.Empty, null, null);
                 modelSet.Encoder.ConfigureFile("whisper/encoder_model_bnb4.onnx", string.Empty, null, null);
                 modelSet.Decoder.ConfigureFile("whisper/decoder_model_merged_bnb4.onnx", string.Empty, null, null);
@@ -72,8 +71,7 @@ namespace KitsuMate.Onnx.Asr.Tests
             {
                 Assert.That(tokenizer, Is.Not.Null);
                 Assert.That(audio, Is.Not.Null);
-                backend.EnableGpu = false;
-                backend.PreferredProvider = GpuProvider.CPU;
+                backend.SetProviderOrder(OnnxExecutionProvider.Cpu);
                 modelSet.MelProcessor.ConfigureFile("whisper-sentis/mel.onnx", string.Empty, null, null);
                 modelSet.Encoder.ConfigureFile("whisper-sentis/tiny/encoder_model.onnx", string.Empty, null, null);
                 modelSet.Decoder.ConfigureFile("whisper-sentis/tiny/decoder_model.onnx", string.Empty, null, null);

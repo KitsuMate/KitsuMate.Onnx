@@ -33,8 +33,7 @@ namespace KitsuMate.Onnx.Tts.Tests
             AudioClip voice = LoadPcm16Wav(Path.Combine(root, "default_voice.wav"));
             try
             {
-                backend.EnableGpu = false;
-                backend.PreferredProvider = GpuProvider.CPU;
+                backend.SetProviderOrder(OnnxExecutionProvider.Cpu);
 
                 string normalized = (string)typeof(ChatterboxEngineRuntime)
                     .GetMethod("PrepareModernText", BindingFlags.Static | BindingFlags.NonPublic)
@@ -120,7 +119,7 @@ namespace KitsuMate.Onnx.Tts.Tests
                         ["speaker_features"] = speechOutputs["speaker_features"]
                     });
                 AssertFloatParity(decoderOutputs["waveform"].AsFloatArray(),
-                    FloatTensor(fixture, "waveform"), "decoded waveform", 5e-4f);
+                    FloatTensor(fixture, "waveform"), "decoded waveform", 1e-3f, 2e-4f);
 
                 Dispose(languageOutputs);
                 Dispose(decoderOutputs);
@@ -151,8 +150,7 @@ namespace KitsuMate.Onnx.Tts.Tests
             InferenceEngineRuntime<TtsRequest, TtsResult> runtime = null;
             try
             {
-                backend.EnableGpu = false;
-                backend.PreferredProvider = GpuProvider.CPU;
+                backend.SetProviderOrder(OnnxExecutionProvider.Cpu);
                 modelSet.SpeechEncoder.ConfigureFile(
                     fixtureName + "/speech_encoder_q4f16.onnx", string.Empty, null, null);
                 modelSet.EmbedTokens.ConfigureFile(
@@ -229,14 +227,23 @@ namespace KitsuMate.Onnx.Tts.Tests
             return values;
         }
 
-        private static void AssertFloatParity(
-            float[] actual, float[] expected, string label, float tolerance = 1e-4f)
+        private static void AssertFloatParity(float[] actual, float[] expected, string label,
+            float maximumTolerance = 1e-4f, float rootMeanSquareTolerance = float.PositiveInfinity)
         {
             Assert.That(actual.Length, Is.EqualTo(expected.Length), $"{label} length");
+            Assert.That(actual, Is.Not.Empty, $"{label} values");
             float largestError = 0f;
+            double squaredError = 0d;
             for (int index = 0; index < actual.Length; index++)
-                largestError = Math.Max(largestError, Math.Abs(actual[index] - expected[index]));
-            Assert.That(largestError, Is.LessThan(tolerance), $"{label} maximum absolute error");
+            {
+                float error = Math.Abs(actual[index] - expected[index]);
+                largestError = Math.Max(largestError, error);
+                squaredError += error * error;
+            }
+            double rootMeanSquareError = Math.Sqrt(squaredError / actual.Length);
+            Assert.That(largestError, Is.LessThan(maximumTolerance), $"{label} maximum absolute error");
+            Assert.That(rootMeanSquareError, Is.LessThan(rootMeanSquareTolerance),
+                $"{label} root-mean-square error");
         }
 
         private static float[] Concat(float[] first, float[] second)

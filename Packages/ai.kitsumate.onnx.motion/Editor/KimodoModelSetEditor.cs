@@ -33,7 +33,7 @@ namespace KitsuMate.Onnx.Motion.Editor
         internal static void ShowDownload(KimodoModelSet modelSet)
         {
             ModelDownloadWindow.Show(new ModelDownloadRequest("KitsuMate/Kimodo-SOMA-RP-v1.1-ONNX",
-                "0c68c5599781a1a17cd61b1e0ed13f0a0029da90", "kimodo"), result =>
+                "4f39ae847e48fa63b09501fc92da90696727e7e2", "kimodo"), result =>
             {
                 result.RequireGraph("model",
                     new[]
