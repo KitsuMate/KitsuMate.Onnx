@@ -17,7 +17,6 @@ namespace KitsuMate.Onnx.Motion
     [DisallowMultipleComponent]
     public class CharacterMotion : MonoBehaviour
     {
-        [SerializeField, HideInInspector] private CharacterMotionIntent intent;
         [SerializeField] private List<CharacterMotionPart> parts = new List<CharacterMotionPart>();
         [SerializeField] private CharacterMotion previousMotion;
         [SerializeField, Range(0, KimodoConditioning.DefaultFrameCount - 1)] private int entryOverlapFrames = 5;
@@ -40,7 +39,7 @@ namespace KitsuMate.Onnx.Motion
 
         public CharacterMotionIntent Intent => parts != null && parts.Count > 0 && parts[0] != null
             ? parts[0].Intent
-            : intent;
+            : null;
         public IReadOnlyList<CharacterMotionPart> Parts => parts ?? (IReadOnlyList<CharacterMotionPart>)Array.Empty<CharacterMotionPart>();
         public CharacterMotion PreviousMotion => previousMotion;
         public int EntryOverlapFrames => entryOverlapFrames;
@@ -97,7 +96,6 @@ namespace KitsuMate.Onnx.Motion
         public void SetParts(IEnumerable<CharacterMotionPart> values)
         {
             parts = values != null ? new List<CharacterMotionPart>(values) : new List<CharacterMotionPart>();
-            intent = null;
         }
 
         public ICharacterMotionIntent ResolveIntent(ICharacterMotionIntent runtimeOverride = null)
@@ -117,7 +115,6 @@ namespace KitsuMate.Onnx.Motion
         public CharacterMotionValidationResult ValidateMotion(bool requireIntent = true)
         {
             var result = new CharacterMotionValidationResult();
-            MigrateLegacyIntent();
             CharacterMotionGenerationPlan plan = BuildGenerationPlan();
             if (requireIntent && plan.Runs.Length == 0) result.Error("missing_intent", "Add at least one Character Motion intent.");
             for (int i = 0; i < plan.Runs.Length; i++)
@@ -216,7 +213,6 @@ namespace KitsuMate.Onnx.Motion
 
         public string ComputeIntentHash()
         {
-            MigrateLegacyIntent();
             var builder = new StringBuilder();
             CharacterMotionGenerationPlan plan = BuildGenerationPlan();
             for (int i = 0; i < plan.Runs.Length; i++)
@@ -389,10 +385,7 @@ namespace KitsuMate.Onnx.Motion
 
         internal CharacterMotionGenerationPlan BuildGenerationPlan()
         {
-            IReadOnlyList<CharacterMotionPart> effectiveParts = parts;
-            if ((effectiveParts == null || effectiveParts.Count == 0) && intent != null)
-                effectiveParts = new[] { new CharacterMotionPart(intent) };
-            return CharacterMotionPlanner.Build(effectiveParts, internalOverlapFrames, entryOverlapFrames,
+            return CharacterMotionPlanner.Build(parts, internalOverlapFrames, entryOverlapFrames,
                 previousMotion != null);
         }
 
@@ -430,17 +423,8 @@ namespace KitsuMate.Onnx.Motion
                 }
         }
 
-        private void MigrateLegacyIntent()
-        {
-            if (intent == null) return;
-            if (parts == null) parts = new List<CharacterMotionPart>();
-            if (parts.Count == 0) parts.Add(new CharacterMotionPart(intent));
-            intent = null;
-        }
-
         private void OnValidate()
         {
-            MigrateLegacyIntent();
             entryOverlapFrames = Mathf.Clamp(entryOverlapFrames, 0, KimodoConditioning.DefaultFrameCount - 1);
             internalOverlapFrames = Mathf.Clamp(internalOverlapFrames, 0, KimodoConditioning.DefaultFrameCount - 1);
         }

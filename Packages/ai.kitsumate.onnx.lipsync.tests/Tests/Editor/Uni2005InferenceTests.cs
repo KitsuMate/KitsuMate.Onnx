@@ -24,9 +24,8 @@ namespace KitsuMate.Onnx.LipSync.Tests
             InferenceEngineRuntime<LipSyncRequest, VisemeTimeline> runtime = null;
             try
             {
-                backend.EnableGpu = false;
-                backend.PreferredProvider = GpuProvider.CPU;
-                modelSet.AcousticModel.ConfigureFile("uni2005/model_fp32.onnx", string.Empty, null, null);
+                backend.SetProviderOrder(OnnxExecutionProvider.Cpu);
+                modelSet.AcousticModel.ConfigureFile("uni2005/model_quantized.onnx", string.Empty, null, null);
                 modelSet.SetVocabulary(vocabulary);
                 SetField(engine, "modelSet", modelSet);
                 SetField(engine, "volumeThreshold", 0f);

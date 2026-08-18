@@ -236,16 +236,14 @@ Normal CPU CI always runs this category. Missing models or fixtures are failures
 
 Every model package should include or reference Python tooling capable of regenerating tokenizer, preprocessing, single-step, and end-to-end ground truth with model hashes.
 
-## Migration order
+## Implementation order
 
 1. Add filesystem model sources, strict provider capabilities, complete tensor types, and reusable binding primitives to `ai.kitsumate.onnx`.
 2. Implement Kimodo against the new contracts, proving diffusion and GPU-resident execution.
-3. Migrate Chatterbox because it exercises recurrent device state and currently allocates heavily inside its token loop.
-4. Migrate Whisper to a plain runtime service and device-resident decoder loop.
-5. Migrate embeddings and lipsync.
+3. Implement Chatterbox because it exercises recurrent device state and currently allocates heavily inside its token loop.
+4. Implement Whisper as a plain runtime service with a device-resident decoder loop.
+5. Complete embeddings and lipsync.
 6. Add or update optional MonoBehaviour adapters only after service contracts stabilize.
-
-Existing packages remain functional through compatibility adapters during migration. The modernization should not block Kimodo on completing all older-package migrations.
 
 ## Completion criteria
 
@@ -257,4 +255,4 @@ The modernization is successful when:
 - Recurrent/diffusion loops can execute without per-step managed allocation.
 - Cancellation and concurrent invocation have consistent behavior.
 - Selected large-model CI jobs cannot pass without running real inference.
-- Existing packages compile and retain behavioral compatibility until explicitly migrated.
+- Product packages compile directly against the current contracts without compatibility adapters.

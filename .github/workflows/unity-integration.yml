@@ -1,6 +1,7 @@
 name: Unity integration
 
 on:
+  workflow_call:
   workflow_dispatch:
   push:
     branches:
@@ -25,7 +26,9 @@ jobs:
         with:
           clean: true
       - name: Validate package layout
-        run: python3 Tools/ci/validate-package-layout.py
+        run: |
+          python3 Tools/ci/validate-package-layout.py
+          python3 -m unittest Tools/ci/test_download_onnxruntime.py -v
       - name: Build package archives
         run: python3 Tools/ci/package-upm.py --output Artifacts
 

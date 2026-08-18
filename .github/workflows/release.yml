@@ -6,10 +6,17 @@ on:
 
 permissions:
   contents: write
+  checks: write
 
 jobs:
+  integration:
+    name: Verify Unity integration
+    uses: ./.github/workflows/unity-integration.yml
+    secrets: inherit
+
   release:
     name: Build and publish packages
+    needs: integration
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -45,6 +52,9 @@ jobs:
         shell: bash
         run: |
           python3 Tools/ci/package-upm.py --output Artifacts
+          python3 Tools/ci/validate-onnxruntime-archive.py \
+            --lock Dependencies/onnxruntime.lock.json \
+            --archive "$(find Artifacts -maxdepth 1 -name 'ai.kitsumate.onnx.backend.onnxruntime-*.tgz' -print -quit)"
           (cd Artifacts && sha256sum *.tgz > SHA256SUMS)
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2

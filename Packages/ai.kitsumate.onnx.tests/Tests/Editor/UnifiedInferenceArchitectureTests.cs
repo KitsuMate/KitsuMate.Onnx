@@ -2,6 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using System.IO;
+using System.Linq;
+using System.Security.Cryptography;
 using NUnit.Framework;
 using UnityEditor;
 using UnityEngine;
@@ -61,6 +64,73 @@ namespace KitsuMate.Onnx.Tests
             UnityEngine.Object.DestroyImmediate(overrideBackend);
         }
 
+        [Test]
+        public void Tensor_ValidatesShapeBufferTypeAndDisposedAccess()
+        {
+            Assert.Throws<ArgumentException>(() => new OnnxTensor(new[] { 2, 2 }, OnnxTensorElementType.Float, new float[3]));
+            Assert.Throws<ArgumentException>(() => new OnnxTensor(new[] { 1 }, OnnxTensorElementType.Int32, new long[1]));
+            Assert.Throws<ArgumentOutOfRangeException>(() => new OnnxTensor(new[] { -1 }, OnnxTensorElementType.Float, Array.Empty<float>()));
+            var tensor = OnnxTensor.FromArray(new[] { 1f }, new[] { 1 });
+            tensor.Dispose();
+            Assert.Throws<ObjectDisposedException>(() => _ = tensor.Data);
+            Assert.Throws<ObjectDisposedException>(() => tensor.AsFloatArray());
+        }
+
+        [Test]
+        public void AndroidStager_RejectsTraversalAndInvalidHash()
+        {
+            var stager = new AndroidModelStager(new CountingFetcher(new byte[] { 1 }));
+            var environment = new OnnxRuntimeEnvironment("models", "source", Path.GetTempPath());
+            Assert.ThrowsAsync<OnnxModelPreparationException>(() => stager.StageAsync("../model.onnx", new string('0', 64), environment, default));
+            Assert.ThrowsAsync<OnnxModelPreparationException>(() => stager.StageAsync("model.onnx", "", environment, default));
+        }
+
+        [Test]
+        public async Task AndroidStager_IsSingleFlightAndChecksumFirst()
+        {
+            byte[] content = { 1, 2, 3, 4 };
+            string hash;
+            using (SHA256 algorithm = SHA256.Create())
+                hash = string.Concat(algorithm.ComputeHash(content).Select(value => value.ToString("x2")));
+            string root = Path.Combine(Path.GetTempPath(), "kitsumate-stager-" + Guid.NewGuid().ToString("N"));
+            var fetcher = new CountingFetcher(content);
+            var stager = new AndroidModelStager(fetcher);
+            var environment = new OnnxRuntimeEnvironment("models", "source", root);
+            try
+            {
+                Task<string> first = stager.StageAsync("nested/model.onnx", hash, environment, default);
+                Task<string> second = stager.StageAsync("nested/model.onnx", hash, environment, default);
+                string[] paths = await Task.WhenAll(first, second);
+                Assert.AreEqual(paths[0], paths[1]);
+                Assert.AreEqual(1, fetcher.FetchCount);
+                CollectionAssert.AreEqual(content, File.ReadAllBytes(paths[0]));
+            }
+            finally
+            {
+                if (Directory.Exists(root)) Directory.Delete(root, true);
+            }
+        }
+
+        [Test]
+        public async Task Runtime_UnloadIsSharedAndWaitsForActiveInference()
+        {
+            var runtime = new DrainRuntime();
+            var backend = ScriptableObject.CreateInstance<FakeBackend>();
+            await runtime.LoadAsync(backend, default, default);
+            Task<int> run = runtime.RunAsync(1);
+            await runtime.Entered.Task;
+            Task firstUnload = runtime.UnloadAsync();
+            Task secondUnload = runtime.UnloadAsync();
+            Assert.AreSame(firstUnload, secondUnload);
+            Assert.IsFalse(runtime.Unloaded);
+            runtime.Release.TrySetResult(true);
+            Assert.AreEqual(2, await run);
+            await firstUnload;
+            Assert.IsTrue(runtime.Unloaded);
+            runtime.Dispose();
+            UnityEngine.Object.DestroyImmediate(backend);
+        }
+
         private static Task<int> Invoke(InferenceEngineRuntime<int, int> runtime, int value) => runtime.RunAsync(value);
 
         private sealed class FakeEngine : InferenceEngine<int, int>
@@ -80,6 +150,38 @@ namespace KitsuMate.Onnx.Tests
                 await Task.Delay(20, cancellationToken).ConfigureAwait(false); Interlocked.Decrement(ref concurrency); return request + 1;
             }
             protected override Task OnUnloadAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        }
+        private sealed class DrainRuntime : InferenceEngineRuntime<int, int>
+        {
+            public readonly TaskCompletionSource<bool> Entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            public readonly TaskCompletionSource<bool> Release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            public bool Unloaded { get; private set; }
+            protected override Task OnLoadAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+            protected override async Task<int> OnRunAsync(int request, CancellationToken cancellationToken)
+            {
+                Entered.TrySetResult(true);
+                await Release.Task;
+                return request + 1;
+            }
+            protected override Task OnUnloadAsync(CancellationToken cancellationToken)
+            {
+                Unloaded = true;
+                return Task.CompletedTask;
+            }
+        }
+
+        private sealed class CountingFetcher : IOnnxModelContentFetcher
+        {
+            private readonly byte[] content;
+            public CountingFetcher(byte[] content) => this.content = content;
+            public int FetchCount { get; private set; }
+            public async Task FetchAsync(string sourceUri, string destinationPath, CancellationToken cancellationToken)
+            {
+                FetchCount++;
+                await Task.Yield();
+                cancellationToken.ThrowIfCancellationRequested();
+                File.WriteAllBytes(destinationPath, content);
+            }
         }
         private sealed class FakeModelSet : StandardModelSet
         {

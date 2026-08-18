@@ -100,8 +100,7 @@ namespace KitsuMate.Onnx.Asr.Sentis.Tests
                 SetField(engine, "modelSet", modelSet);
                 SetField(engine, "languageOverride", "en");
                 SetField(engine, "maxTokens", maxTokens);
-                backend.EnableGpu = false;
-                backend.PreferredProvider = GpuProvider.CPU;
+                backend.SetProviderOrder(OnnxExecutionProvider.Cpu);
                 runtime = await engine.CreateRuntimeAsync(backend);
                 return await runtime.RunAsync(new AsrRequest(audio));
             }
