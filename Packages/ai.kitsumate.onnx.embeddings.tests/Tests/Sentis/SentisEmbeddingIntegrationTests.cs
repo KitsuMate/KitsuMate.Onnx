@@ -20,6 +20,10 @@ namespace KitsuMate.Onnx.Embeddings.Sentis.Tests
         [Category("Integration")]
         public async Task AllMiniLm_ProducesANormalizedEmbeddingOnUnityCpu()
         {
+            string absoluteModelPath = Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), ModelPath));
+            Assert.That(File.Exists(absoluteModelPath), Is.True, $"Missing Unity AI Inference fixture at {absoluteModelPath}.");
+            AssetDatabase.ImportAsset(ModelPath,
+                ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
             ModelAsset imported = AssetDatabase.LoadAssetAtPath<ModelAsset>(ModelPath);
             Assert.That(imported, Is.Not.Null, $"Unity AI Inference did not import {ModelPath}.");
             var source = ScriptableObject.CreateInstance<UnityAiInferenceModelAsset>();
