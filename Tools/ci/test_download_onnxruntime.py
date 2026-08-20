@@ -85,7 +85,7 @@ class ArtifactHydrationTests(unittest.TestCase):
                 archive.writestr("value", b"data")
             cache = root / "cache"
             cache.mkdir()
-            (cache / "fixture.test.nupkg").write_bytes(b"not a zip")
+            (cache / "fixture.test.zip").write_bytes(b"not a zip")
             lock = root / "lock.json"
             lock.write_text(json.dumps({
                 "version": "test",

@@ -17,7 +17,10 @@ namespace KitsuMate.Onnx
         /// <summary>Names of all output tensors produced by the model.</summary>
         IReadOnlyList<string> OutputNames { get; }
 
-        /// <summary>Immutable provider and runtime information captured when the session was created.</summary>
+        /// <summary>
+        /// Provider/runtime diagnostics. Creation data remains stable; active-provider and
+        /// execution-fallback collections update thread-safely while the session is running.
+        /// </summary>
         OnnxSessionDiagnostics Diagnostics { get; }
         
         /// <summary>

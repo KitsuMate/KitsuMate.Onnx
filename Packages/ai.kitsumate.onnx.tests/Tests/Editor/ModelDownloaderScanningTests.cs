@@ -192,5 +192,59 @@ namespace KitsuMate.Onnx.Tests
             Assert.That(discovery.Artifacts["language-model"].Single(), Does.Contain("_q4f16."));
             Assert.That(discovery.Artifacts["conditional-decoder"].Single(), Does.Contain("_q4."));
         }
+
+        [Test]
+        [Category("Integration")]
+        public async Task ScansOnnxCommunityOmniVoiceSplitProfile()
+        {
+            var request = new ModelDownloadRequest(
+                "onnx-community/OmniVoice-Onnx",
+                "a7be7c65cc118137683f49eff0f80fdf9d5b5dbf",
+                "omnivoice");
+
+            var discovery = await ModelDownloader.GetArtifactsAsync(request);
+
+            Assert.That(discovery.Artifacts.Keys, Is.SupersetOf(new[]
+            {
+                "audio-embeddings", "language-decoder", "audio-heads", "acoustic-encoder",
+                "semantic-encoder", "quantizer-encoder", "higgs-decoder"
+            }));
+            Assert.That(discovery.Artifacts["audio-embeddings"].Single(), Does.StartWith("int4/"));
+            Assert.That(discovery.Artifacts["acoustic-encoder"].Single(), Does.StartWith("audio_tokenizer/"));
+            Assert.That(discovery.Artifacts["acoustic-encoder"].Single(), Does.Not.Contain("/fp16/"));
+        }
+
+        [Test]
+        [Category("Integration")]
+        public async Task RejectsIncompleteGluschenkoOmniVoiceRepository()
+        {
+            var request = new ModelDownloadRequest(
+                "gluschenko/omnivoice-onnx",
+                "4d4bb31790c2de902de0d19645fd13cf2d71a88b",
+                "omnivoice");
+
+            System.IO.InvalidDataException failure = null;
+            try { await ModelDownloader.GetArtifactsAsync(request); }
+            catch (System.IO.InvalidDataException exception) { failure = exception; }
+            Assert.That(failure, Is.Not.Null);
+        }
+
+        [Test]
+        [Category("Integration")]
+        public async Task ScansCanonicalOmniVoiceProfilesIndependently()
+        {
+            const string revision = "45d20c87b64f35c4ac203c5bac7ad97a3e60ca95";
+            var cpu = await ModelDownloader.GetArtifactsAsync(new ModelDownloadRequest(
+                "KitsuMate/omnivoice-onnx", revision, "omnivoice-cpu"));
+            var portable = await ModelDownloader.GetArtifactsAsync(new ModelDownloadRequest(
+                "KitsuMate/omnivoice-onnx", revision, "omnivoice-portable"));
+
+            Assert.That(cpu.Artifacts.Keys, Does.Contain("merged-backbone"));
+            Assert.That(cpu.Artifacts.Keys, Does.Not.Contain("audio-embeddings"));
+            Assert.That(cpu.Artifacts["acoustic-encoder"].Single(), Does.Contain("codec-fp32"));
+            Assert.That(portable.Artifacts.Keys, Does.Contain("merged-backbone"));
+            Assert.That(portable.Artifacts.Keys, Does.Not.Contain("audio-embeddings"));
+            Assert.That(portable.Artifacts["acoustic-encoder"].Single(), Does.Contain("codec-fp32"));
+        }
     }
 }

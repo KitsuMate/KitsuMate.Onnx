@@ -1,0 +1,9 @@
+{
+  "source": "MidnightNyx/Assets/Bundles/Nyx/Audio/Examples/browser-history.wav",
+  "filename": "example.wav",
+  "sample_rate": 24000,
+  "channels": 1,
+  "transcript": "Please don't show me your browser history. I'm trying to maintain my faith in humanity.",
+  "transcription_model": "openai/whisper-tiny.en",
+  "duration_seconds": 6.24
+}

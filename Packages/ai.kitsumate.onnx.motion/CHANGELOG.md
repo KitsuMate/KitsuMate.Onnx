@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+- Made explicit root position and heading authoritative over pose-derived context at the same frame, preventing valid root-plus-IK/full-pose combinations from reporting feature conflicts.
+- Reused the compiled constraint set when building an engine request instead of validating and compiling it twice.
+- Replaced the raw keyframe inspector with constraint toggles, automatic guide/pose maintenance, Reset Pose, and frame-based animation sampling.
+- Added compact motion-level pose insertion and batch recalculation for missing or stale keyframes.
+- Added SOMA-30 Scene handles with capsule bones, box IK controls, FK rotation, pole-guided two-bone IK, Undo, and automatic pose capture.
+- Scaled bone and IK geometry from the armature extent, separated target/pole picking, and made IK manipulation follow Unity's Move and Rotate tools.
+- Kept captured poses visible while their keyframes are unselected and synchronized IK edits made with ordinary Transform tools.
+- Rebased reset, load, sampling, IK creation, and selected gizmos to the owning keyframe Transform so shared-guide state cannot leak between frames.
+- Added automatic stale detection for legacy guide-root snapshots and rejected keyframe scale because root authoring consists only of position and rotation.
+- Changed IK targets to wireframe boxes and poles to wireframe circles connected to their elbow or knee.
+- Oriented IK boxes with their hand or foot, centered and sized them around the corresponding SOMA joints while retaining the model-input point as their manipulation pivot, and made selected controls almost white.
+- Gave active transform and rotation handles input priority over overlapping armature and IK selection regions.
+- Treated IK-only keyframes as sparse generative constraints: their bones and poles stay hidden, targets remain unrestricted, and local two-bone solving is reserved for Full Pose.
+- Replaced unreliable pickable gizmos with cached explicit Scene controls that select unselected keyframe roots, bones, IK targets, and poles while preserving Unity handle priority.
+
 ## [1.0.0] - 2026-07-11
 
 - Added CharacterMotionEngine, KimodoEngine, and KimodoModelSet.

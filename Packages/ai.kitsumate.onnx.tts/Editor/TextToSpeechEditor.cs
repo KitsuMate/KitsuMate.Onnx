@@ -8,7 +8,11 @@ namespace KitsuMate.Onnx.Tts.Editor
     {
         private SerializedProperty _engine;
         private SerializedProperty _voiceReference;
+        private SerializedProperty _voiceReferenceText;
+        private SerializedProperty _voiceInstruction;
         private SerializedProperty _languageId;
+        private SerializedProperty _speed;
+        private SerializedProperty _durationSeconds;
         private SerializedProperty _exaggeration;
         private SerializedProperty _maxNewTokens;
         private SerializedProperty _repetitionPenalty;
@@ -24,17 +28,21 @@ namespace KitsuMate.Onnx.Tts.Editor
 
         private void OnEnable()
         {
-            _engine = serializedObject.FindProperty("_engine");
-            _voiceReference = serializedObject.FindProperty("_voiceReference");
-            _languageId = serializedObject.FindProperty("_languageId");
-            _exaggeration = serializedObject.FindProperty("_exaggeration");
-            _maxNewTokens = serializedObject.FindProperty("_maxNewTokens");
-            _repetitionPenalty = serializedObject.FindProperty("_repetitionPenalty");
-            _audioSource = serializedObject.FindProperty("_audioSource");
-            _autoPlay = serializedObject.FindProperty("_autoPlay");
-            _onSynthesis = serializedObject.FindProperty("_onSynthesis");
-            _onAudioClipReady = serializedObject.FindProperty("_onAudioClipReady");
-            _onError = serializedObject.FindProperty("_onError");
+            _engine = serializedObject.FindProperty("engine");
+            _voiceReference = serializedObject.FindProperty("voiceReference");
+            _voiceReferenceText = serializedObject.FindProperty("voiceReferenceText");
+            _voiceInstruction = serializedObject.FindProperty("voiceInstruction");
+            _languageId = serializedObject.FindProperty("languageId");
+            _speed = serializedObject.FindProperty("speed");
+            _durationSeconds = serializedObject.FindProperty("durationSeconds");
+            _exaggeration = serializedObject.FindProperty("exaggeration");
+            _maxNewTokens = serializedObject.FindProperty("maxNewTokens");
+            _repetitionPenalty = serializedObject.FindProperty("repetitionPenalty");
+            _audioSource = serializedObject.FindProperty("audioSource");
+            _autoPlay = serializedObject.FindProperty("autoPlay");
+            _onSynthesis = serializedObject.FindProperty("onSynthesis");
+            _onAudioClipReady = serializedObject.FindProperty("onAudioClipReady");
+            _onError = serializedObject.FindProperty("onError");
         }
 
         public override void OnInspectorGUI()
@@ -52,7 +60,11 @@ namespace KitsuMate.Onnx.Tts.Editor
             // Input
             EditorGUILayout.LabelField("Input", EditorStyles.boldLabel);
             EditorGUILayout.PropertyField(_voiceReference, new GUIContent("Voice Reference"));
+            EditorGUILayout.PropertyField(_voiceReferenceText, new GUIContent("Reference Transcript"));
+            EditorGUILayout.PropertyField(_voiceInstruction, new GUIContent("Voice Instruction"));
             EditorGUILayout.PropertyField(_languageId, new GUIContent("Language ID"));
+            EditorGUILayout.PropertyField(_speed);
+            EditorGUILayout.PropertyField(_durationSeconds, new GUIContent("Duration Seconds"));
             EditorGUILayout.PropertyField(_exaggeration);
             EditorGUILayout.PropertyField(_maxNewTokens, new GUIContent("Max New Tokens"));
             EditorGUILayout.PropertyField(_repetitionPenalty, new GUIContent("Repetition Penalty"));

@@ -7,6 +7,7 @@
     "com.unity.test-framework": "1.7.0",
     "ai.kitsumate.onnx": "file:../../Packages/ai.kitsumate.onnx",
     "ai.kitsumate.onnx.backend.onnxruntime": "file:../../Packages/ai.kitsumate.onnx.backend.onnxruntime",
+    "ai.kitsumate.onnx.backend.onnxruntime.nvidia": "file:../../Packages/ai.kitsumate.onnx.backend.onnxruntime.nvidia",
     "ai.kitsumate.onnx.backend.unity-inference": "file:../../Packages/ai.kitsumate.onnx.backend.unity-inference",
     "ai.kitsumate.onnx.asr": "file:../../Packages/ai.kitsumate.onnx.asr",
     "ai.kitsumate.onnx.embeddings": "file:../../Packages/ai.kitsumate.onnx.embeddings",

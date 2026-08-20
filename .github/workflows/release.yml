@@ -48,6 +48,10 @@ jobs:
             --lock Dependencies/onnxruntime.lock.json \
             --cache "$RUNNER_TEMP/kitsumate-artifacts" \
             --destination Packages/ai.kitsumate.onnx.backend.onnxruntime/Runtime/Plugins
+          python3 Tools/ci/download-onnxruntime.py \
+            --lock Dependencies/onnxruntime-nvidia.lock.json \
+            --cache "$RUNNER_TEMP/kitsumate-artifacts" \
+            --destination Packages/ai.kitsumate.onnx.backend.onnxruntime.nvidia/Runtime/Plugins
       - name: Build package archives
         shell: bash
         run: |
@@ -55,6 +59,9 @@ jobs:
           python3 Tools/ci/validate-onnxruntime-archive.py \
             --lock Dependencies/onnxruntime.lock.json \
             --archive "$(find Artifacts -maxdepth 1 -name 'ai.kitsumate.onnx.backend.onnxruntime-*.tgz' -print -quit)"
+          python3 Tools/ci/validate-onnxruntime-archive.py \
+            --lock Dependencies/onnxruntime-nvidia.lock.json \
+            --archive "$(find Artifacts -maxdepth 1 -name 'ai.kitsumate.onnx.backend.onnxruntime.nvidia-*.tgz' -print -quit)"
           (cd Artifacts && sha256sum *.tgz > SHA256SUMS)
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2

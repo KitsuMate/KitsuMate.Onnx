@@ -1,0 +1,14 @@
+{
+  "name": "KitsuMate.Onnx.Backend.OnnxRuntime.Nvidia",
+  "rootNamespace": "KitsuMate.Onnx.Nvidia",
+  "references": ["KitsuMate.Onnx", "KitsuMate.Onnx.Backend.OnnxRuntime"],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": true,
+  "precompiledReferences": ["Microsoft.ML.OnnxRuntime.dll"],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

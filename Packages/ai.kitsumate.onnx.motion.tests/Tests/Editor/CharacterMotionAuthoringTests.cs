@@ -12,6 +12,229 @@ namespace KitsuMate.Onnx.Motion.Tests
     public sealed class CharacterMotionAuthoringTests
     {
         [Test]
+        public void MotionEditor_AddPoseUsesRequestedFrameAndSelectsExistingPose()
+        {
+            var root = new GameObject("MotionAuthoring");
+            CharacterMotionIntent intent = ScriptableObject.CreateInstance<CharacterMotionIntent>();
+            try
+            {
+                CharacterMotion motion = root.AddComponent<CharacterMotion>();
+                motion.SetParts(new[] { new CharacterMotionPart(intent) });
+
+                CharacterMotionKeyframe first = CharacterMotionEditor.AddKeyframe(motion, 12);
+                CharacterMotionKeyframe second = CharacterMotionEditor.AddKeyframe(motion, 12);
+
+                Assert.AreSame(first, second);
+                Assert.AreEqual(12, first.Frame);
+                Assert.AreEqual(CharacterMotionConstraintType.None, first.Constraints);
+                Assert.AreEqual(1, motion.GetKeyframes().Length);
+                Assert.AreSame(first.gameObject, Selection.activeGameObject);
+            }
+            finally
+            {
+                Selection.activeObject = null;
+                UnityEngine.Object.DestroyImmediate(root);
+                UnityEngine.Object.DestroyImmediate(intent);
+            }
+        }
+
+        [Test]
+        public void AuthoringUtility_CountsOnlyPoseDependentStaleKeyframes()
+        {
+            var root = new GameObject("StalePoses");
+            try
+            {
+                CharacterMotion motion = root.AddComponent<CharacterMotion>();
+                Add(3, CharacterMotionConstraintType.None);
+                Add(7, CharacterMotionConstraintType.RootPosition);
+                Add(11, CharacterMotionConstraintType.FullBodyPose);
+                Add(15, CharacterMotionConstraintType.LeftHand);
+
+                Assert.AreEqual(2, CharacterMotionAuthoringUtility.CountStale(motion));
+
+                void Add(int frame, CharacterMotionConstraintType constraints)
+                {
+                    var child = new GameObject($"Frame_{frame:00}");
+                    child.transform.SetParent(root.transform, false);
+                    child.AddComponent<CharacterMotionKeyframe>().Configure(frame, constraints);
+                }
+            }
+            finally { UnityEngine.Object.DestroyImmediate(root); }
+        }
+
+        [Test]
+        public void SceneHandles_ScaleBoneAndIkGeometryWithArmatureExtent()
+        {
+            var small = new Vector3[30];
+            var large = new Vector3[30];
+            for (int i = 0; i < small.Length; i++)
+            {
+                small[i] = new Vector3(i * 0.02f, i * 0.04f, i * 0.01f);
+                large[i] = small[i] * 4f;
+            }
+
+            float smallExtent = CharacterMotionSceneHandles.MeasureArmature(small);
+            float largeExtent = CharacterMotionSceneHandles.MeasureArmature(large);
+
+            Assert.AreEqual(smallExtent * 4f, largeExtent, 1e-4f);
+            Assert.AreEqual(CharacterMotionSceneHandles.BoneRadius(smallExtent) * 4f,
+                CharacterMotionSceneHandles.BoneRadius(largeExtent), 1e-4f);
+            Assert.AreEqual(CharacterMotionSceneHandles.IkSize(smallExtent) * 4f,
+                CharacterMotionSceneHandles.IkSize(largeExtent), 1e-4f);
+        }
+
+        [Test]
+        public void SceneHandles_IkBoxKeepsModelInputCenterAndContainsRotatedEndEffectorJoints()
+        {
+            var positions = new Vector3[30];
+            var rotations = Enumerable.Repeat(Quaternion.identity, 30).ToArray();
+            Vector3 center = new Vector3(3f, 2f, -4f);
+            Quaternion rotation = Quaternion.Euler(18f, 63f, -11f);
+            rotations[13] = rotation;
+            positions[13] = center;
+            positions[14] = center + rotation * new Vector3(-0.045f, 0.018f, 0.09f);
+            positions[15] = center + rotation * new Vector3(0.025f, -0.012f, 0.13f);
+
+            CharacterMotionSceneHandles.IkBoxGeometry box = CharacterMotionSceneHandles.CalculateIkBox(
+                CharacterMotionConstraintType.LeftHand, center, rotation, positions, rotations, 2f);
+
+            Assert.AreEqual(center, box.Pivot,
+                "The rotation and translation pivot must remain the Transform position sent to Kimodo.");
+            Assert.AreNotEqual(center, box.Center,
+                "The visible box should center on the end-effector geometry instead of doubling its empty side.");
+            Assert.Less(Quaternion.Angle(rotation, box.Rotation), 1e-5f);
+            Assert.Less(box.Size.z, 0.2f,
+                "Centering on the occupied range should avoid a symmetric double-sized box.");
+            Quaternion inverse = Quaternion.Inverse(box.Rotation);
+            for (int i = 13; i <= 15; i++)
+            {
+                Vector3 local = inverse * (positions[i] - box.Center);
+                Assert.LessOrEqual(Mathf.Abs(local.x), box.Size.x * 0.5f);
+                Assert.LessOrEqual(Mathf.Abs(local.y), box.Size.y * 0.5f);
+                Assert.LessOrEqual(Mathf.Abs(local.z), box.Size.z * 0.5f);
+            }
+
+            Vector3 movedCenter = center + new Vector3(20f, -5f, 12f);
+            Quaternion movedRotation = Quaternion.Euler(-25f, 145f, 32f);
+            CharacterMotionSceneHandles.IkBoxGeometry moved = CharacterMotionSceneHandles.CalculateIkBox(
+                CharacterMotionConstraintType.LeftHand, movedCenter, movedRotation, positions, rotations, 2f);
+            Assert.AreEqual(movedCenter, moved.Pivot,
+                "Moving an IK-only target must not be constrained by the reference limb.");
+            Assert.Less(Quaternion.Angle(movedRotation, moved.Rotation), 1e-5f);
+            Assert.Less(Vector3.Distance(moved.Size, box.Size), 1e-5f,
+                "Display bounds are calculated from the end-joint group, independent of target distance.");
+        }
+
+        [Test]
+        public void AuthoringUtility_IkOnlyPoseDoesNotRequirePoleOrLocalSolve()
+        {
+            var root = new GameObject("SparseIkMotion");
+            try
+            {
+                CharacterMotion motion = root.AddComponent<CharacterMotion>();
+                var frameObject = new GameObject("Frame_04");
+                frameObject.transform.SetParent(root.transform, false);
+                CharacterMotionKeyframe frame = frameObject.AddComponent<CharacterMotionKeyframe>();
+                frame.Configure(4, CharacterMotionConstraintType.LeftHand);
+
+                var humanoidRotations = Enumerable.Repeat(Quaternion.identity, (int)HumanBodyBones.LastBone).ToArray();
+                var humanoidAvailability = Enumerable.Repeat(true, (int)HumanBodyBones.LastBone).ToArray();
+                var somaPositions = new Vector3[30];
+                var somaRotations = Enumerable.Repeat(Quaternion.identity, 30).ToArray();
+                frame.Pose.Set(humanoidRotations, humanoidAvailability, somaPositions, somaRotations,
+                    motion.AvatarSignature);
+
+                var target = new GameObject("LeftHand");
+                target.transform.SetParent(frameObject.transform, false);
+                frame.SetEffector(CharacterMotionConstraintType.LeftHand, target.transform);
+
+                Assert.IsFalse(CharacterMotionAuthoringUtility.IsStale(frame, motion),
+                    "Sparse IK stores no pole because the generated body remains unconstrained.");
+                Assert.IsFalse(CharacterMotionAuthoringUtility.ApplyIk(
+                    frame, null, CharacterMotionConstraintType.LeftHand),
+                    "Sparse IK must not run the deterministic local two-bone preview.");
+
+                frame.Configure(4, CharacterMotionConstraintType.LeftHand |
+                                   CharacterMotionConstraintType.FullBodyPose);
+                Assert.IsTrue(CharacterMotionAuthoringUtility.IsStale(frame, motion),
+                    "Full Pose requires the pole used by its local two-bone preview.");
+            }
+            finally { UnityEngine.Object.DestroyImmediate(root); }
+        }
+
+        [Test]
+        public void SharedGuideAlignment_FollowsKeyframePositionAndRotationWithoutScale()
+        {
+            var guideObject = new GameObject("MotionSkeleton");
+            var frameObject = new GameObject("Frame_04");
+            try
+            {
+                CharacterMotionSkeleton skeleton = guideObject.AddComponent<CharacterMotionSkeleton>();
+                CharacterMotionKeyframe frame = frameObject.AddComponent<CharacterMotionKeyframe>();
+                frameObject.transform.SetPositionAndRotation(
+                    new Vector3(7f, -2f, 3f), Quaternion.Euler(12f, 48f, -7f));
+                frameObject.transform.localScale = Vector3.one * 3f;
+
+                skeleton.AlignToKeyframe(frame);
+
+                Assert.Less(Vector3.Distance(frameObject.transform.position, guideObject.transform.position), 1e-6f);
+                Assert.Less(Quaternion.Angle(frameObject.transform.rotation, guideObject.transform.rotation), 1e-5f);
+                Assert.AreEqual(Vector3.one, guideObject.transform.localScale,
+                    "Keyframe scale is not part of the authored root pose.");
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(guideObject);
+                UnityEngine.Object.DestroyImmediate(frameObject);
+            }
+        }
+
+        [Test]
+        public void SharedGuideLoadedKeyframe_IsTransientEditorState()
+        {
+            System.Reflection.FieldInfo field = typeof(CharacterMotionSkeleton).GetField(
+                "loadedKeyframe",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            Assert.NotNull(field);
+            Assert.IsTrue(field.IsNotSerialized);
+        }
+
+        [Test]
+        public void TwoBoneIk_ReachesTargetPreservesLengthsAndReportsUnreachableTarget()
+        {
+            var rootObject = new GameObject("Root");
+            var middleObject = new GameObject("Middle");
+            var tipObject = new GameObject("Tip");
+            try
+            {
+                middleObject.transform.SetParent(rootObject.transform, false);
+                tipObject.transform.SetParent(middleObject.transform, false);
+                middleObject.transform.localPosition = Vector3.right;
+                tipObject.transform.localPosition = Vector3.right;
+                float firstLength = Vector3.Distance(rootObject.transform.position, middleObject.transform.position);
+                float secondLength = Vector3.Distance(middleObject.transform.position, tipObject.transform.position);
+                Vector3 target = new Vector3(1f, 1f, 0f);
+                Quaternion rotation = Quaternion.Euler(10f, 20f, 30f);
+
+                bool invalid = CharacterMotionTwoBoneIk.Solve(rootObject.transform, middleObject.transform,
+                    tipObject.transform, target, rotation, Vector3.forward);
+
+                Assert.IsFalse(invalid);
+                Assert.Less(Vector3.Distance(target, tipObject.transform.position), 1e-3f);
+                Assert.AreEqual(firstLength, Vector3.Distance(rootObject.transform.position, middleObject.transform.position), 1e-4f);
+                Assert.AreEqual(secondLength, Vector3.Distance(middleObject.transform.position, tipObject.transform.position), 1e-4f);
+                Assert.Less(Quaternion.Angle(rotation, tipObject.transform.rotation), 1e-3f);
+
+                invalid = CharacterMotionTwoBoneIk.Solve(rootObject.transform, middleObject.transform,
+                    tipObject.transform, Vector3.right * 4f, Quaternion.identity, Vector3.forward);
+                Assert.IsTrue(invalid);
+                Assert.AreEqual(firstLength + secondLength,
+                    Vector3.Distance(rootObject.transform.position, tipObject.transform.position), 1e-3f);
+            }
+            finally { UnityEngine.Object.DestroyImmediate(rootObject); }
+        }
+
+        [Test]
         public void Planner_ExpandsRepetitionsAndCalculatesOverlappingTimeline()
         {
             CharacterMotionIntent walk = ScriptableObject.CreateInstance<CharacterMotionIntent>();
@@ -194,6 +417,17 @@ namespace KitsuMate.Onnx.Motion.Tests
                 Assert.IsTrue(rotations.All(CharacterMotionSpace.IsFinite));
                 Assert.IsTrue(diagnostics.Diagnostics.Any(value => value.Code == "optional_bone_fallback"));
 
+                var reusedPositions = new Vector3[30];
+                var reusedRotations = new Quaternion[30];
+                diagnostics.Clear();
+                success = HumanoidSomaMapper.TryCapture(
+                    bone => bones.TryGetValue(bone, out Transform value) ? value : null,
+                    reusedPositions, reusedRotations, diagnostics);
+                Assert.IsTrue(success, string.Join("\n", diagnostics.Diagnostics));
+                Assert.AreEqual(positions[(int)KimodoJoint.LeftHand],
+                    reusedPositions[(int)KimodoJoint.LeftHand]);
+                Assert.IsTrue(reusedRotations.All(CharacterMotionSpace.IsFinite));
+
                 void AddArm(bool left)
                 {
                     float sign = left ? -1f : 1f;
@@ -327,6 +561,7 @@ namespace KitsuMate.Onnx.Motion.Tests
                 CharacterMotionSkeleton skeleton = CharacterMotionSkeletonUtility.Rebuild(motion);
                 Assert.AreEqual("EditorOnly", skeleton.gameObject.tag);
                 Assert.IsTrue((skeleton.gameObject.hideFlags & HideFlags.DontSaveInBuild) != 0);
+                Assert.IsTrue((skeleton.gameObject.hideFlags & HideFlags.DontSaveInEditor) != 0);
                 Assert.NotNull(skeleton.GuideAnimator.GetBoneTransform(HumanBodyBones.Hips));
 
                 var frameObject = new GameObject("Frame_00");
@@ -344,6 +579,144 @@ namespace KitsuMate.Onnx.Motion.Tests
                 Assert.IsTrue(skeleton.HasUnsavedChanges());
                 skeleton.LoadPose(frame);
                 Assert.IsFalse(skeleton.HasUnsavedChanges());
+
+                CharacterMotionAuthoringUtility.SetConstraint(
+                    frame, CharacterMotionConstraintType.LeftHand, true);
+                Transform target = frame.GetEffector(CharacterMotionConstraintType.LeftHand);
+                Assert.NotNull(target);
+                Vector3 requestedPosition = target.position + skeleton.transform.forward * 0.05f;
+                target.position = requestedPosition;
+                CharacterMotionIkChangeTracker.SyncNow(frame, CharacterMotionConstraintType.LeftHand);
+
+                Assert.Less(Vector3.Distance(requestedPosition, hand.position), 0.005f,
+                    "Moving an IK Transform through ordinary Unity tools must solve and capture the pose.");
+                Assert.IsTrue(frame.Pose.IsCaptured);
+            }
+            finally
+            {
+                if (motionObject != null) UnityEngine.Object.DestroyImmediate(motionObject);
+                if (character != null) UnityEngine.Object.DestroyImmediate(character);
+                if (intent != null) UnityEngine.Object.DestroyImmediate(intent);
+            }
+        }
+
+        [Test]
+        public void EffectorRepair_RecoversNamedControlAndConsolidatesGeneratedDuplicates()
+        {
+            const string packageFixture = "Packages/ai.kitsumate.onnx.motion/Tests/PlayMode/Resources/XBot.fbx";
+            const string projectFixture = "Assets/Bundles/Nyx/Prefabs/Nyx.prefab";
+            GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(packageFixture) ??
+                                AssetDatabase.LoadAssetAtPath<GameObject>(projectFixture);
+            if (prefab == null) Assert.Ignore($"Humanoid fixture not found at {packageFixture} or {projectFixture}.");
+            GameObject character = null, motionObject = null;
+            CharacterMotionIntent intent = null;
+            try
+            {
+                character = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
+                Animator animator = character.GetComponentInChildren<Animator>(true);
+                motionObject = new GameObject("EffectorRepairMotion");
+                CharacterMotion motion = motionObject.AddComponent<CharacterMotion>();
+                intent = ScriptableObject.CreateInstance<CharacterMotionIntent>();
+                AssignMotion(motion, intent, animator, motionObject.transform);
+                CharacterMotionSkeletonUtility.Rebuild(motion);
+
+                var frameObject = new GameObject("Frame_30");
+                frameObject.transform.SetParent(motionObject.transform, false);
+                CharacterMotionKeyframe frame = frameObject.AddComponent<CharacterMotionKeyframe>();
+                frame.Configure(30, CharacterMotionConstraintType.None);
+
+                CharacterMotionAuthoringUtility.SetConstraint(
+                    frame, CharacterMotionConstraintType.LeftHand, true);
+                Transform original = frame.GetEffector(CharacterMotionConstraintType.LeftHand);
+                Assert.NotNull(original, "IK-only constraint creation must expose its named target child.");
+                Assert.AreEqual(1, CountNamedChildren(frame.transform, "LeftHand"));
+
+                frame.SetEffector(CharacterMotionConstraintType.LeftHand, null);
+                new GameObject("LeftHand").transform.SetParent(frame.transform, false);
+                new GameObject("LeftHand").transform.SetParent(frame.transform, false);
+
+                CharacterMotionAuthoringUtility.PrepareKeyframe(frame);
+                Assert.NotNull(frame.GetEffector(CharacterMotionConstraintType.LeftHand));
+                Assert.AreEqual(1, CountNamedChildren(frame.transform, "LeftHand"),
+                    "Repair must reuse one reserved control and remove plain orphan duplicates.");
+
+                UnityEngine.Object.DestroyImmediate(frame.GetEffector(CharacterMotionConstraintType.LeftHand).gameObject);
+                var reusable = new GameObject("LeftHand");
+                reusable.transform.SetParent(frame.transform, false);
+                Assert.DoesNotThrow(() => CharacterMotionAuthoringUtility.PrepareKeyframe(frame));
+                Assert.AreSame(reusable.transform, frame.GetEffector(CharacterMotionConstraintType.LeftHand),
+                    "A stale cache must be replaced with the reusable named child.");
+            }
+            finally
+            {
+                if (motionObject != null) UnityEngine.Object.DestroyImmediate(motionObject);
+                if (character != null) UnityEngine.Object.DestroyImmediate(character);
+                if (intent != null) UnityEngine.Object.DestroyImmediate(intent);
+            }
+
+            static int CountNamedChildren(Transform parent, string name)
+            {
+                int count = 0;
+                for (int i = 0; i < parent.childCount; i++)
+                    if (parent.GetChild(i).name == name) count++;
+                return count;
+            }
+        }
+
+        [Test]
+        public void ResetAndLoadPose_UseKeyframeTransformAsTheOnlyRoot()
+        {
+            const string prefabPath = "Packages/ai.kitsumate.onnx.motion/Tests/PlayMode/Resources/XBot.fbx";
+            GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
+            if (prefab == null) Assert.Ignore($"Humanoid fixture not found at {prefabPath}.");
+            GameObject character = null, motionObject = null;
+            CharacterMotionIntent intent = null;
+            try
+            {
+                character = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
+                Animator animator = character.GetComponentInChildren<Animator>(true);
+                motionObject = new GameObject("RootRelativeAuthoringMotion");
+                CharacterMotion motion = motionObject.AddComponent<CharacterMotion>();
+                intent = ScriptableObject.CreateInstance<CharacterMotionIntent>();
+                AssignMotion(motion, intent, animator, motionObject.transform);
+                CharacterMotionSkeleton skeleton = CharacterMotionSkeletonUtility.Rebuild(motion);
+
+                var frameObject = new GameObject("Frame_09");
+                frameObject.transform.SetParent(motionObject.transform, false);
+                frameObject.transform.SetPositionAndRotation(
+                    new Vector3(4.5f, 1.25f, -3.75f), Quaternion.Euler(0f, 63f, 0f));
+                CharacterMotionKeyframe frame = frameObject.AddComponent<CharacterMotionKeyframe>();
+                frame.Configure(9, CharacterMotionConstraintType.FullBodyPose |
+                    CharacterMotionConstraintType.LeftHand);
+
+                CharacterMotionAuthoringUtility.ResetPose(frame);
+                Assert.Less(Vector3.Distance(frame.transform.position, skeleton.transform.position), 1e-5f);
+                Assert.Less(Quaternion.Angle(frame.transform.rotation, skeleton.transform.rotation), 1e-4f);
+                Assert.IsTrue(frame.Pose.UsesCurrentRootSpace);
+
+                Assert.IsTrue(HumanoidSomaMapper.TryCapture(skeleton.GuideAnimator.GetBoneTransform,
+                    out Vector3[] worldPositions, out _, new CharacterMotionValidationResult()));
+                ReadOnlySpan<Vector3> relative = frame.Pose.SomaPositionsRelativeToRoot.Span;
+                for (int i = 0; i < worldPositions.Length; i++)
+                    Assert.Less(Vector3.Distance(worldPositions[i],
+                        frame.transform.position + frame.transform.rotation * relative[i]), 1e-4f,
+                        $"SOMA joint {i} was not captured relative to the keyframe root.");
+
+                Transform handTarget = frame.GetEffector(CharacterMotionConstraintType.LeftHand);
+                Transform guideHand = skeleton.GuideAnimator.GetBoneTransform(HumanBodyBones.LeftHand);
+                Assert.NotNull(handTarget);
+                Assert.Less(Vector3.Distance(handTarget.position, guideHand.position), 1e-4f);
+
+                Vector3[] storedRelative = relative.ToArray();
+                frame.transform.SetPositionAndRotation(
+                    new Vector3(-2f, 0.5f, 6f), Quaternion.Euler(0f, -117f, 0f));
+                skeleton.LoadPose(frame);
+
+                Assert.Less(Vector3.Distance(frame.transform.position, skeleton.transform.position), 1e-5f);
+                Assert.Less(Quaternion.Angle(frame.transform.rotation, skeleton.transform.rotation), 1e-4f);
+                for (int i = 0; i < storedRelative.Length; i++)
+                    Assert.Less(Vector3.Distance(storedRelative[i], frame.Pose.SomaPositionsRelativeToRoot.Span[i]), 1e-6f,
+                        "Moving the keyframe root must not rewrite its root-relative pose.");
             }
             finally
             {

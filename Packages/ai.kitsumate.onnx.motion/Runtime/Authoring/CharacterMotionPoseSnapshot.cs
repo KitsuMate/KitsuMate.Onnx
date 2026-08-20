@@ -7,17 +7,21 @@ namespace KitsuMate.Onnx.Motion
     [Serializable]
     public sealed class CharacterMotionPoseSnapshot
     {
+        private const int CurrentRootSpaceVersion = 1;
+
         [SerializeField, HideInInspector] private Quaternion[] humanoidLocalRotations;
         [SerializeField, HideInInspector] private bool[] humanoidBoneAvailability;
         [SerializeField, HideInInspector] private Vector3[] somaPositionsRelativeToRoot;
         [SerializeField, HideInInspector] private Quaternion[] somaRotationsRelativeToRoot;
         [SerializeField, HideInInspector] private string avatarSignature;
+        [SerializeField, HideInInspector] private int rootSpaceVersion;
 
         public bool IsCaptured =>
             humanoidLocalRotations?.Length == (int)HumanBodyBones.LastBone &&
             humanoidBoneAvailability?.Length == (int)HumanBodyBones.LastBone &&
             somaPositionsRelativeToRoot?.Length == 30 && somaRotationsRelativeToRoot?.Length == 30;
         public string AvatarSignature => avatarSignature ?? string.Empty;
+        public bool UsesCurrentRootSpace => IsCaptured && rootSpaceVersion == CurrentRootSpaceVersion;
         public ReadOnlyMemory<Quaternion> HumanoidLocalRotations => humanoidLocalRotations ?? Array.Empty<Quaternion>();
         public ReadOnlyMemory<bool> HumanoidBoneAvailability => humanoidBoneAvailability ?? Array.Empty<bool>();
         public ReadOnlyMemory<Vector3> SomaPositionsRelativeToRoot => somaPositionsRelativeToRoot ?? Array.Empty<Vector3>();
@@ -63,7 +67,7 @@ namespace KitsuMate.Onnx.Motion
         public string ComputeHash()
         {
             if (!IsCaptured) return string.Empty;
-            var builder = new System.Text.StringBuilder(AvatarSignature);
+            var builder = new System.Text.StringBuilder(AvatarSignature).Append('|').Append(rootSpaceVersion);
             for (int i = 0; i < somaPositionsRelativeToRoot.Length; i++)
             {
                 Vector3 p = somaPositionsRelativeToRoot[i]; Quaternion q = somaRotationsRelativeToRoot[i];
@@ -102,6 +106,7 @@ namespace KitsuMate.Onnx.Motion
             somaPositionsRelativeToRoot = (Vector3[])somaPositions.Clone();
             somaRotationsRelativeToRoot = (Quaternion[])somaRotations.Clone();
             avatarSignature = signature ?? string.Empty;
+            rootSpaceVersion = CurrentRootSpaceVersion;
         }
 
         public void Clear()
@@ -111,6 +116,7 @@ namespace KitsuMate.Onnx.Motion
             somaPositionsRelativeToRoot = null;
             somaRotationsRelativeToRoot = null;
             avatarSignature = null;
+            rootSpaceVersion = 0;
         }
 
         private static void ValidateFinite(Vector3[] positions, Quaternion[] rotations)

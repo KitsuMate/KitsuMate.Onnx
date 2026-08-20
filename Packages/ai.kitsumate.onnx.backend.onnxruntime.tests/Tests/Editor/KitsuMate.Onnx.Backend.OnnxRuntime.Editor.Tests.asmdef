@@ -1,0 +1,12 @@
+{
+  "name": "KitsuMate.Onnx.Backend.OnnxRuntime.Editor.Tests",
+  "references": [
+    "KitsuMate.Onnx",
+    "KitsuMate.Onnx.Backend.OnnxRuntime",
+    "KitsuMate.Onnx.Backend.OnnxRuntime.Editor"
+  ],
+  "optionalUnityReferences": ["TestAssemblies"],
+  "includePlatforms": ["Editor"],
+  "excludePlatforms": [],
+  "autoReferenced": false
+}

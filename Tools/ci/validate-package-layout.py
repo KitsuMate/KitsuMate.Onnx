@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 
-ARTIFACT_GLOBS = ("*.onnx", "*.ort", "*.gguf", "*.so", "*.dylib", "*.tgz")
+ARTIFACT_GLOBS = ("*.onnx", "*.ort", "*.gguf", "*.dll", "*.so", "*.dylib", "*.tgz")
 CORE_RUNTIME_FORBIDDEN = (
     "Microsoft.ML.OnnxRuntime",
     "OnnxRuntimeBackend",
@@ -18,18 +18,9 @@ CORE_RUNTIME_FORBIDDEN = (
     "Unity.InferenceEngine",
     "UnityAiInferenceBackend",
 )
-ONNXRUNTIME_DESTINATIONS = {
-    "Managed/Microsoft.ML.OnnxRuntime.dll",
-    "Android/arm64-v8a/libonnxruntime.so",
-    "Android/armeabi-v7a/libonnxruntime.so",
-    "Linux/x86_64/libonnxruntime.so",
-    "Linux/x86_64/libonnxruntime_providers_shared.so",
-    "Linux/x86_64/libonnxruntime_providers_cuda.so",
-    "Linux/x86_64/libonnxruntime_providers_tensorrt.so",
-    "Windows/x86_64/onnxruntime.dll",
-    "Windows/x86_64/onnxruntime_providers_shared.dll",
-    "Windows/x86_64/onnxruntime_providers_cuda.dll",
-    "Windows/x86_64/onnxruntime_providers_tensorrt.dll",
+RUNTIME_LOCKS = {
+    "ai.kitsumate.onnx.backend.onnxruntime": "onnxruntime.lock.json",
+    "ai.kitsumate.onnx.backend.onnxruntime.nvidia": "onnxruntime-nvidia.lock.json",
 }
 ANDROID_PLUGIN_METADATA = {
     "Runtime/Plugins/Android/arm64-v8a/libonnxruntime.so.meta": "CPU: ARM64",
@@ -50,18 +41,28 @@ def main() -> int:
     packages_root = repository_root / "Packages"
     packages: dict[str, tuple[dict, Path]] = {}
 
-    runtime_lock = read_json(repository_root / "Dependencies" / "onnxruntime.lock.json")
-    runtime_files = [file for package in runtime_lock.get("packages", []) for file in package.get("files", [])]
-    runtime_destinations = [file.get("destination") for file in runtime_files]
-    if len(runtime_destinations) != len(set(runtime_destinations)):
-        fail("ONNX Runtime lock contains duplicate destinations")
-    if set(runtime_destinations) != ONNXRUNTIME_DESTINATIONS:
-        missing = sorted(ONNXRUNTIME_DESTINATIONS.difference(runtime_destinations))
-        unexpected = sorted(set(runtime_destinations).difference(ONNXRUNTIME_DESTINATIONS))
-        fail(f"ONNX Runtime artifact set differs (missing={missing}, unexpected={unexpected})")
-    for file in runtime_files:
-        if not re.fullmatch(r"[0-9a-f]{64}", file.get("sha256", "")):
-            fail(f"ONNX Runtime artifact has invalid SHA-256: {file.get('destination')}")
+    runtime_destinations_by_package: dict[str, set[str]] = {}
+    claimed_runtime_destinations: dict[str, str] = {}
+    for package_name, lock_name in RUNTIME_LOCKS.items():
+        runtime_lock = read_json(repository_root / "Dependencies" / lock_name)
+        if runtime_lock.get("version") != "1.25.1":
+            fail(f"{lock_name} must pin ONNX Runtime 1.25.1")
+        runtime_files = [file for package in runtime_lock.get("packages", []) for file in package.get("files", [])]
+        runtime_destinations = [file.get("destination") for file in runtime_files]
+        if len(runtime_destinations) != len(set(runtime_destinations)):
+            fail(f"{lock_name} contains duplicate destinations")
+        runtime_destinations_by_package[package_name] = set(runtime_destinations)
+        for file in runtime_files:
+            destination = file.get("destination")
+            previous_owner = claimed_runtime_destinations.get(destination)
+            if previous_owner is not None:
+                fail(f"Native artifact {destination} is claimed by both {previous_owner} and {package_name}")
+            claimed_runtime_destinations[destination] = package_name
+            if "symlink" in file:
+                if Path(file["symlink"]).is_absolute() or ".." in Path(file["symlink"]).parts:
+                    fail(f"Unsafe artifact symlink: {file.get('destination')}")
+            elif not re.fullmatch(r"[0-9a-f]{64}", file.get("sha256", "")):
+                fail(f"ONNX Runtime artifact has invalid SHA-256: {file.get('destination')}")
 
     onnxruntime_package = packages_root / "ai.kitsumate.onnx.backend.onnxruntime"
     for relative_path, cpu_setting in ANDROID_PLUGIN_METADATA.items():
@@ -95,12 +96,15 @@ def main() -> int:
                 unity_inference_packages.append(name)
         for extension in ARTIFACT_GLOBS:
             artifacts = [path for path in package_path.rglob(extension) if path.is_file()]
-            if name == "ai.kitsumate.onnx.backend.onnxruntime":
+            if name == "ai.kitsumate.onnx" and extension == "*.dll":
+                managed_root = package_path / "Runtime" / "Plugins" / "Managed"
+                artifacts = [path for path in artifacts if not path.is_relative_to(managed_root)]
+            if name in runtime_destinations_by_package:
                 plugin_root = package_path / "Runtime" / "Plugins"
                 artifacts = [
                     path for path in artifacts
                     if not path.is_relative_to(plugin_root)
-                    or path.relative_to(plugin_root).as_posix() not in ONNXRUNTIME_DESTINATIONS
+                    or path.relative_to(plugin_root).as_posix() not in runtime_destinations_by_package[name]
                 ]
             if artifacts:
                 fail(f"{name} contains forbidden binary/model artifacts: {artifacts[0]}")

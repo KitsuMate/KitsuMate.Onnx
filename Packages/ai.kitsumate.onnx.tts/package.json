@@ -2,13 +2,14 @@
   "name": "ai.kitsumate.onnx.tts",
   "version": "1.0.0-alpha.1",
   "displayName": "KitsuMate ONNX TTS",
-  "description": "Text-to-Speech using ONNX models. Includes Chatterbox TTS implementation with voice cloning, multilingual support, and emotion exaggeration control.",
+  "description": "Provider-neutral ONNX text-to-speech with Chatterbox and OmniVoice engines, voice cloning, voice design, multilingual prompts, and portable accelerator support.",
   "unity": "6000.0",
   "keywords": [
     "onnx",
     "tts",
     "speech",
     "chatterbox",
+    "omnivoice",
     "text-to-speech",
     "voice-cloning"
   ],
