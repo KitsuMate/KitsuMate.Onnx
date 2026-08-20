@@ -16,8 +16,8 @@ namespace KitsuMate.Onnx.Tts.Tests
 {
     public sealed class OmniVoiceInferenceTests
     {
-        private const string CompactFixtureName = "omnivoice-int4-b128-sym";
-        private const string PortableFixtureName = "omnivoice-portable";
+        private const string CompactFixtureName = "omnivoice-ci";
+        private const string PortableFixtureName = "omnivoice-ci";
         private const string PortableCpuFixtureEnvironment = "KITSUMATE_OMNIVOICE_CPU_FIXTURE";
         private const string SettingsAssetPath = "Assets/Resources/OnnxSettings.asset";
         private static OnnxSettings configuredSettings;
