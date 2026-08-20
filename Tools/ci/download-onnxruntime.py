@@ -65,7 +65,7 @@ def contained_target(root: Path, relative: str) -> Path:
     candidate = (root / relative).resolve()
     resolved_root = root.resolve()
     if candidate == resolved_root or resolved_root not in candidate.parents:
-        raise ValueError(f"artifact destination escapes hydration root: {relative}")
+        raise ValueError(f"artifact destination escapes provisioning root: {relative}")
     return candidate
 
 
@@ -113,8 +113,8 @@ def main() -> int:
     lock = json.loads(args.lock.read_text(encoding="utf-8"))
     args.cache.mkdir(parents=True, exist_ok=True)
     args.destination.mkdir(parents=True, exist_ok=True)
-    # Unity-generated importer metadata is tracked separately from hydrated
-    # binaries and must survive repeated CI/release hydration.
+    # Unity-generated importer metadata is tracked separately from downloaded
+    # binaries and must survive repeated CI/release provisioning.
     for existing in args.destination.rglob("*"):
         relative_parts = existing.relative_to(args.destination).parts
         selected_platform = args.platform is None or (relative_parts and relative_parts[0] in (args.platform, "Managed", "Licenses"))
@@ -138,19 +138,24 @@ def main() -> int:
         archive_format = package.get("format", "zip")
         extension = "tar.gz" if archive_format == "tar.gz" else "zip"
         archive = args.cache / f"{package['id']}.{lock['version']}.{extension}"
-        with open_verified_package(package["url"], archive, archive_format) as package_archive:
-            for file in files:
-                target = contained_target(args.destination, file["destination"])
-                target.parent.mkdir(parents=True, exist_ok=True)
-                extract_file(package_archive, file, target)
-                if "symlink" in file:
-                    print(f"linked {target.relative_to(args.destination.resolve())}")
-                    continue
-                actual = sha256(target)
-                if actual != file["sha256"]:
-                    target.unlink(missing_ok=True)
-                    raise RuntimeError(f"Checksum mismatch for {package['id']}:{file['source']}: {actual}")
-                print(f"downloaded {target.relative_to(args.destination.resolve())}")
+        try:
+            with open_verified_package(package["url"], archive, archive_format) as package_archive:
+                for file in files:
+                    target = contained_target(args.destination, file["destination"])
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    extract_file(package_archive, file, target)
+                    if "symlink" in file:
+                        print(f"linked {target.relative_to(args.destination.resolve())}")
+                        continue
+                    actual = sha256(target)
+                    if actual != file["sha256"]:
+                        target.unlink(missing_ok=True)
+                        raise RuntimeError(f"Checksum mismatch for {package['id']}:{file['source']}: {actual}")
+                    print(f"downloaded {target.relative_to(args.destination.resolve())}")
+        except Exception as error:
+            raise RuntimeError(
+                f"failed to provision package {package['id']} from {package['url']}: {error}"
+            ) from error
 
     actual_destinations = {
         path.relative_to(args.destination).as_posix()
@@ -160,7 +165,7 @@ def main() -> int:
     }
     if actual_destinations != expected_destinations:
         raise RuntimeError(
-            "hydrated payload differs from lock manifest: "
+            "provisioned payload differs from lock manifest: "
             f"missing={sorted(expected_destinations - actual_destinations)}, "
             f"unexpected={sorted(actual_destinations - expected_destinations)}"
         )
@@ -171,5 +176,5 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except Exception as error:
-        print(f"artifact hydration failed: {error}", file=sys.stderr)
+        print(f"artifact provisioning failed: {error}", file=sys.stderr)
         raise SystemExit(1)

@@ -34,7 +34,7 @@ Build Profile changes recompile managed code and reselect providers. A Unity res
 not required for selection changes, although previously loaded inactive native libraries
 may remain mapped until restart.
 
-Native files are hydrated from separate checksum locks for this package and the NVIDIA
+Native files are provisioned from separate checksum locks for this package and the NVIDIA
 package. Do not copy NVIDIA files into this package or introduce a second platform core.
 
 TODO: once platform/default provider ABIs warrant independent release cadence, extract

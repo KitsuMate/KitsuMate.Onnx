@@ -29,7 +29,7 @@ project-authored regression vectors, such as the Kimodo constraint compiler
 cases, stay inside their test package; model weights do not.
 
 Production model weights and native runtime binaries are never committed to the
-repository. Release jobs hydrate and validate the default backend and NVIDIA
+repository. Release jobs provision and validate the default backend and NVIDIA
 provider package independently from `onnxruntime.lock.json` and
 `onnxruntime-nvidia.lock.json`; a file may belong to only one lock/package.
 

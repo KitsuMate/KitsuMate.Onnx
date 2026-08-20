@@ -43,7 +43,7 @@ Packages/ai.kitsumate.onnx.backend.onnxruntime/Runtime/Plugins/**
 !Packages/ai.kitsumate.onnx.backend.onnxruntime/Runtime/Plugins/Android/**/
 !Packages/ai.kitsumate.onnx.backend.onnxruntime/Runtime/Plugins/Android/**/*.meta
 
-# Native payload bytes are hydrated from checksum locks. Unity-generated
+# Native payload bytes are provisioned from checksum locks. Unity-generated
 # importer metadata is source-controlled so clean release archives retain the
 # reviewed platform filters before any consumer import occurs.
 !Packages/ai.kitsumate.onnx.backend.onnxruntime.nvidia/Runtime/Plugins/**/

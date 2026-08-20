@@ -84,5 +84,5 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except Exception as error:
-        print(f"fixture hydration failed: {error}", file=sys.stderr)
+        print(f"fixture provisioning failed: {error}", file=sys.stderr)
         raise SystemExit(1)

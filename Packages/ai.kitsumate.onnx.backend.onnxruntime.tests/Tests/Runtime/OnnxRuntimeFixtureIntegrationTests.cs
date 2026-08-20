@@ -151,7 +151,7 @@ namespace KitsuMate.Onnx.Tests
                     RuntimePlatform.OSXPlayer,
                     RuntimePlatform.Android,
                 }, backend.SupportedPlatforms);
-                Assert.That(backend.IsAvailable, Is.True, "The hydrated native runtime should be loadable.");
+                Assert.That(backend.IsAvailable, Is.True, "The provisioned native runtime should be loadable.");
                 using IOnnxSession session = backend.CreateSession(absolutePath, new OnnxSessionOptions());
                 Assert.That(session.InputNames, Is.Not.Empty);
                 Assert.That(session.OutputNames, Is.Not.Empty);

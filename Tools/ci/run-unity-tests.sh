@@ -11,10 +11,24 @@ mkdir -p "$artifact_cache" "$model_cache"
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 backend_plugins="$repository_root/Packages/ai.kitsumate.onnx.backend.onnxruntime/Runtime/Plugins"
 
+runtime_platform="${KITSUMATE_RUNTIME_PLATFORM:-}"
+if [ -z "$runtime_platform" ]; then
+  case "$(uname -s)" in
+    Linux*) runtime_platform="Linux" ;;
+    Darwin*) runtime_platform="macOS" ;;
+    MINGW*|MSYS*|CYGWIN*) runtime_platform="Windows" ;;
+    *)
+      echo "Unsupported test host; set KITSUMATE_RUNTIME_PLATFORM explicitly." >&2
+      exit 1
+      ;;
+  esac
+fi
+
 python3 "$repository_root/Tools/ci/download-onnxruntime.py" \
   --lock "$repository_root/Dependencies/onnxruntime.lock.json" \
   --cache "$artifact_cache" \
-  --destination "$backend_plugins"
+  --destination "$backend_plugins" \
+  --platform "$runtime_platform"
 
 fixture_lock="$repository_root/Dependencies/fixtures/ci.lock.json"
 if [ ! -f "$fixture_lock" ]; then
@@ -27,5 +41,5 @@ python3 "$repository_root/Tools/ci/download-fixtures.py" \
   --cache "$model_cache" \
   --repository-root "$repository_root"
 
-echo "Prepared ONNX Runtime and the required CPU CI fixture set from persistent caches."
+echo "Provisioned ONNX Runtime for $runtime_platform and the required CPU CI fixture set from persistent caches."
 echo "The workflow invokes GameCI's unity-test-runner after this step."
