@@ -1,0 +1,43 @@
+name: Build ONNX Runtime DirectML artifact
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  directml:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: microsoft/onnxruntime
+          ref: 8a77e459420f58fb946fd9067285cfa719f10bdd
+          submodules: recursive
+          path: onnxruntime-source
+      - name: Build pinned DirectML core
+        shell: pwsh
+        run: >-
+          ./Tools/native/build-ort-1.25.1-windows.ps1
+          -Provider DirectML
+          -Source "$env:GITHUB_WORKSPACE/onnxruntime-source"
+          -Output "$env:RUNNER_TEMP/directml"
+      - name: Verify locked checksums
+        shell: pwsh
+        run: |
+          $expected = @{
+            'onnxruntime.dll' = '070844500b249a28a8714edd47c47cbf8bd21a716e5754ab66854d8f89e9779d'
+            'DirectML.dll' = '9c9e6d822561c6c41b90e6994b3e8857cf1d66dbfb1e0c4c799c7c89b4e92da1'
+          }
+          foreach ($entry in $expected.GetEnumerator()) {
+            $actual = (Get-FileHash "$env:RUNNER_TEMP/directml/$($entry.Key)" -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actual -ne $entry.Value) { throw "$($entry.Key) checksum mismatch: $actual" }
+          }
+          Compress-Archive "$env:RUNNER_TEMP/directml/*" "$env:RUNNER_TEMP/kitsumate-onnxruntime-directml-win-x64-1.25.1.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kitsumate-onnxruntime-directml-win-x64-1.25.1
+          path: ${{ runner.temp }}/kitsumate-onnxruntime-directml-win-x64-1.25.1.zip
+          if-no-files-found: error

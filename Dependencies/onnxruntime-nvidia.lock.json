@@ -1,0 +1,175 @@
+{
+  "schemaVersion": 2,
+  "version": "1.25.1",
+  "cudaVersion": "12.9",
+  "cudnnVersion": "9.24.0.43",
+  "tensorRtRtxEpAbiVersion": "0.3.0-cu12",
+  "todo": "TODO: mechanically extract CUDA and TensorRT-RTX payloads into independently versioned provider packages after the EP ABI stabilizes.",
+  "packages": [
+    {
+      "id": "Microsoft.ML.OnnxRuntime.Gpu.Windows",
+      "url": "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime.gpu.windows/1.25.1/microsoft.ml.onnxruntime.gpu.windows.1.25.1.nupkg",
+      "files": [
+        { "source": "runtimes/win-x64/native/onnxruntime_providers_cuda.dll", "destination": "Windows/x86_64/onnxruntime_providers_cuda.dll", "sha256": "3ec69e5d45ac22b71ab5a30e235fdd303b8b70f2b354d6e7e047b6ee3b3c2874" },
+        { "source": "runtimes/win-x64/native/onnxruntime_providers_shared.dll", "destination": "Windows/x86_64/onnxruntime_providers_shared.dll", "sha256": "81ffe52879456ef29d1950487a142d3c13cb63b4466740884b685f5d989ff278" }
+      ]
+    },
+    {
+      "id": "Microsoft.ML.OnnxRuntime.Gpu.Linux",
+      "url": "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime.gpu.linux/1.25.1/microsoft.ml.onnxruntime.gpu.linux.1.25.1.nupkg",
+      "files": [
+        { "source": "runtimes/linux-x64/native/libonnxruntime_providers_cuda.so", "destination": "Linux/x86_64/libonnxruntime_providers_cuda.so", "sha256": "a4a7f6d4547d7c9a51efdfaf03440b39ddc7fa8286d3bbbf3e01aa92041514fa" },
+        { "source": "runtimes/linux-x64/native/libonnxruntime_providers_shared.so", "destination": "Linux/x86_64/libonnxruntime_providers_shared.so", "sha256": "c6a12593396095f5670160e284c35d1700b7708cf3037b7042e2a5200ccae772" }
+      ]
+    },
+    {
+      "id": "nvidia-cuda-runtime-cu12-windows",
+      "url": "https://files.pythonhosted.org/packages/59/df/e7c3a360be4f7b93cee39271b792669baeb3846c58a4df6dfcf187a7ffab/nvidia_cuda_runtime_cu12-12.9.79-py3-none-win_amd64.whl",
+      "files": [
+        { "source": "nvidia/cuda_runtime/bin/cudart64_12.dll", "destination": "Windows/x86_64/cudart64_12.dll", "sha256": "760c38928bbe5759f7b31ed6692599eb7ec83cedd5702e84c2b72028a89837e1" }
+      ]
+    },
+    {
+      "id": "nvidia-cublas-cu12-windows",
+      "url": "https://files.pythonhosted.org/packages/20/e2/fc9a0e985249d873150276d5afb02e39a66817fedbf1a385724393e505ed/nvidia_cublas_cu12-12.9.2.10-py3-none-win_amd64.whl",
+      "files": [
+        { "source": "nvidia/cublas/bin/cublas64_12.dll", "destination": "Windows/x86_64/cublas64_12.dll", "sha256": "52ce5ba0ec5327d39be6021f0f9362d2ed4d64d7206f9b5afc06398d827b8e82" },
+        { "source": "nvidia/cublas/bin/cublasLt64_12.dll", "destination": "Windows/x86_64/cublasLt64_12.dll", "sha256": "71705a7cf0923f4ab034d0d2620bbfc989ff669ac3d79f868b7a7c597ca559c5" }
+      ]
+    },
+    {
+      "id": "nvidia-cufft-cu12-windows",
+      "url": "https://files.pythonhosted.org/packages/20/ee/29955203338515b940bd4f60ffdbc073428f25ef9bfbce44c9a066aedc5c/nvidia_cufft_cu12-11.4.1.4-py3-none-win_amd64.whl",
+      "files": [
+        { "source": "nvidia/cufft/bin/cufft64_11.dll", "destination": "Windows/x86_64/cufft64_11.dll", "sha256": "5b90655ca9cdf5d91cbdf2c72b995ec937eed0aef2d6954370c711b45c929b35" }
+      ]
+    },
+    {
+      "id": "nvidia-curand-cu12-windows",
+      "url": "https://files.pythonhosted.org/packages/e5/98/1bd66fd09cbe1a5920cb36ba87029d511db7cca93979e635fd431ad3b6c0/nvidia_curand_cu12-10.3.10.19-py3-none-win_amd64.whl",
+      "files": [
+        { "source": "nvidia/curand/bin/curand64_10.dll", "destination": "Windows/x86_64/curand64_10.dll", "sha256": "4d6d16c9941c4f7a7e49d5c43df25d408a2a8503d8cc1eb9808e0e0c2cde36d4" }
+      ]
+    },
+    {
+      "id": "nvidia-cudnn-cu12-windows",
+      "url": "https://files.pythonhosted.org/packages/29/28/2c9a2a97a8b3fedcf74a14f38fd5edfae12274380a829fdc6b16ce29be4c/nvidia_cudnn_cu12-9.24.0.43-py3-none-win_amd64.whl",
+      "files": [
+        { "source": "nvidia/cudnn/bin/cudnn64_9.dll", "destination": "Windows/x86_64/cudnn64_9.dll", "sha256": "cccabec1388fd7f93d7067536a3489c8e7ec31405c2984c1f78c0e3d36600fbf" },
+        { "source": "nvidia/cudnn/bin/cudnn_adv64_9.dll", "destination": "Windows/x86_64/cudnn_adv64_9.dll", "sha256": "56f80972d60ddb7ef254b694027f4bb000b47858a0365b9fc3f43d79101fe963" },
+        { "source": "nvidia/cudnn/bin/cudnn_cnn64_9.dll", "destination": "Windows/x86_64/cudnn_cnn64_9.dll", "sha256": "1eb5f66800b2769d8f1bf8688e68eebf08d58407a024e2cfd57ccdfa09dfc8a8" },
+        { "source": "nvidia/cudnn/bin/cudnn_engines_precompiled64_9.dll", "destination": "Windows/x86_64/cudnn_engines_precompiled64_9.dll", "sha256": "c4239f615bdc4dfc9655e7bde0a7de4cc0159da176e0ee194fd855d23b4305af" },
+        { "source": "nvidia/cudnn/bin/cudnn_engines_runtime_compiled64_9.dll", "destination": "Windows/x86_64/cudnn_engines_runtime_compiled64_9.dll", "sha256": "d917bf0dfc9ca74b989831802ba91b1d19b05079ea1d3a6f30e47f78925cc904" },
+        { "source": "nvidia/cudnn/bin/cudnn_engines_tensor_ir64_9.dll", "destination": "Windows/x86_64/cudnn_engines_tensor_ir64_9.dll", "sha256": "4727fdc44f49b0cf1d958cf75f5dd893371bf6789e52ab5f0255ce3eac467d32" },
+        { "source": "nvidia/cudnn/bin/cudnn_ext64_9.dll", "destination": "Windows/x86_64/cudnn_ext64_9.dll", "sha256": "173bcd31f67e975eee31c0c68870c913e21c8c7ad2fceda50ece8eb90a7aad4d" },
+        { "source": "nvidia/cudnn/bin/cudnn_graph64_9.dll", "destination": "Windows/x86_64/cudnn_graph64_9.dll", "sha256": "12968550e6c1676b3c49f1666994061a1162649b093c86233962de7f9cf8b099" },
+        { "source": "nvidia/cudnn/bin/cudnn_heuristic64_9.dll", "destination": "Windows/x86_64/cudnn_heuristic64_9.dll", "sha256": "82316e6fb52241e63d3344198250722eb6bf69ffc720b23e9e0cec3e9c67cda5" },
+        { "source": "nvidia/cudnn/bin/cudnn_ops64_9.dll", "destination": "Windows/x86_64/cudnn_ops64_9.dll", "sha256": "2e1ae66a92ded8b4aa7b105326d3a7bb641d806e89600f0e0f5a1a414e141abc" }
+      ]
+    },
+    {
+      "id": "nvidia-cuda-nvrtc-cu12-windows",
+      "url": "https://files.pythonhosted.org/packages/52/de/823919be3b9d0ccbf1f784035423c5f18f4267fb0123558d58b813c6ec86/nvidia_cuda_nvrtc_cu12-12.9.86-py3-none-win_amd64.whl",
+      "files": [
+        { "source": "nvidia/cuda_nvrtc/bin/nvrtc-builtins64_129.dll", "destination": "Windows/x86_64/nvrtc-builtins64_129.dll", "sha256": "c405226b0b394ed8bdc593bb1419b94a989f93248ed2873e8f2e0e27c1688ca1" },
+        { "source": "nvidia/cuda_nvrtc/bin/nvrtc64_120_0.dll", "destination": "Windows/x86_64/nvrtc64_120_0.dll", "sha256": "0cc63349fedffeec1660b30955e8028b6e4e4c26cf1e41c56dc4569fd5eca82c" }
+      ]
+    },
+    {
+      "id": "nvidia-nvjitlink-cu12-windows",
+      "url": "https://files.pythonhosted.org/packages/dd/7e/2eecb277d8a98184d881fb98a738363fd4f14577a4d2d7f8264266e82623/nvidia_nvjitlink_cu12-12.9.86-py3-none-win_amd64.whl",
+      "files": [
+        { "source": "nvidia/nvjitlink/bin/nvJitLink_120_0.dll", "destination": "Windows/x86_64/nvJitLink_120_0.dll", "sha256": "998494a8eff0d8382b41ba443d668e3eaea7b67852256ca2982c841cd5bed47a" }
+      ]
+    },
+    {
+      "id": "TensorRT-RTX-EP-ABI-Windows",
+      "url": "https://github.com/NVIDIA/TensorRT-RTX-EP-ABI/releases/download/v0.3.0/TensorRT-RTX-EP-ABI-v0.3.0-cu12.zip",
+      "files": [
+        { "source": "TensorRT-RTX-EP-ABI-v0.3.0-cu12/onnxruntime_providers_nv_tensorrt_rtx.dll", "destination": "Windows/x86_64/onnxruntime_providers_nv_tensorrt_rtx.dll", "sha256": "df7b1080ea1ca8160c33da2d2e689a389b8d381f700180da375cb6fd81dd197f" },
+        { "source": "TensorRT-RTX-EP-ABI-v0.3.0-cu12/tensorrt_onnxparser_rtx_1_5.dll", "destination": "Windows/x86_64/tensorrt_onnxparser_rtx_1_5.dll", "sha256": "e145364cabdf7e05ffa98161ec6acb054843126c6cb01039eef6631477c9f496" },
+        { "source": "TensorRT-RTX-EP-ABI-v0.3.0-cu12/tensorrt_plugins.dll", "destination": "Windows/x86_64/tensorrt_plugins.dll", "sha256": "107b90247ec4ec31d147704b440dc1a3b900a54bee4d5fa5689c3db3024ff787" },
+        { "source": "TensorRT-RTX-EP-ABI-v0.3.0-cu12/tensorrt_rtx_1_5.dll", "destination": "Windows/x86_64/tensorrt_rtx_1_5.dll", "sha256": "9306a48631bdb6e34e19d0ec7fb48d4e725a66a84478cd8520608404c55e6792" },
+        { "source": "TensorRT-RTX-EP-ABI-v0.3.0-cu12/LICENSE", "destination": "Licenses/TensorRT-RTX-LICENSE.txt", "sha256": "c30435022abc851050a5e7cc2daa18a2d7df566a19133660944baac99eaa6a33" },
+        { "source": "TensorRT-RTX-EP-ABI-v0.3.0-cu12/ThirdPartyNotices.txt", "destination": "Licenses/TensorRT-RTX-ThirdPartyNotices.txt", "sha256": "9eecad97ea9b8eb3432cb569f82fcdd9e1ad116a73cc72cc22f6231f76f156b0" },
+        { "source": "TensorRT-RTX-EP-ABI-v0.3.0-cu12/TRT_RTX_Acknowledgements.txt", "destination": "Licenses/TensorRT-RTX-Windows-Acknowledgements.txt", "sha256": "611660ec0ae19c7b8df4a6442009c8bc85ba9e56d7d5ea042564841e72032d25" }
+      ]
+    },
+    {
+      "id": "nvidia-cuda-runtime-cu12-linux",
+      "url": "https://files.pythonhosted.org/packages/bc/46/a92db19b8309581092a3add7e6fceb4c301a3fd233969856a8cbf042cd3c/nvidia_cuda_runtime_cu12-12.9.79-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "files": [
+        { "source": "nvidia/cuda_runtime/lib/libcudart.so.12", "destination": "Linux/x86_64/libcudart.so.12", "sha256": "256e6409e4f06f618e1fb53d4844a6b81cdded1013afa8ade40c22f99eb133b7" }
+      ]
+    },
+    {
+      "id": "nvidia-cublas-cu12-linux",
+      "url": "https://files.pythonhosted.org/packages/cb/c0/0a517bfe63ccd3b92eb254d264e28fca3c7cab75d07daea315250fb1bf73/nvidia_cublas_cu12-12.9.2.10-py3-none-manylinux_2_27_x86_64.whl",
+      "files": [
+        { "source": "nvidia/cublas/lib/libcublas.so.12", "destination": "Linux/x86_64/libcublas.so.12", "sha256": "5757ab5839fb4f203ca47ecb336110d10f4a5606b1e097f195fbca89774569e2" },
+        { "source": "nvidia/cublas/lib/libcublasLt.so.12", "destination": "Linux/x86_64/libcublasLt.so.12", "sha256": "2c9006a75c74b3bea2dc7ae2ec38ab038b0e45ea02cb4b717a915e8a5796acb1" }
+      ]
+    },
+    {
+      "id": "nvidia-cufft-cu12-linux",
+      "url": "https://files.pythonhosted.org/packages/95/f4/61e6996dd20481ee834f57a8e9dca28b1869366a135e0d42e2aa8493bdd4/nvidia_cufft_cu12-11.4.1.4-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "files": [
+        { "source": "nvidia/cufft/lib/libcufft.so.11", "destination": "Linux/x86_64/libcufft.so.11", "sha256": "e1d65ebd08895f9d9883f848f3974f89e0130416252477b18835ba7f15d159bc" }
+      ]
+    },
+    {
+      "id": "nvidia-curand-cu12-linux",
+      "url": "https://files.pythonhosted.org/packages/31/44/193a0e171750ca9f8320626e8a1f2381e4077a65e69e2fb9708bd479e34a/nvidia_curand_cu12-10.3.10.19-py3-none-manylinux_2_27_x86_64.whl",
+      "files": [
+        { "source": "nvidia/curand/lib/libcurand.so.10", "destination": "Linux/x86_64/libcurand.so.10", "sha256": "ab8c07338fa663c018b16df5b3f3878c84aaae98bda930e9e8bad340427b0faa" }
+      ]
+    },
+    {
+      "id": "nvidia-cudnn-cu12-linux",
+      "url": "https://files.pythonhosted.org/packages/10/13/b8887c869cf2471339a24b60d3c28e761facbb534935f572b61423371abb/nvidia_cudnn_cu12-9.24.0.43-py3-none-manylinux_2_27_x86_64.whl",
+      "files": [
+        { "source": "nvidia/cudnn/lib/libcudnn.so.9", "destination": "Linux/x86_64/libcudnn.so.9", "sha256": "0f43113ec6b171f93236560541f3b95104fed2516b19000a0e7047a5cc12f8ee" },
+        { "source": "nvidia/cudnn/lib/libcudnn_adv.so.9", "destination": "Linux/x86_64/libcudnn_adv.so.9", "sha256": "6007f67989b1ac8d5bbd7129fa6200ba4ae4b5c0558a4dfe4d50c19ee59569cb" },
+        { "source": "nvidia/cudnn/lib/libcudnn_cnn.so.9", "destination": "Linux/x86_64/libcudnn_cnn.so.9", "sha256": "2b78023b42c8c82018f01dc9f94fe29ec9ba350580dd53b1750501dcb2a34ecf" },
+        { "source": "nvidia/cudnn/lib/libcudnn_engines_precompiled.so.9", "destination": "Linux/x86_64/libcudnn_engines_precompiled.so.9", "sha256": "c70e63247cdc14311b8b2efad0eb79674dd7297c27f9f23466ae4214cd415145" },
+        { "source": "nvidia/cudnn/lib/libcudnn_engines_runtime_compiled.so.9", "destination": "Linux/x86_64/libcudnn_engines_runtime_compiled.so.9", "sha256": "35ec33cfd4f42c6240d18d141d52af4cf9cafdae2bc9ba292390bbbfded7a172" },
+        { "source": "nvidia/cudnn/lib/libcudnn_engines_tensor_ir.so.9", "destination": "Linux/x86_64/libcudnn_engines_tensor_ir.so.9", "sha256": "cca873cbd32645e7011a5272d9032827ebdb632166a063a1a1a96ea6831fbeb0" },
+        { "source": "nvidia/cudnn/lib/libcudnn_ext.so.9", "destination": "Linux/x86_64/libcudnn_ext.so.9", "sha256": "920c0fe6b74fe6a8eed85faa446230e1a555b8afc02e03638a0dfa264b4ae7be" },
+        { "source": "nvidia/cudnn/lib/libcudnn_graph.so.9", "destination": "Linux/x86_64/libcudnn_graph.so.9", "sha256": "dac0584e8f279e910bff4241e28b56efd399898038a5c94a0b6338bc9bc41d13" },
+        { "source": "nvidia/cudnn/lib/libcudnn_heuristic.so.9", "destination": "Linux/x86_64/libcudnn_heuristic.so.9", "sha256": "b4e69e7b97da5bd825f169f6d108fe71dc0352e99e9a0ffc7200401830c297cf" },
+        { "source": "nvidia/cudnn/lib/libcudnn_ops.so.9", "destination": "Linux/x86_64/libcudnn_ops.so.9", "sha256": "8b51427d9807335c5873e74a40425989a20dd74af0332c90449cf19853cf8013" }
+      ]
+    },
+    {
+      "id": "nvidia-cuda-nvrtc-cu12-linux",
+      "url": "https://files.pythonhosted.org/packages/b8/85/e4af82cc9202023862090bfca4ea827d533329e925c758f0cde964cb54b7/nvidia_cuda_nvrtc_cu12-12.9.86-py3-none-manylinux2010_x86_64.manylinux_2_12_x86_64.whl",
+      "files": [
+        { "source": "nvidia/cuda_nvrtc/lib/libnvrtc-builtins.so.12.9", "destination": "Linux/x86_64/libnvrtc-builtins.so.12.9", "sha256": "6507cf33450cfb22970c2c1e7aa8e7c0a33e39d864720277b05f61a92791e2e8" },
+        { "source": "nvidia/cuda_nvrtc/lib/libnvrtc.so.12", "destination": "Linux/x86_64/libnvrtc.so.12", "sha256": "7c67c6b51ea0e0279634cebd676ff7efda1674806444520c84430ad5c35fe625" }
+      ]
+    },
+    {
+      "id": "nvidia-nvjitlink-cu12-linux",
+      "url": "https://files.pythonhosted.org/packages/46/0c/c75bbfb967457a0b7670b8ad267bfc4fffdf341c074e0a80db06c24ccfd4/nvidia_nvjitlink_cu12-12.9.86-py3-none-manylinux2010_x86_64.manylinux_2_12_x86_64.whl",
+      "files": [
+        { "source": "nvidia/nvjitlink/lib/libnvJitLink.so.12", "destination": "Linux/x86_64/libnvJitLink.so.12", "sha256": "02d3acb5fe598dd20f0fca3cc03734ad164037a22747a01900561a42d0b8448f" }
+      ]
+    },
+    {
+      "id": "TensorRT-RTX-EP-ABI-Linux",
+      "url": "https://github.com/NVIDIA/TensorRT-RTX-EP-ABI/releases/download/v0.3.0/TensorRT-RTX-EP-ABI-v0.3.0-cu12-linux-x64.tar.gz",
+      "format": "tar.gz",
+      "files": [
+        { "source": "TensorRT-RTX-EP-ABI-v0.3.0-cu12-linux-x64/libonnxruntime_providers_nv_tensorrt_rtx.so", "destination": "Linux/x86_64/libonnxruntime_providers_nv_tensorrt_rtx.so", "sha256": "bbc9ab632d04de2d91bf32e63ae118a35ffa0665643f00f24200826f9657f106" },
+        { "source": "TensorRT-RTX-EP-ABI-v0.3.0-cu12-linux-x64/libtensorrt_plugins.so", "destination": "Linux/x86_64/libtensorrt_plugins.so", "sha256": "78d0d1efbba3a49e5b37f4707e3ed30e215cd56ef66db431eb3fef2f74000944" },
+        { "source": "TensorRT-RTX-EP-ABI-v0.3.0-cu12-linux-x64/libtensorrt_rtx.so.1.5.0", "destination": "Linux/x86_64/libtensorrt_rtx.so.1.5.0", "sha256": "269010c885abbcaf8cf051f41ecfae64d7953542f4a3a2edded6c5f42803245d" },
+        { "destination": "Linux/x86_64/libtensorrt_rtx.so.1", "symlink": "libtensorrt_rtx.so.1.5.0" },
+        { "destination": "Linux/x86_64/libtensorrt_rtx.so", "symlink": "libtensorrt_rtx.so.1" },
+        { "source": "TensorRT-RTX-EP-ABI-v0.3.0-cu12-linux-x64/libtensorrt_onnxparser_rtx.so.1.5.0", "destination": "Linux/x86_64/libtensorrt_onnxparser_rtx.so.1.5.0", "sha256": "b9efec7db9803db5b9c2c1f0fee060f3dad227ef3c2641619e724f9862cc593b" },
+        { "destination": "Linux/x86_64/libtensorrt_onnxparser_rtx.so.1", "symlink": "libtensorrt_onnxparser_rtx.so.1.5.0" },
+        { "destination": "Linux/x86_64/libtensorrt_onnxparser_rtx.so", "symlink": "libtensorrt_onnxparser_rtx.so.1" },
+        { "source": "TensorRT-RTX-EP-ABI-v0.3.0-cu12-linux-x64/TRT_RTX_Acknowledgements.txt", "destination": "Licenses/TensorRT-RTX-Linux-Acknowledgements.txt", "sha256": "3b67e831a770f7daf66a7a0772cc23e6a22fd5e3fb8ffef74c4a717357d2a096" }
+      ]
+    }
+  ]
+}

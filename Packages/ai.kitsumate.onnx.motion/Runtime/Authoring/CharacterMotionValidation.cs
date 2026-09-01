@@ -37,5 +37,6 @@ namespace KitsuMate.Onnx.Motion
 
         public void Error(string code, string message) => diagnostics.Add(new CharacterMotionDiagnostic(CharacterMotionDiagnosticSeverity.Error, code, message));
         public void Warning(string code, string message) => diagnostics.Add(new CharacterMotionDiagnostic(CharacterMotionDiagnosticSeverity.Warning, code, message));
+        public void Clear() => diagnostics.Clear();
     }
 }

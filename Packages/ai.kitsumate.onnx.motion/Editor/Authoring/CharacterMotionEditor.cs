@@ -10,6 +10,8 @@ namespace KitsuMate.Onnx.Motion.Editor
     internal sealed class CharacterMotionEditor : UnityEditor.Editor
     {
         private float previewTime;
+        private int authoringFrame;
+        private string authoringMessage;
         private bool ownsPreview;
         private SerializedProperty parts;
         private SerializedProperty previousMotion;
@@ -82,22 +84,33 @@ namespace KitsuMate.Onnx.Motion.Editor
 
             EditorGUILayout.Space();
             EditorGUILayout.LabelField("Authoring", EditorStyles.boldLabel);
+            int frameCount = 1;
+            try { frameCount = Mathf.Max(1, motion.Timeline.FrameCount); }
+            catch (Exception) { /* Validation below reports malformed timelines. */ }
+            authoringFrame = Mathf.Clamp(authoringFrame, 0, frameCount - 1);
+            CharacterMotionKeyframe existingFrame = motion.GetKeyframes()
+                .FirstOrDefault(value => value.Frame == authoringFrame);
+            int staleCount = CharacterMotionAuthoringUtility.CountStale(motion);
             using (new EditorGUILayout.HorizontalScope())
             {
-                if (GUILayout.Button("Create/Rebuild Skeleton")) Run(() =>
+                authoringFrame = EditorGUILayout.IntSlider("Frame", authoringFrame, 0, frameCount - 1);
+                existingFrame = motion.GetKeyframes().FirstOrDefault(value => value.Frame == authoringFrame);
+                if (GUILayout.Button(existingFrame == null ? "Add Pose" : "Select Pose", GUILayout.Width(86f)))
                 {
-                    StopPreview();
-                    ownsPreview = false;
-                    CharacterMotionSkeletonUtility.Rebuild(motion);
-                });
-                if (GUILayout.Button("Remove Skeleton")) CharacterMotionSkeletonUtility.Remove(motion);
+                    if (existingFrame != null) Selection.activeGameObject = existingFrame.gameObject;
+                    else AddKeyframe(motion, authoringFrame);
+                }
+                using (new EditorGUI.DisabledScope(staleCount == 0))
+                    if (GUILayout.Button($"Recalculate ({staleCount})", GUILayout.Width(110f))) Run(() =>
+                    {
+                        int recalculated = CharacterMotionAuthoringUtility.Recalculate(motion);
+                        authoringMessage = recalculated == 1
+                            ? "Recalculated 1 pose."
+                            : $"Recalculated {recalculated} poses.";
+                    });
             }
-            using (new EditorGUILayout.HorizontalScope())
-            {
-                if (GUILayout.Button("Add Root")) AddKeyframe(motion, CharacterMotionConstraintType.RootPosition | CharacterMotionConstraintType.RootHeading);
-                if (GUILayout.Button("Add Pose")) AddKeyframe(motion, CharacterMotionConstraintType.FullBodyPose);
-                if (GUILayout.Button("Add Effectors")) AddKeyframe(motion, CharacterMotionConstraintType.LeftHand | CharacterMotionConstraintType.RightHand);
-            }
+            if (!string.IsNullOrEmpty(authoringMessage))
+                EditorGUILayout.HelpBox(authoringMessage, MessageType.Info);
 
             CharacterMotionValidationResult validation = motion.ValidateMotion();
             foreach (CharacterMotionDiagnostic diagnostic in validation.Diagnostics)
@@ -200,8 +213,14 @@ namespace KitsuMate.Onnx.Motion.Editor
             return result;
         }
 
-        private static void AddKeyframe(CharacterMotion motion, CharacterMotionConstraintType type)
+        internal static CharacterMotionKeyframe AddKeyframe(CharacterMotion motion, int frame)
         {
+            CharacterMotionKeyframe existing = motion.GetKeyframes().FirstOrDefault(value => value.Frame == frame);
+            if (existing != null)
+            {
+                Selection.activeGameObject = existing.gameObject;
+                return existing;
+            }
             Transform container = motion.transform.Find("Keyframes");
             if (container == null)
             {
@@ -210,16 +229,16 @@ namespace KitsuMate.Onnx.Motion.Editor
                 group.transform.SetParent(motion.transform, false);
                 container = group.transform;
             }
-            int[] used = motion.GetKeyframes().Select(value => value.Frame).ToArray();
             int frameCount = Mathf.Max(1, motion.Timeline.FrameCount);
-            int frame = Enumerable.Range(0, frameCount).FirstOrDefault(value => !used.Contains(value));
+            if (frame < 0 || frame >= frameCount) throw new ArgumentOutOfRangeException(nameof(frame));
             var gameObject = new GameObject($"Frame_{frame:00}");
             Undo.RegisterCreatedObjectUndo(gameObject, "Add Character Motion Keyframe");
             gameObject.transform.SetParent(container, false);
             gameObject.transform.SetPositionAndRotation(motion.ActionOrigin.position, motion.ActionOrigin.rotation);
             CharacterMotionKeyframe keyframe = Undo.AddComponent<CharacterMotionKeyframe>(gameObject);
-            keyframe.Configure(frame, type);
+            keyframe.Configure(frame, CharacterMotionConstraintType.None);
             Selection.activeGameObject = gameObject;
+            return keyframe;
         }
 
         internal static void Preview(CharacterMotion motion, float time)
@@ -238,7 +257,7 @@ namespace KitsuMate.Onnx.Motion.Editor
         {
             if (AnimationMode.InAnimationMode()) AnimationMode.StopAnimationMode();
             foreach (CharacterMotionSkeleton skeleton in UnityEngine.Object.FindObjectsByType<CharacterMotionSkeleton>(
-                         FindObjectsInactive.Include, FindObjectsSortMode.None))
+                         FindObjectsInactive.Include))
                 skeleton.StopPreview();
             SceneView.RepaintAll();
         }

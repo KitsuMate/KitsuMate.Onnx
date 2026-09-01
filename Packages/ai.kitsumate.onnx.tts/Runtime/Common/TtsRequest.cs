@@ -18,6 +18,12 @@ namespace KitsuMate.Onnx.Tts
         /// </summary>
         public AudioClip VoiceReference;
 
+        /// <summary>Transcript matching <see cref="VoiceReference"/>. Required by OmniVoice cloning.</summary>
+        public string VoiceReferenceText;
+
+        /// <summary>Optional voice-design instruction, for example "female, young adult, british accent".</summary>
+        public string VoiceInstruction;
+
         /// <summary>
         /// Language code (e.g. "en", "fr", "ja"). Only used with multilingual models.
         /// If null or empty, no language token is prepended.
@@ -41,6 +47,15 @@ namespace KitsuMate.Onnx.Tts
         /// Higher values reduce repetitive patterns. Default: 1.2.
         /// </summary>
         public float RepetitionPenalty = 1.2f;
+
+        /// <summary>Speaking-rate multiplier. Values above one are faster.</summary>
+        public float Speed = 1f;
+
+        /// <summary>Requested duration in seconds. Zero lets the engine estimate it.</summary>
+        public float DurationSeconds;
+
+        /// <summary>Optional OmniVoice decoding overrides. Null uses the engine defaults.</summary>
+        public OmniVoice.OmniVoiceGenerationConfig OmniVoice;
 
         public TtsRequest() { }
 

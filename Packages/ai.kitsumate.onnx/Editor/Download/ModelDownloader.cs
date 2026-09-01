@@ -212,8 +212,9 @@ namespace KitsuMate.Onnx.Editor.Download
             var byPath = (info.siblings ?? Array.Empty<HfSibling>())
                 .Where(file => file != null && !string.IsNullOrWhiteSpace(file.rfilename))
                 .ToDictionary(file => file.rfilename.Replace('\\', '/'), StringComparer.OrdinalIgnoreCase);
+            bool omniVoice = IsOmniVoice(request);
             HfSibling[] onnxFiles = byPath.Values
-                .Where(file => file.rfilename.StartsWith("onnx/", StringComparison.OrdinalIgnoreCase) &&
+                .Where(file => (omniVoice || file.rfilename.StartsWith("onnx/", StringComparison.OrdinalIgnoreCase)) &&
                     file.rfilename.EndsWith(".onnx", StringComparison.OrdinalIgnoreCase))
                 .OrderBy(file => file.rfilename, StringComparer.OrdinalIgnoreCase)
                 .ToArray();
@@ -222,7 +223,16 @@ namespace KitsuMate.Onnx.Editor.Download
 
             Dictionary<string, DiscoveredArtifact[]> artifacts;
             string[] requiredRoles;
-            if (IsChatterbox(request, onnxFiles))
+            if (omniVoice)
+            {
+                artifacts = await DiscoverOmniVoiceAsync(request, info.sha, byPath, onnxFiles, token,
+                    cancellationToken);
+                bool merged = artifacts.ContainsKey("merged-backbone");
+                requiredRoles = merged
+                    ? new[] { "merged-backbone", "acoustic-encoder", "semantic-encoder", "quantizer-encoder", "higgs-decoder" }
+                    : new[] { "audio-embeddings", "language-decoder", "audio-heads", "acoustic-encoder", "semantic-encoder", "quantizer-encoder", "higgs-decoder" };
+            }
+            else if (IsChatterbox(request, onnxFiles))
             {
                 artifacts = await DiscoverChatterboxAsync(request, info.sha, byPath, onnxFiles, token,
                     cancellationToken);
@@ -250,7 +260,7 @@ namespace KitsuMate.Onnx.Editor.Download
             DiscoveredFile[] common = await DiscoverCommonFilesAsync(request, info.sha, byPath, token,
                 cancellationToken);
             return new DiscoveredRepository(repository[0], repository[1],
-                string.IsNullOrWhiteSpace(request.ExpectedFamily) ? "onnx" : request.ExpectedFamily,
+                omniVoice ? "omnivoice" : string.IsNullOrWhiteSpace(request.ExpectedFamily) ? "onnx" : request.ExpectedFamily,
                 info.sha, artifacts, common, requiredRoles);
         }
 
@@ -348,6 +358,61 @@ namespace KitsuMate.Onnx.Editor.Download
             return Finish(result);
         }
 
+        private static async Task<Dictionary<string, DiscoveredArtifact[]>> DiscoverOmniVoiceAsync(
+            ModelDownloadRequest request, string revision, Dictionary<string, HfSibling> byPath,
+            HfSibling[] models, string token, CancellationToken cancellationToken)
+        {
+            IEnumerable<HfSibling> selected = SelectOmniVoiceProfile(request, models);
+            var result = new Dictionary<string, List<DiscoveredArtifact>>(StringComparer.Ordinal);
+            var roles = new[]
+            {
+                (Stem: "audio_embeddings_encoder", Role: "audio-embeddings"),
+                (Stem: "llm_decoder", Role: "language-decoder"),
+                (Stem: "audio_heads_decoder", Role: "audio-heads"),
+                (Stem: "acoustic_encoder", Role: "acoustic-encoder"),
+                (Stem: "semantic_encoder", Role: "semantic-encoder"),
+                (Stem: "quantizer_encoder", Role: "quantizer-encoder"),
+                (Stem: "higgs_decoder", Role: "higgs-decoder"),
+                (Stem: "omnivoice", Role: "merged-backbone")
+            };
+            foreach (HfSibling model in selected)
+            {
+                string stem = FileStem(model);
+                var match = roles.FirstOrDefault(candidate =>
+                    stem.Equals(candidate.Stem, StringComparison.OrdinalIgnoreCase) ||
+                    stem.StartsWith(candidate.Stem + ".", StringComparison.OrdinalIgnoreCase) ||
+                    stem.StartsWith(candidate.Stem + "_", StringComparison.OrdinalIgnoreCase));
+                if (match.Stem == null) continue;
+                await AddArtifactAsync(result, request, revision, byPath, model, match.Role, match.Stem,
+                    match.Role == "merged-backbone", token, cancellationToken);
+            }
+            return Finish(result);
+        }
+
+        private static IEnumerable<HfSibling> SelectOmniVoiceProfile(ModelDownloadRequest request,
+            IEnumerable<HfSibling> models)
+        {
+            string family = request.ExpectedFamily ?? string.Empty;
+            if (family.EndsWith("-cpu", StringComparison.OrdinalIgnoreCase))
+                return models.Where(file => PathContains(file.rfilename, "cpu-merged-int4") ||
+                    PathContains(file.rfilename, "codec-fp32"));
+            if (family.EndsWith("-portable", StringComparison.OrdinalIgnoreCase))
+                return models.Where(file => PathContains(file.rfilename, "portable-merged-fp32") ||
+                    PathContains(file.rfilename, "codec-fp32"));
+
+            bool community = request.Repository.IndexOf("onnx-community/OmniVoice-Onnx",
+                StringComparison.OrdinalIgnoreCase) >= 0;
+            if (community)
+                return models.Where(file => file.rfilename.StartsWith("int4/", StringComparison.OrdinalIgnoreCase) ||
+                    file.rfilename.StartsWith("audio_tokenizer/", StringComparison.OrdinalIgnoreCase) &&
+                    !file.rfilename.StartsWith("audio_tokenizer/fp16/", StringComparison.OrdinalIgnoreCase));
+            return models;
+        }
+
+        private static bool PathContains(string path, string directory) =>
+            path.Replace('\\', '/').Split('/').Any(part =>
+                part.Equals(directory, StringComparison.OrdinalIgnoreCase));
+
         private static async Task<Dictionary<string, DiscoveredArtifact[]>> DiscoverModelsAsync(
             ModelDownloadRequest request, string revision, Dictionary<string, HfSibling> byPath,
             HfSibling[] models, string token, CancellationToken cancellationToken)
@@ -410,7 +475,9 @@ namespace KitsuMate.Onnx.Editor.Download
             foreach (var item in new[]
             {
                 (Path: "tokenizer.json", Role: "tokenizer"),
+                (Path: "int4/tokenizer.json", Role: "tokenizer"),
                 (Path: "tokenizer_config.json", Role: "tokenizer-config"),
+                (Path: "int4/tokenizer_config.json", Role: "tokenizer-config"),
                 (Path: "config.json", Role: "config"),
                 (Path: "generation_config.json", Role: "generation-config"),
                 (Path: "preprocessor_config.json", Role: "preprocessor-config"),
@@ -567,6 +634,9 @@ namespace KitsuMate.Onnx.Editor.Download
             return string.Equals(request.ExpectedFamily, "chatterbox", StringComparison.OrdinalIgnoreCase) ||
                 files.Any(file => FileStem(file).StartsWith("speech_encoder", StringComparison.OrdinalIgnoreCase));
         }
+
+        private static bool IsOmniVoice(ModelDownloadRequest request) =>
+            request.ExpectedFamily.StartsWith("omnivoice", StringComparison.OrdinalIgnoreCase);
 
         private static string FileStem(HfSibling file)
         {

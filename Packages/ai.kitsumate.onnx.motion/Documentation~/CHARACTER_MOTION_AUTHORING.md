@@ -15,11 +15,19 @@ The Character Motion authoring layer turns scene-space Humanoid targets into the
 1. Create a `CharacterMotionIntent` from **Create > KitsuMate > Motion > Character Motion Intent** and enter the prompt.
 2. Add `CharacterMotion` to an empty scene GameObject.
 3. Assign the intent, target Humanoid Animator, and action origin.
-4. Select **Create/Rebuild Skeleton**. The generated `MotionSkeleton` is tagged `EditorOnly` and will not enter a player build.
-5. Add root, pose, or end-effector keyframes from the motion inspector.
-6. For pose keyframes, select the frame, load or edit the shared skeleton, then press **Capture Pose** explicitly.
-7. Create required hand/foot handles and position them with ordinary transform tools.
+4. Choose a frame in the motion inspector and select **Add Pose**. Existing frames change the action to **Select Pose**.
+5. Select the keyframe and enable root, full-pose, or hand/foot constraints. The shared `MotionSkeleton` and targets are created automatically. Poles are created only for the deterministic Full Pose preview.
+6. Rotate bones or manipulate hand/foot IK in the Scene view. Use Unity's Move tool for targets and poles and the Rotate tool for target orientation. Pose changes are captured automatically, including edits made through the ordinary Transform inspector or tools.
+7. Use **Reset Pose** or **Sample Pose** for deliberate pose replacement. Use **Recalculate** on the motion inspector to repair missing or stale pose data in one batch.
 8. Resolve validation errors, then bake the embedding and animation.
+
+Full Pose armatures remain visible when their keyframes are not selected. Without Full Pose, the armature and poles are hidden: Kimodo treats the remaining targets as sparse generative constraints and may reposition the whole body to satisfy them. These targets have no preview limb-length restriction. Bone and IK geometry scales with the complete reference armature.
+
+IK targets are drawn as wireframe boxes. Elbow and knee poles are drawn as camera-facing wireframe circles with a line to the middle bone they control.
+
+Unselected roots, Full Pose bones and poles, and visible IK boxes are explicit Scene-view controls. Clicking one selects its keyframe and carries the clicked subcontrol into the selected editor; real Unity move and rotation handles retain input priority.
+
+The `CharacterMotionKeyframe` Transform is the only authoring source for root position and rotation. Pose snapshots are stored relative to it, the shared guide is rebased to it whenever a frame is loaded, and keyframe scale must remain one. Snapshots created before this root-space contract are reported by **Recalculate** and migrated in the batch operation.
 
 ## Coordinate and avatar rules
 
@@ -29,7 +37,7 @@ Pose snapshots include the target avatar signature and actual captured proportio
 
 ## Runtime use
 
-`CharacterMotion.BuildConstraintSet()` and `BuildGenerationRequest()` are runtime-safe and work when `MotionSkeleton` is absent. Runtime code can resolve `ICharacterMotionIntent`, invoke the existing Kimodo pipeline, and consume `KimodoHumanoidMotion`. This package intentionally does not choose how that result is scheduled or played.
+`CharacterMotion.BuildConstraintSet()` and `BuildGenerationRequest()` are runtime-safe and work when `MotionSkeleton` and editor-only pole controls are absent. Runtime code can resolve `ICharacterMotionIntent`, invoke the existing Kimodo pipeline, and consume `KimodoHumanoidMotion`. This package intentionally does not choose how that result is scheduled or played.
 
 Runtime generation never creates project assets. Only Editor baking writes an `AnimationClip`, using avatar-specific transform paths and `AnimationUtility.SetEditorCurve`.
 

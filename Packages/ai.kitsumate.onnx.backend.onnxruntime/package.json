@@ -2,9 +2,9 @@
   "name": "ai.kitsumate.onnx.backend.onnxruntime",
   "version": "1.0.0-alpha.1",
   "displayName": "KitsuMate ONNX Runtime Backend",
-  "description": "Optional ONNX Runtime backend for KitsuMate ONNX.",
+  "description": "ONNX Runtime 1.25.1 backend with automatic DirectML, WebGPU, CoreML, NNAPI, and CPU fallback.",
   "unity": "6000.0",
-  "keywords": ["onnx", "onnxruntime", "inference", "kitsumate"],
+  "keywords": ["onnx", "onnxruntime", "inference", "gpu", "directml", "webgpu", "coreml", "nnapi", "kitsumate"],
   "author": { "name": "KitsuMate", "url": "https://github.com/KitsuMate" },
   "dependencies": {
     "ai.kitsumate.onnx": "1.0.0-alpha.1"

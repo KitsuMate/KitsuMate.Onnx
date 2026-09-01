@@ -115,6 +115,38 @@ namespace KitsuMate.Onnx.Motion.Tests
                 compiler.Compile(new KimodoConstraintSet(first, conflicting)));
         }
 
+        [Test]
+        public void SemanticCompiler_ExplicitRootOverridesPoseDerivedContextAtSameFrame()
+        {
+            var positions = new Vector3[30];
+            var rotations = Enumerable.Repeat(Quaternion.identity, 30).ToArray();
+            positions[(int)KimodoJoint.Hips] = new Vector3(0f, 0.9f, 0f);
+            // Deliberately derive a different heading from the pose's hip line.
+            positions[(int)KimodoJoint.LeftLeg] = new Vector3(-0.1f, 0.8f, -0.2f);
+            positions[(int)KimodoJoint.RightLeg] = new Vector3(0.1f, 0.8f, 0.2f);
+            var root = new KimodoRootConstraint(
+                new[] { 0 }, new[] { new Vector2(4f, 7f) }, new[] { new Vector2(1f, 0f) });
+            var effector = new KimodoEndEffectorConstraint(
+                new[] { 0 }, KimodoEndEffectors.LeftHand, positions, rotations,
+                new[] { new Vector2(-3f, 2f) });
+
+            KimodoConditioning result = new KimodoConstraintCompiler().Compile(
+                new KimodoConstraintSet(effector, root));
+
+            Assert.IsTrue(result.MotionMask.Span[0]);
+            Assert.IsTrue(result.MotionMask.Span[2]);
+            Assert.IsTrue(result.MotionMask.Span[3]);
+            Assert.IsTrue(result.MotionMask.Span[4]);
+            Assert.AreEqual((4f - KimodoSomaRuntimeData.Mean[0]) / KimodoSomaRuntimeData.Scale[0],
+                result.ObservedMotion.Span[0], 1e-6f);
+            Assert.AreEqual((7f - KimodoSomaRuntimeData.Mean[2]) / KimodoSomaRuntimeData.Scale[2],
+                result.ObservedMotion.Span[2], 1e-6f);
+            Assert.AreEqual((1f - KimodoSomaRuntimeData.Mean[3]) / KimodoSomaRuntimeData.Scale[3],
+                result.ObservedMotion.Span[3], 1e-6f);
+            Assert.AreEqual((0f - KimodoSomaRuntimeData.Mean[4]) / KimodoSomaRuntimeData.Scale[4],
+                result.ObservedMotion.Span[4], 1e-6f);
+        }
+
         private static IKimodoConstraint ParseConstraint(JObject semantic)
         {
             int[] frames = semantic["frame_indices"]!.Values<int>().ToArray();

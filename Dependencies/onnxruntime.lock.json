@@ -1,86 +1,45 @@
 {
-  "schemaVersion": 1,
-  "version": "1.24.4",
+  "schemaVersion": 2,
+  "version": "1.25.1",
+  "sourceCommit": "8a77e459420f58fb946fd9067285cfa719f10bdd",
+  "webGpuVersion": "0.2.1",
   "packages": [
     {
       "id": "Microsoft.ML.OnnxRuntime.Managed",
-      "url": "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime.managed/1.24.4/microsoft.ml.onnxruntime.managed.1.24.4.nupkg",
+      "url": "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime.managed/1.25.1/microsoft.ml.onnxruntime.managed.1.25.1.nupkg",
       "files": [
-        {
-          "source": "lib/netstandard2.0/Microsoft.ML.OnnxRuntime.dll",
-          "destination": "Managed/Microsoft.ML.OnnxRuntime.dll",
-          "sha256": "5c3c531af36a6cb4baa01db20dcf94a0464ec36f8090aa42f35ff565b90a1ea6"
-        }
+        { "source": "lib/netstandard2.0/Microsoft.ML.OnnxRuntime.dll", "destination": "Managed/Microsoft.ML.OnnxRuntime.dll", "sha256": "a4ff9a00c1151a0667fdd522703df032db5cf89fabd533830921b9254c1f7ae6" }
       ]
     },
     {
       "id": "Microsoft.ML.OnnxRuntime",
-      "url": "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/1.24.4/microsoft.ml.onnxruntime.1.24.4.nupkg",
+      "url": "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/1.25.1/microsoft.ml.onnxruntime.1.25.1.nupkg",
       "files": [
-        {
-          "archive": "runtimes/android/native/onnxruntime.aar",
-          "source": "jni/arm64-v8a/libonnxruntime.so",
-          "destination": "Android/arm64-v8a/libonnxruntime.so",
-          "sha256": "7f2f5c400f70a70bc4dce907752c48e2691de5e70d4c08cff45639e0e98f480e"
-        },
-        {
-          "archive": "runtimes/android/native/onnxruntime.aar",
-          "source": "jni/armeabi-v7a/libonnxruntime.so",
-          "destination": "Android/armeabi-v7a/libonnxruntime.so",
-          "sha256": "dc58198cde17426b194645f8d933cff44ec92a3acff6e24fa29cf7e49c2fb50e"
-        }
+        { "archive": "runtimes/android/native/onnxruntime.aar", "source": "jni/arm64-v8a/libonnxruntime.so", "destination": "Android/arm64-v8a/libonnxruntime.so", "sha256": "b87030d6d0876af371e00a99368f01a05ceb8ed36f88859e30ee8c3649811acd" },
+        { "archive": "runtimes/android/native/onnxruntime.aar", "source": "jni/armeabi-v7a/libonnxruntime.so", "destination": "Android/armeabi-v7a/libonnxruntime.so", "sha256": "570c8297cb166efec11f104351db2485a1405347ff22cc450d5979d1a9621357" },
+        { "source": "runtimes/linux-x64/native/libonnxruntime.so", "destination": "Linux/x86_64/libonnxruntime.so", "sha256": "7a7c63fec274e9577477a0158a03a205e3ed9320b032a2df2b2a01b6ae1d3b94" },
+        { "source": "runtimes/osx-arm64/native/libonnxruntime.dylib", "destination": "macOS/arm64/libonnxruntime.dylib", "sha256": "8fb965cb044a02621f3f2980df40ca583e3e15f0bdbac0fa9e89b3300ef8a670" }
       ]
     },
     {
-      "id": "Microsoft.ML.OnnxRuntime.Gpu.Linux",
-      "url": "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime.gpu.linux/1.24.4/microsoft.ml.onnxruntime.gpu.linux.1.24.4.nupkg",
+      "id": "KitsuMate.OnnxRuntime.DirectML.Windows",
+      "url": "https://github.com/KitsuMate/KitsuMate.Onnx/releases/download/native-onnxruntime-v1.25.1/kitsumate-onnxruntime-directml-win-x64-1.25.1.zip",
+      "sourceBuild": {
+        "commit": "8a77e459420f58fb946fd9067285cfa719f10bdd",
+        "command": "Tools/native/build-ort-1.25.1-windows.ps1 -Provider DirectML -Source <ort-source> -Output <output>"
+      },
       "files": [
-        {
-          "source": "runtimes/linux-x64/native/libonnxruntime.so",
-          "destination": "Linux/x86_64/libonnxruntime.so",
-          "sha256": "1aacefdf0b4afa145d410b2381bbc3db3d978c485fb182c42a2b0b09f91f5310"
-        },
-        {
-          "source": "runtimes/linux-x64/native/libonnxruntime_providers_shared.so",
-          "destination": "Linux/x86_64/libonnxruntime_providers_shared.so",
-          "sha256": "c6a12593396095f5670160e284c35d1700b7708cf3037b7042e2a5200ccae772"
-        },
-        {
-          "source": "runtimes/linux-x64/native/libonnxruntime_providers_cuda.so",
-          "destination": "Linux/x86_64/libonnxruntime_providers_cuda.so",
-          "sha256": "1defa2f82f2195a0667f2003e14c6715107af7d2716364cfdfa1a8c5e708ddaa"
-        },
-        {
-          "source": "runtimes/linux-x64/native/libonnxruntime_providers_tensorrt.so",
-          "destination": "Linux/x86_64/libonnxruntime_providers_tensorrt.so",
-          "sha256": "2cb90c774517105fbbfd91b03a79f8ce9ee4cfe74c55d4221f85cb8fec870cc6"
-        }
+        { "source": "onnxruntime.dll", "destination": "Windows/x86_64/onnxruntime.dll", "sha256": "070844500b249a28a8714edd47c47cbf8bd21a716e5754ab66854d8f89e9779d" },
+        { "source": "DirectML.dll", "destination": "Windows/x86_64/DirectML.dll", "sha256": "9c9e6d822561c6c41b90e6994b3e8857cf1d66dbfb1e0c4c799c7c89b4e92da1" }
       ]
     },
     {
-      "id": "Microsoft.ML.OnnxRuntime.Gpu.Windows",
-      "url": "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime.gpu.windows/1.24.4/microsoft.ml.onnxruntime.gpu.windows.1.24.4.nupkg",
+      "id": "Microsoft.ML.OnnxRuntime.EP.WebGpu",
+      "url": "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime.ep.webgpu/0.2.1/microsoft.ml.onnxruntime.ep.webgpu.0.2.1.nupkg",
       "files": [
-        {
-          "source": "runtimes/win-x64/native/onnxruntime.dll",
-          "destination": "Windows/x86_64/onnxruntime.dll",
-          "sha256": "3b46571d12a9567791a42a2b2967a79c4e2e957aacdba09a2ddb4fb391707baa"
-        },
-        {
-          "source": "runtimes/win-x64/native/onnxruntime_providers_shared.dll",
-          "destination": "Windows/x86_64/onnxruntime_providers_shared.dll",
-          "sha256": "1bcbad19d14bc8395c1422c752e9e4cdd79e316e2582cdcd767bb8f500cdae99"
-        },
-        {
-          "source": "runtimes/win-x64/native/onnxruntime_providers_cuda.dll",
-          "destination": "Windows/x86_64/onnxruntime_providers_cuda.dll",
-          "sha256": "ce1c698cae708fd4ed9ab36eddf256213df40779d0806d20f32132c5d422da72"
-        },
-        {
-          "source": "runtimes/win-x64/native/onnxruntime_providers_tensorrt.dll",
-          "destination": "Windows/x86_64/onnxruntime_providers_tensorrt.dll",
-          "sha256": "f22e863b26a69d30004ebb2157a06d9581fa593c74463b2991ba720a3be33608"
-        }
+        { "source": "runtimes/linux-x64/native/libonnxruntime_providers_webgpu.so", "destination": "Linux/x86_64/libonnxruntime_providers_webgpu.so", "sha256": "45e1c7465ada0d85f63565358b4c8350d8b0f523948a0e2c7d0d20697f8918e9" },
+        { "source": "LICENSE", "destination": "Licenses/WebGPU-LICENSE.txt", "sha256": "c250d6278f0b47a6439fb7592b08b58a55eb9f535aa49a1db63211c3f982b674" },
+        { "source": "ThirdPartyNotices.txt", "destination": "Licenses/WebGPU-ThirdPartyNotices.txt", "sha256": "fb0af774b4d7cffc5b9d046f2aaeade2f37df2f80abf8033c95dfffcc77a8866" }
       ]
     }
   ]

@@ -10,7 +10,11 @@ namespace KitsuMate.Onnx.Tts
         [SerializeField] private TtsEngine engine;
         [SerializeField] private OnnxBackend backend;
         [SerializeField] private AudioClip voiceReference;
+        [SerializeField, TextArea] private string voiceReferenceText;
+        [SerializeField, TextArea] private string voiceInstruction;
         [SerializeField] private string languageId = "en";
+        [SerializeField, Min(0.01f)] private float speed = 1f;
+        [SerializeField, Min(0f)] private float durationSeconds;
         [SerializeField, Range(0f, 1f)] private float exaggeration = 0.5f;
         [SerializeField] private int maxNewTokens = 256;
         [SerializeField] private float repetitionPenalty = 1.2f;
@@ -46,7 +50,13 @@ namespace KitsuMate.Onnx.Tts
             IsSynthesizing = true;
             try
             {
-                var request = new TtsRequest { Text = text, VoiceReference = voiceReference, LanguageId = languageId, Exaggeration = exaggeration, MaxNewTokens = maxNewTokens, RepetitionPenalty = repetitionPenalty };
+                var request = new TtsRequest
+                {
+                    Text = text, VoiceReference = voiceReference, VoiceReferenceText = voiceReferenceText,
+                    VoiceInstruction = voiceInstruction, LanguageId = languageId, Speed = speed,
+                    DurationSeconds = durationSeconds, Exaggeration = exaggeration,
+                    MaxNewTokens = maxNewTokens, RepetitionPenalty = repetitionPenalty
+                };
                 TtsResult result = await runtime.RunAsync(request, lifetime.Token);
                 onSynthesis.Invoke(result);
                 AudioClip clip = result.ToAudioClip("tts_output");

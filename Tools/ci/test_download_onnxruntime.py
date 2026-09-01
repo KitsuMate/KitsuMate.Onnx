@@ -11,7 +11,7 @@ from pathlib import Path
 SCRIPT = Path(__file__).with_name("download-onnxruntime.py")
 
 
-class ArtifactHydrationTests(unittest.TestCase):
+class ArtifactProvisioningTests(unittest.TestCase):
     def test_nested_extraction_preserves_meta_and_removes_stale_payload(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -85,7 +85,7 @@ class ArtifactHydrationTests(unittest.TestCase):
                 archive.writestr("value", b"data")
             cache = root / "cache"
             cache.mkdir()
-            (cache / "fixture.test.nupkg").write_bytes(b"not a zip")
+            (cache / "fixture.test.zip").write_bytes(b"not a zip")
             lock = root / "lock.json"
             lock.write_text(json.dumps({
                 "version": "test",
@@ -99,6 +99,26 @@ class ArtifactHydrationTests(unittest.TestCase):
                 "--cache", str(cache), "--destination", str(root / "output"),
             ], capture_output=True, text=True)
             self.assertEqual(0, completed.returncode, completed.stderr)
+
+    def test_download_failure_names_package_and_url(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            missing_package = (root / "missing.nupkg").as_uri()
+            lock = root / "lock.json"
+            lock.write_text(json.dumps({
+                "version": "test",
+                "packages": [{"id": "missing-runtime", "url": missing_package, "files": [{
+                    "source": "value", "destination": "value.bin",
+                    "sha256": hashlib.sha256(b"data").hexdigest(),
+                }]}],
+            }), encoding="utf-8")
+            completed = subprocess.run([
+                sys.executable, str(SCRIPT), "--lock", str(lock),
+                "--cache", str(root / "cache"), "--destination", str(root / "output"),
+            ], capture_output=True, text=True)
+            self.assertNotEqual(0, completed.returncode)
+            self.assertIn("missing-runtime", completed.stderr)
+            self.assertIn(missing_package, completed.stderr)
 
 
 if __name__ == "__main__":

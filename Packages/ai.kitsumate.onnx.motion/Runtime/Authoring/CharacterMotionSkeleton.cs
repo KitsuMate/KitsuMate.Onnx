@@ -9,7 +9,7 @@ namespace KitsuMate.Onnx.Motion
     {
         [SerializeField] private CharacterMotion owner;
         [SerializeField] private Animator guideAnimator;
-        [SerializeField] private CharacterMotionKeyframe loadedKeyframe;
+        [NonSerialized] private CharacterMotionKeyframe loadedKeyframe;
         [SerializeField, HideInInspector] private Quaternion[] bindLocalRotations;
         [SerializeField, HideInInspector] private bool[] boneAvailability;
         [SerializeField, HideInInspector] private string[] bindTransformPaths;
@@ -68,6 +68,11 @@ namespace KitsuMate.Onnx.Motion
         {
             if (keyframe == null) throw new ArgumentNullException(nameof(keyframe));
             if (!keyframe.Pose.IsCaptured) throw new InvalidOperationException("The keyframe has no captured pose.");
+            // A shared guide must never inherit the root of the previously edited frame.
+            // Restore the cloned hierarchy first, then place its Animator root at the
+            // keyframe component that owns root position and heading.
+            ResetToBindPose();
+            AlignToKeyframe(keyframe);
             ReadOnlySpan<Quaternion> rotations = keyframe.Pose.HumanoidLocalRotations.Span;
             ReadOnlySpan<bool> available = keyframe.Pose.HumanoidBoneAvailability.Span;
             for (int i = 0; i < rotations.Length; i++)
@@ -75,6 +80,21 @@ namespace KitsuMate.Onnx.Motion
                 Transform bone = guideAnimator.GetBoneTransform((HumanBodyBones)i);
                 if (bone != null && available[i]) bone.localRotation = rotations[i];
             }
+            loadedKeyframe = keyframe;
+        }
+
+        /// <summary>Places the shared guide at the root position and heading owned by a keyframe.</summary>
+        public void AlignToKeyframe(CharacterMotionKeyframe keyframe)
+        {
+            if (keyframe == null) throw new ArgumentNullException(nameof(keyframe));
+            transform.SetPositionAndRotation(keyframe.transform.position, keyframe.transform.rotation);
+        }
+
+        /// <summary>Loads the cloned bind pose at a keyframe root without capturing it.</summary>
+        public void LoadBindPose(CharacterMotionKeyframe keyframe)
+        {
+            ResetToBindPose();
+            AlignToKeyframe(keyframe);
             loadedKeyframe = keyframe;
         }
 
@@ -116,6 +136,9 @@ namespace KitsuMate.Onnx.Motion
         {
             if (keyframe == null) throw new ArgumentNullException(nameof(keyframe));
             if (owner == null || guideAnimator == null) throw new InvalidOperationException("The motion skeleton is not initialized.");
+            // Root translation and heading are authored exclusively on the keyframe.
+            // Rebase the guide before deriving root-relative SOMA data.
+            AlignToKeyframe(keyframe);
             keyframe.Pose.Capture(guideAnimator, keyframe.transform, owner.AvatarSignature);
             loadedKeyframe = keyframe;
         }
@@ -217,25 +240,5 @@ namespace KitsuMate.Onnx.Motion
 
         private void OnDisable() => StopPreview();
 
-        private void OnDrawGizmos()
-        {
-            if (guideAnimator == null || guideAnimator.avatar == null || !guideAnimator.isHuman) return;
-            Gizmos.color = HasUnsavedChanges() ? Color.yellow : new Color(0.25f, 0.9f, 0.9f);
-            Draw(HumanBodyBones.Hips, HumanBodyBones.Spine); Draw(HumanBodyBones.Spine, HumanBodyBones.Chest);
-            Draw(HumanBodyBones.Chest, HumanBodyBones.Neck); Draw(HumanBodyBones.Neck, HumanBodyBones.Head);
-            Draw(HumanBodyBones.Chest, HumanBodyBones.LeftShoulder); Draw(HumanBodyBones.LeftShoulder, HumanBodyBones.LeftUpperArm);
-            Draw(HumanBodyBones.LeftUpperArm, HumanBodyBones.LeftLowerArm); Draw(HumanBodyBones.LeftLowerArm, HumanBodyBones.LeftHand);
-            Draw(HumanBodyBones.Chest, HumanBodyBones.RightShoulder); Draw(HumanBodyBones.RightShoulder, HumanBodyBones.RightUpperArm);
-            Draw(HumanBodyBones.RightUpperArm, HumanBodyBones.RightLowerArm); Draw(HumanBodyBones.RightLowerArm, HumanBodyBones.RightHand);
-            Draw(HumanBodyBones.Hips, HumanBodyBones.LeftUpperLeg); Draw(HumanBodyBones.LeftUpperLeg, HumanBodyBones.LeftLowerLeg);
-            Draw(HumanBodyBones.LeftLowerLeg, HumanBodyBones.LeftFoot); Draw(HumanBodyBones.Hips, HumanBodyBones.RightUpperLeg);
-            Draw(HumanBodyBones.RightUpperLeg, HumanBodyBones.RightLowerLeg); Draw(HumanBodyBones.RightLowerLeg, HumanBodyBones.RightFoot);
-        }
-
-        private void Draw(HumanBodyBones a, HumanBodyBones b)
-        {
-            Transform first = guideAnimator.GetBoneTransform(a), second = guideAnimator.GetBoneTransform(b);
-            if (first != null && second != null) Gizmos.DrawLine(first.position, second.position);
-        }
     }
 }

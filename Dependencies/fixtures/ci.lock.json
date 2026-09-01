@@ -223,6 +223,60 @@
       "url": "https://huggingface.co/KitsuMate/chatterbox-onnx/resolve/f1c7a1ca9ad781ecf6fa60a6b2bcda8f4e316f70/tokenizer.json",
       "sha256": "ecddf6aaae85e271610a2743409f7e447886957d0b0836687c1eaec5ccac2891",
       "destination": "ExampleProject/KitsuMateOnnxFixtures/chatterbox/tokenizer.json"
+    },
+    {
+      "id": "omnivoice-tokenizer",
+      "url": "https://huggingface.co/KitsuMate/omnivoice-onnx/resolve/02f6e4fd6751261a901b90d2ebac8108c4bc674b/tokenizer.json",
+      "sha256": "408f669b7e2b045fdf54201d815bd364e6667dbd845115da81239c40bc6dcfd1",
+      "destination": "ExampleProject/KitsuMateOnnxFixtures/omnivoice-ci/tokenizer.json"
+    },
+    {
+      "id": "omnivoice-compact-model",
+      "url": "https://huggingface.co/KitsuMate/omnivoice-onnx/resolve/02f6e4fd6751261a901b90d2ebac8108c4bc674b/onnx/cpu-merged-int4/omnivoice.onnx",
+      "sha256": "558eb4a248d4bf24492c46fe6053fa55e8a00bdc593ca4e8e07a69c340a1f29e",
+      "destination": "ExampleProject/KitsuMateOnnxFixtures/omnivoice-ci/onnx/cpu-merged-int4/omnivoice.onnx"
+    },
+    {
+      "id": "omnivoice-compact-data",
+      "url": "https://huggingface.co/KitsuMate/omnivoice-onnx/resolve/02f6e4fd6751261a901b90d2ebac8108c4bc674b/onnx/cpu-merged-int4/omnivoice.onnx.data",
+      "sha256": "ab68fe141840a36016338a144576fd25fffc2b260e02aad7213e320e26ec3f29",
+      "destination": "ExampleProject/KitsuMateOnnxFixtures/omnivoice-ci/onnx/cpu-merged-int4/omnivoice.onnx.data"
+    },
+    {
+      "id": "omnivoice-portable-model",
+      "url": "https://huggingface.co/KitsuMate/omnivoice-onnx/resolve/02f6e4fd6751261a901b90d2ebac8108c4bc674b/onnx/portable-merged-fp32/omnivoice.onnx",
+      "sha256": "ca2b11293f2801d69692fb50d30ea01ca8d3d3f8dc2137de9bc9e847e3c8a190",
+      "destination": "ExampleProject/KitsuMateOnnxFixtures/omnivoice-ci/onnx/portable-merged-fp32/omnivoice.onnx"
+    },
+    {
+      "id": "omnivoice-portable-data",
+      "url": "https://huggingface.co/KitsuMate/omnivoice-onnx/resolve/02f6e4fd6751261a901b90d2ebac8108c4bc674b/onnx/portable-merged-fp32/omnivoice.onnx_data",
+      "sha256": "8511894bd497943949f5c01271332eca4e6ae4cd0420d64ebf47e6060bf2f1ce",
+      "destination": "ExampleProject/KitsuMateOnnxFixtures/omnivoice-ci/onnx/portable-merged-fp32/omnivoice.onnx_data"
+    },
+    {
+      "id": "omnivoice-acoustic-encoder",
+      "url": "https://huggingface.co/KitsuMate/omnivoice-onnx/resolve/02f6e4fd6751261a901b90d2ebac8108c4bc674b/onnx/codec-fp32/acoustic_encoder.onnx",
+      "sha256": "431a5e58528f33c1f001baa64f979572667ff69f26bc727701e3529932065401",
+      "destination": "ExampleProject/KitsuMateOnnxFixtures/omnivoice-ci/onnx/codec-fp32/acoustic_encoder.onnx"
+    },
+    {
+      "id": "omnivoice-semantic-encoder",
+      "url": "https://huggingface.co/KitsuMate/omnivoice-onnx/resolve/02f6e4fd6751261a901b90d2ebac8108c4bc674b/onnx/codec-fp32/semantic_encoder.onnx",
+      "sha256": "db5751893fb44487658e8de1a88096b5421c590ac203c8d124b6972a990c79d3",
+      "destination": "ExampleProject/KitsuMateOnnxFixtures/omnivoice-ci/onnx/codec-fp32/semantic_encoder.onnx"
+    },
+    {
+      "id": "omnivoice-quantizer-encoder",
+      "url": "https://huggingface.co/KitsuMate/omnivoice-onnx/resolve/02f6e4fd6751261a901b90d2ebac8108c4bc674b/onnx/codec-fp32/quantizer_encoder.onnx",
+      "sha256": "e4f0b707b06c24f7343d0d2d9bd977c1a4560d64b84bd19f30cdde54da1731a9",
+      "destination": "ExampleProject/KitsuMateOnnxFixtures/omnivoice-ci/onnx/codec-fp32/quantizer_encoder.onnx"
+    },
+    {
+      "id": "omnivoice-higgs-decoder",
+      "url": "https://huggingface.co/KitsuMate/omnivoice-onnx/resolve/02f6e4fd6751261a901b90d2ebac8108c4bc674b/onnx/codec-fp32/higgs_decoder.onnx",
+      "sha256": "b28b3317a6cbf0d0f4a71b476ecb5c767612a31702da6561154783c94b6fa806",
+      "destination": "ExampleProject/KitsuMateOnnxFixtures/omnivoice-ci/onnx/codec-fp32/higgs_decoder.onnx"
     }
   ]
 }

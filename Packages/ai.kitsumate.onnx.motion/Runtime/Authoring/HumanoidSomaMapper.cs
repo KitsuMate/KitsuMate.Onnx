@@ -12,12 +12,24 @@ namespace KitsuMate.Onnx.Motion
             out Quaternion[] rotations,
             CharacterMotionValidationResult diagnostics = null)
         {
+            positions = new Vector3[30];
+            rotations = new Quaternion[30];
+            return TryCapture(boneResolver, positions, rotations, diagnostics);
+        }
+
+        /// <summary>Fills caller-owned SOMA-30 buffers, avoiding allocations in editor rendering loops.</summary>
+        public static bool TryCapture(
+            Func<HumanBodyBones, Transform> boneResolver,
+            Vector3[] positions,
+            Quaternion[] rotations,
+            CharacterMotionValidationResult diagnostics = null)
+        {
             if (boneResolver == null) throw new ArgumentNullException(nameof(boneResolver));
+            if (positions == null || positions.Length < 30)
+                throw new ArgumentException("A 30-element position buffer is required.", nameof(positions));
+            if (rotations == null || rotations.Length < 30)
+                throw new ArgumentException("A 30-element rotation buffer is required.", nameof(rotations));
             diagnostics ??= new CharacterMotionValidationResult();
-            var mappedPositions = new Vector3[30];
-            var mappedRotations = new Quaternion[30];
-            positions = mappedPositions;
-            rotations = mappedRotations;
 
             Transform hips = Required(boneResolver, HumanBodyBones.Hips, diagnostics);
             Transform spine = Required(boneResolver, HumanBodyBones.Spine, diagnostics);
@@ -62,22 +74,22 @@ namespace KitsuMate.Onnx.Motion
 
             void Set(int index, Transform transform)
             {
-                mappedPositions[index] = transform.position;
-                mappedRotations[index] = transform.rotation;
+                positions[index] = transform.position;
+                rotations[index] = transform.rotation;
             }
 
             void SetInterpolated(int index, Transform a, Transform b, float t)
             {
-                mappedPositions[index] = Vector3.Lerp(a.position, b.position, t);
-                mappedRotations[index] = Quaternion.Slerp(a.rotation, b.rotation, t);
+                positions[index] = Vector3.Lerp(a.position, b.position, t);
+                rotations[index] = Quaternion.Slerp(a.rotation, b.rotation, t);
                 diagnostics.Warning("derived_joint", $"SOMA joint {(KimodoJoint)index} is interpolated from the Humanoid hierarchy.");
             }
 
             void SetOptionalOrFallback(int index, Transform value, Transform parent, Vector3 fallback, string label)
             {
                 if (value != null) { Set(index, value); return; }
-                mappedPositions[index] = fallback;
-                mappedRotations[index] = parent.rotation;
+                positions[index] = fallback;
+                rotations[index] = parent.rotation;
                 diagnostics.Warning("optional_bone_fallback", $"The avatar has no {label}; a head-relative fallback is used.");
             }
 
@@ -87,22 +99,26 @@ namespace KitsuMate.Onnx.Motion
                 {
                     Vector3 segment = intermediate != null ? distal.position - intermediate.position : distal.forward * 0.02f;
                     if (segment.sqrMagnitude < 1e-8f) segment = distal.forward * 0.02f;
-                    mappedPositions[index] = distal.position + segment;
-                    mappedRotations[index] = distal.rotation;
+                    positions[index] = distal.position + segment;
+                    rotations[index] = distal.rotation;
                     return;
                 }
-                mappedPositions[index] = hand.position + hand.forward * 0.08f;
-                mappedRotations[index] = hand.rotation;
+                positions[index] = hand.position + hand.forward * 0.08f;
+                rotations[index] = hand.rotation;
                 diagnostics.Warning("optional_bone_fallback", $"The avatar has no {label}; a hand-relative fallback is used.");
             }
 
             void SetToe(int index, Transform toes, Transform foot, Transform shin, string label)
             {
                 if (toes != null) { Set(index, toes); return; }
-                Vector3 forward = Vector3.ProjectOnPlane(foot.position - shin.position, Vector3.up).normalized;
+                // Keep the synthetic toe attached to foot orientation so rotating a
+                // foot IK target also rotates both its Kimodo endpoint and visual bounds.
+                Vector3 forward = Vector3.ProjectOnPlane(foot.forward, Vector3.up).normalized;
+                if (forward.sqrMagnitude < 1e-8f)
+                    forward = Vector3.ProjectOnPlane(foot.position - shin.position, Vector3.up).normalized;
                 if (forward.sqrMagnitude < 1e-8f) forward = foot.forward;
-                mappedPositions[index] = foot.position + forward * Mathf.Max(0.08f, Vector3.Distance(foot.position, shin.position) * 0.25f);
-                mappedRotations[index] = foot.rotation;
+                positions[index] = foot.position + forward * Mathf.Max(0.08f, Vector3.Distance(foot.position, shin.position) * 0.25f);
+                rotations[index] = foot.rotation;
                 diagnostics.Warning("optional_bone_fallback", $"The avatar has no {label}; a foot-relative fallback is used.");
             }
         }

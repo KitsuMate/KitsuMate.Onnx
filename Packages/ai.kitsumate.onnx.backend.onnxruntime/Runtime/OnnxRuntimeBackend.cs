@@ -11,34 +11,79 @@ using Debug = UnityEngine.Debug;
 
 namespace KitsuMate.Onnx
 {
+    internal sealed class OnnxRuntimeSessionState : IDisposable
+    {
+        public OnnxRuntimeSessionState(
+            InferenceSession session,
+            OnnxExecutionProvider provider,
+            OnnxExecutionDeviceInfo device,
+            string gpuProviderName,
+            int providerIndex,
+            string selectionReason)
+        {
+            Session = session ?? throw new ArgumentNullException(nameof(session));
+            Provider = provider;
+            Device = device ?? throw new ArgumentNullException(nameof(device));
+            GpuProviderName = gpuProviderName;
+            ProviderIndex = providerIndex;
+            SelectionReason = selectionReason ?? string.Empty;
+        }
+
+        public InferenceSession Session { get; }
+        public OnnxExecutionProvider Provider { get; }
+        public OnnxExecutionDeviceInfo Device { get; }
+        public string GpuProviderName { get; }
+        public int ProviderIndex { get; }
+        public string SelectionReason { get; }
+        public OrtMemoryInfo GpuMemoryInfo { get; set; }
+
+        public void Dispose()
+        {
+            GpuMemoryInfo?.Dispose();
+            GpuMemoryInfo = null;
+            Session.Dispose();
+        }
+    }
+
     /// <summary>
     /// ONNX Runtime backend implementation.
     /// Uses Microsoft.ML.OnnxRuntime for CPU and GPU inference.
     /// 
-    /// Supported platforms: Windows x64, Linux x64, and Android ARM.
+    /// Supported platforms: Windows x64, Linux x64, macOS arm64, and Android ARM.
     /// 
-    /// GPU Support:
-    /// - Windows: CUDA (NVIDIA), TensorRT (NVIDIA)
-    /// - Linux: CUDA (NVIDIA), TensorRT (NVIDIA)
-    /// - Android: NNAPI with CPU fallback
+    /// Automatic acceleration: DirectML on Windows, WebGPU on Linux, CoreML on
+    /// Apple-silicon macOS, and NNAPI on Android, each with CPU fallback.
+    /// The optional NVIDIA package prepends TensorRT-RTX and CUDA on Windows/Linux.
     /// </summary>
     [CreateAssetMenu(fileName = "OnnxRuntimeBackend", menuName = "KitsuMate/ONNX/Backends/ONNX Runtime")]
     public class OnnxRuntimeBackend : OnnxBackend
     {
+        internal const string NativeDependencyPathEnvironmentVariable = "KITSUMATE_ORT_NATIVE_PATH";
+
+        private static readonly object NativeDependencyPathLock = new();
+        private static bool _nativeDependencyPathConfigured;
+
         public override string BackendId => "onnxruntime";
+        [SerializeField, Tooltip("Automatic selects the registered platform default and CPU fallback. Explicit preserves the serialized provider order.")]
+        private OnnxProviderSelectionMode _providerSelectionMode = OnnxProviderSelectionMode.Automatic;
+
         [SerializeField, Tooltip("Providers are attempted in order. Include CPU explicitly to allow initialization fallback.")]
         private List<OnnxExecutionProvider> _providerOrder = new()
         {
-            OnnxExecutionProvider.TensorRt,
+            OnnxExecutionProvider.TensorRtRtx,
             OnnxExecutionProvider.Cuda,
             OnnxExecutionProvider.DirectMl,
-            OnnxExecutionProvider.OpenVino,
+            OnnxExecutionProvider.WebGpu,
+            OnnxExecutionProvider.CoreMl,
             OnnxExecutionProvider.Nnapi,
             OnnxExecutionProvider.Cpu,
         };
         
         [SerializeField, Tooltip("GPU device ID (for multi-GPU systems).")]
         private int _gpuDeviceId;
+
+        [SerializeField, Tooltip("Automatic matches Unity's active render GPU independently for each provider. Explicit uses GPU Device ID.")]
+        private OnnxDeviceSelectionMode _deviceSelectionMode = OnnxDeviceSelectionMode.Automatic;
         
         private static readonly RuntimePlatform[] _supportedPlatforms =
         {
@@ -46,6 +91,8 @@ namespace KitsuMate.Onnx
             RuntimePlatform.WindowsEditor,
             RuntimePlatform.LinuxPlayer,
             RuntimePlatform.LinuxEditor,
+            RuntimePlatform.OSXPlayer,
+            RuntimePlatform.OSXEditor,
             RuntimePlatform.Android,
         };
         
@@ -58,6 +105,12 @@ namespace KitsuMate.Onnx
         /// </summary>
         public IReadOnlyList<OnnxExecutionProvider> ProviderOrder => EffectiveProviderOrder;
 
+        public OnnxProviderSelectionMode ProviderSelectionMode
+        {
+            get => _providerSelectionMode;
+            set => _providerSelectionMode = value;
+        }
+
         public int DeviceId
         {
             get => _gpuDeviceId;
@@ -65,7 +118,21 @@ namespace KitsuMate.Onnx
             {
                 if (value < 0) throw new ArgumentOutOfRangeException(nameof(value));
                 _gpuDeviceId = value;
+                _deviceSelectionMode = OnnxDeviceSelectionMode.Explicit;
             }
+        }
+
+        public OnnxDeviceSelectionMode DeviceSelectionMode
+        {
+            get => _deviceSelectionMode;
+            set => _deviceSelectionMode = value;
+        }
+
+        public IReadOnlyList<OnnxExecutionDeviceInfo> GetDevices(OnnxExecutionProvider provider)
+        {
+            if (!OnnxRuntimeProviderRegistry.TryGet(provider, out IOnnxRuntimeProviderModule module))
+                return Array.Empty<OnnxExecutionDeviceInfo>();
+            return module.GetDevices();
         }
 
         public void SetProviderOrder(params OnnxExecutionProvider[] providers)
@@ -73,12 +140,13 @@ namespace KitsuMate.Onnx
             if (providers == null) throw new ArgumentNullException(nameof(providers));
             ValidateProviderOrder(providers);
             _providerOrder = new List<OnnxExecutionProvider>(providers);
+            _providerSelectionMode = OnnxProviderSelectionMode.Explicit;
         }
 
         private IReadOnlyList<OnnxExecutionProvider> EffectiveProviderOrder =>
-            _providerOrder != null
-                ? _providerOrder
-                : Array.Empty<OnnxExecutionProvider>();
+            _providerSelectionMode == OnnxProviderSelectionMode.Automatic
+                ? OnnxRuntimeProviderRegistry.ResolveAutomatic(Application.platform)
+                : (IReadOnlyList<OnnxExecutionProvider>)_providerOrder ?? Array.Empty<OnnxExecutionProvider>();
         
         /// <summary>Platforms this backend supports.</summary>
         public override IReadOnlyList<RuntimePlatform> SupportedPlatforms => _supportedPlatforms;
@@ -134,6 +202,16 @@ namespace KitsuMate.Onnx
             Func<SessionOptions, InferenceSession> create,
             string modelDescription)
         {
+            // Runtime fallback may recreate a session long after this call returns. Capture a
+            // value snapshot instead of retaining a caller-owned mutable options instance.
+            var optionSnapshot = new OnnxSessionOptions
+            {
+                OptimizationLevel = options.OptimizationLevel,
+                EnableMemoryPattern = options.EnableMemoryPattern,
+                EnableCpuMemArena = options.EnableCpuMemArena,
+                IntraOpThreads = options.IntraOpThreads,
+                InterOpThreads = options.InterOpThreads
+            };
             IReadOnlyList<OnnxExecutionProvider> requested = EffectiveProviderOrder.ToArray();
             IReadOnlyList<OnnxExecutionProvider> packaged = GetPackagedProviders();
             ValidateProviderOrder(requested);
@@ -143,6 +221,18 @@ namespace KitsuMate.Onnx
 
             var failures = new List<string>();
             var attempted = new List<OnnxExecutionProvider>();
+            OnnxRuntimeSessionState CreateState(int providerIndex)
+            {
+                OnnxExecutionProvider selectedProvider = eligible[providerIndex];
+                OnnxExecutionDeviceInfo selectedDevice = ResolveDevice(
+                    selectedProvider, _deviceSelectionMode, _gpuDeviceId, out string selectedReason);
+                using SessionOptions selectedOptions = CreateOrtSessionOptions(
+                    optionSnapshot, selectedProvider, selectedDevice.ProviderDeviceIndex);
+                return new OnnxRuntimeSessionState(
+                    create(selectedOptions), selectedProvider, selectedDevice,
+                    GetDeviceProviderName(selectedProvider), providerIndex, selectedReason);
+            }
+
             for (int index = 0; index < eligible.Count; index++)
             {
                 OnnxExecutionProvider provider = eligible[index];
@@ -150,14 +240,23 @@ namespace KitsuMate.Onnx
                 var sw = Stopwatch.StartNew();
                 try
                 {
-                    using SessionOptions ortOptions = CreateOrtSessionOptions(options, provider);
-                    InferenceSession session = create(ortOptions);
+                    OnnxRuntimeSessionState state = CreateState(index);
                     var diagnostics = new OnnxSessionDiagnostics(
                         requested, eligible, skipped, attempted, failures, packaged, provider,
-                        typeof(InferenceSession).Assembly.GetName().Version?.ToString(), _gpuDeviceId);
+                        typeof(InferenceSession).Assembly.GetName().Version?.ToString(), state.Device.ProviderDeviceIndex);
+                    diagnostics.SetInitialDevice(state.Device);
+                    string skippedSummary = skipped.Count == 0
+                        ? string.Empty
+                        : $", skipped=[{string.Join("; ", skipped.Select(item => $"{item.Provider}: {item.Reason}"))}]";
+                    string failureSummary = failures.Count == 0
+                        ? string.Empty
+                        : $", failed=[{string.Join("; ", failures)}]";
                     Debug.Log($"[OnnxRuntimeBackend] Session created in {sw.ElapsedMilliseconds}ms " +
-                              $"({modelDescription}, provider={provider})");
-                    return new OnnxRuntimeSession(session, diagnostics, GetDeviceProviderName(provider), _gpuDeviceId);
+                              $"({modelDescription}, provider={provider}, device={state.Device.DisplayName}, selection={state.SelectionReason}{skippedSummary}{failureSummary})");
+                    return new OnnxRuntimeSession(
+                        state, diagnostics,
+                        _providerSelectionMode == OnnxProviderSelectionMode.Automatic ? CreateState : null,
+                        eligible);
                 }
                 catch (Exception exception) when (index + 1 < eligible.Count)
                 {
@@ -175,8 +274,12 @@ namespace KitsuMate.Onnx
             throw new OnnxProviderUnavailableException(requested[0], "No eligible ONNX execution provider could be initialized.");
         }
 
-        private SessionOptions CreateOrtSessionOptions(OnnxSessionOptions options, OnnxExecutionProvider provider)
+        private static SessionOptions CreateOrtSessionOptions(
+            OnnxSessionOptions options,
+            OnnxExecutionProvider provider,
+            int gpuDeviceId)
         {
+            ConfigureNativeDependencySearchPath();
             var ortOptions = new SessionOptions
             {
                 GraphOptimizationLevel = ToOrtOptimizationLevel(options.OptimizationLevel),
@@ -194,8 +297,64 @@ namespace KitsuMate.Onnx
             if (options.InterOpThreads > 0)
                 ortOptions.InterOpNumThreads = options.InterOpThreads;
             
-            AppendProvider(ortOptions, provider);
+            AppendProvider(ortOptions, provider, gpuDeviceId);
             return ortOptions;
+        }
+
+        internal static OnnxExecutionDeviceInfo ResolveDevice(
+            OnnxExecutionProvider provider,
+            OnnxDeviceSelectionMode selectionMode,
+            int explicitDeviceId,
+            out string reason)
+        {
+            if (!OnnxRuntimeProviderRegistry.TryGet(provider, out IOnnxRuntimeProviderModule module))
+                throw new OnnxProviderUnavailableException(provider, $"No provider module is installed for '{provider}'.");
+
+            IReadOnlyList<OnnxExecutionDeviceInfo> devices = module.GetDevices();
+            return SelectDevice(provider, devices, selectionMode, explicitDeviceId, out reason);
+        }
+
+        internal static OnnxExecutionDeviceInfo SelectDevice(
+            OnnxExecutionProvider provider,
+            IReadOnlyList<OnnxExecutionDeviceInfo> devices,
+            OnnxDeviceSelectionMode selectionMode,
+            int explicitDeviceId,
+            out string reason)
+        {
+            if (devices.Count == 0)
+                throw new OnnxProviderUnavailableException(provider, $"Provider '{provider}' exposed no devices.");
+
+            if (selectionMode == OnnxDeviceSelectionMode.Explicit)
+            {
+                if ((uint)explicitDeviceId >= (uint)devices.Count)
+                    throw new OnnxProviderUnavailableException(provider,
+                        $"Explicit device id {explicitDeviceId} is invalid for '{provider}', which exposed {devices.Count} device(s).");
+                reason = "explicit provider-relative index";
+                return devices[explicitDeviceId];
+            }
+
+            OnnxRuntimeGraphicsDeviceHint.Get(out uint vendorId, out uint deviceId, out string graphicsName);
+            OnnxExecutionDeviceInfo exact = devices.FirstOrDefault(device =>
+                vendorId != 0 && deviceId != 0 && device.VendorId == vendorId && device.HardwareDeviceId == deviceId);
+            if (exact != null)
+            {
+                reason = $"matched Unity graphics device '{graphicsName}' ({vendorId:X4}:{deviceId:X4})";
+                return exact;
+            }
+
+            OnnxExecutionDeviceInfo[] gpuDevices = devices
+                .Where(device => !string.Equals(device.HardwareType, "CPU", StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+            if (gpuDevices.Length == 1)
+            {
+                reason = "provider exposed one accelerator";
+                return gpuDevices[0];
+            }
+
+            reason = gpuDevices.Length > 1
+                ? $"Unity graphics device did not match; deterministically selected provider device 0 from {gpuDevices.Length} accelerators"
+                : "provider exposed one CPU/default device";
+            return gpuDevices.Length > 0 ? gpuDevices[0] : devices[0];
         }
 
         private static GraphOptimizationLevel ToOrtOptimizationLevel(OnnxOptimizationLevel level)
@@ -209,45 +368,56 @@ namespace KitsuMate.Onnx
             };
         }
         
-        private void AppendProvider(SessionOptions options, OnnxExecutionProvider provider)
+        private static void AppendProvider(SessionOptions options, OnnxExecutionProvider provider, int gpuDeviceId)
         {
-            switch (provider)
+            if (!OnnxRuntimeProviderRegistry.TryGet(provider, out IOnnxRuntimeProviderModule module))
+                throw new OnnxProviderUnavailableException(
+                    provider,
+                    $"No provider module is installed for '{provider}'. Legacy TensorRT and OpenVINO values are retained only for serialized compatibility.");
+            if (!module.IsEnabled)
+                throw new OnnxProviderUnavailableException(provider, $"Provider module '{provider}' is disabled by the active Build Profile.");
+            module.Append(options, gpuDeviceId);
+        }
+
+        internal static IReadOnlyList<string> GetRuntimeAvailableProviderNames()
+        {
+            ConfigureNativeDependencySearchPath();
+            return Array.AsReadOnly(OrtEnv.Instance().GetAvailableProviders().ToArray());
+        }
+
+        internal static string GetRuntimeVersion()
+        {
+            return typeof(InferenceSession).Assembly.GetName().Version?.ToString() ?? string.Empty;
+        }
+
+        internal static string ProbeProviderInitialization(OnnxExecutionProvider provider, int gpuDeviceId)
+        {
+            try
             {
-                case OnnxExecutionProvider.Cpu:
-                    options.AppendExecutionProvider_CPU(0);
-                    return;
-                case OnnxExecutionProvider.Cuda:
-                    options.AppendExecutionProvider_CUDA(_gpuDeviceId);
-                    return;
-                case OnnxExecutionProvider.TensorRt:
-                    options.AppendExecutionProvider_Tensorrt(_gpuDeviceId);
-                    return;
-                case OnnxExecutionProvider.Nnapi:
-#if UNITY_ANDROID && !UNITY_EDITOR
-                    EnsureNnapiApiLevel();
-                    options.AppendExecutionProvider_Nnapi();
-                    return;
-#else
-                    throw new PlatformNotSupportedException("NNAPI is only available in Android players.");
-#endif
-                case OnnxExecutionProvider.DirectMl:
-                    InvokeProviderMethod(options, "AppendExecutionProvider_DML", _gpuDeviceId);
-                    return;
-                case OnnxExecutionProvider.OpenVino:
-                    InvokeProviderMethod(options, "AppendExecutionProvider_OpenVINO", "CPU_FP32");
-                    return;
-                default:
-                    throw new ArgumentOutOfRangeException(nameof(provider), provider, null);
+                using SessionOptions options = CreateOrtSessionOptions(OnnxSessionOptions.Default, provider, gpuDeviceId);
+                return null;
+            }
+            catch (Exception exception)
+            {
+                Exception root = exception.GetBaseException();
+                return $"{root.GetType().Name}: {root.Message}";
             }
         }
 
-        private static void InvokeProviderMethod(SessionOptions options, string methodName, object argument)
+        internal static string ProbeProviderRegistration(OnnxExecutionProvider provider)
         {
-            System.Reflection.MethodInfo method = typeof(SessionOptions).GetMethods()
-                .FirstOrDefault(candidate => candidate.Name == methodName && candidate.GetParameters().Length == 1);
-            if (method == null)
-                throw new MissingMethodException(typeof(SessionOptions).FullName, methodName);
-            method.Invoke(options, new[] { argument });
+            try
+            {
+                if (!OnnxRuntimeProviderRegistry.TryGet(provider, out IOnnxRuntimeProviderModule module))
+                    return "No provider module is installed.";
+                module.EnsureRegistered();
+                return null;
+            }
+            catch (Exception exception)
+            {
+                Exception root = exception.GetBaseException();
+                return $"{root.GetType().Name}: {root.Message}";
+            }
         }
 
         private static void ValidateProviderOrder(IReadOnlyList<OnnxExecutionProvider> providers)
@@ -260,18 +430,10 @@ namespace KitsuMate.Onnx
                     throw new ArgumentException($"Provider order contains duplicate provider '{provider}'.", nameof(providers));
         }
 
-        public static bool IsProviderValidForPlatform(OnnxExecutionProvider provider, RuntimePlatform platform)
-        {
-            return platform switch
-            {
-                RuntimePlatform.WindowsEditor or RuntimePlatform.WindowsPlayer =>
-                    provider is OnnxExecutionProvider.Cpu or OnnxExecutionProvider.DirectMl or OnnxExecutionProvider.Cuda or OnnxExecutionProvider.TensorRt,
-                RuntimePlatform.LinuxEditor or RuntimePlatform.LinuxPlayer =>
-                    provider is OnnxExecutionProvider.Cpu or OnnxExecutionProvider.Cuda or OnnxExecutionProvider.TensorRt or OnnxExecutionProvider.OpenVino,
-                RuntimePlatform.Android => provider is OnnxExecutionProvider.Cpu or OnnxExecutionProvider.Nnapi,
-                _ => false
-            };
-        }
+        public static bool IsSupportedPlatform(RuntimePlatform platform) => _supportedPlatforms.Contains(platform);
+
+        public static bool IsProviderValidForPlatform(OnnxExecutionProvider provider, RuntimePlatform platform) =>
+            OnnxRuntimeProviderRegistry.TryGet(provider, out IOnnxRuntimeProviderModule module) && module.Supports(platform);
 
         public static IReadOnlyList<OnnxExecutionProvider> ResolveProviderOrder(
             IReadOnlyList<OnnxExecutionProvider> configured,
@@ -296,9 +458,19 @@ namespace KitsuMate.Onnx
             var omitted = new List<OnnxProviderSkip>();
             foreach (OnnxExecutionProvider provider in configured)
             {
-                if (!IsProviderValidForPlatform(provider, platform))
+                if (!OnnxRuntimeProviderRegistry.TryGet(provider, out IOnnxRuntimeProviderModule module))
+                {
+                    omitted.Add(new OnnxProviderSkip(provider, "No provider module is installed."));
+                    continue;
+                }
+                if (!module.Supports(platform))
                 {
                     omitted.Add(new OnnxProviderSkip(provider, $"Not supported on {platform}."));
+                    continue;
+                }
+                if (!module.IsEnabled)
+                {
+                    omitted.Add(new OnnxProviderSkip(provider, "Disabled by the active Unity Build Profile."));
                     continue;
                 }
                 if (!packaged.Contains(provider))
@@ -320,23 +492,40 @@ namespace KitsuMate.Onnx
 
         public static IReadOnlyList<OnnxExecutionProvider> GetPackagedProviders()
         {
-            var providers = new List<OnnxExecutionProvider> { OnnxExecutionProvider.Cpu };
-#if KITSUMATE_ORT_DIRECTML
-            providers.Add(OnnxExecutionProvider.DirectMl);
-#endif
-#if KITSUMATE_ORT_CUDA
-            providers.Add(OnnxExecutionProvider.Cuda);
-#endif
-#if KITSUMATE_ORT_TENSORRT
-            providers.Add(OnnxExecutionProvider.TensorRt);
-#endif
-#if KITSUMATE_ORT_OPENVINO
-            providers.Add(OnnxExecutionProvider.OpenVino);
-#endif
-#if UNITY_ANDROID && !UNITY_EDITOR && KITSUMATE_ORT_NNAPI
-            providers.Add(OnnxExecutionProvider.Nnapi);
-#endif
-            return providers.AsReadOnly();
+            return Array.AsReadOnly(OnnxRuntimeProviderRegistry.GetModules()
+                .Where(module => module.IsEnabled && module.Supports(Application.platform))
+                .OrderByDescending(module => module.AutomaticPriority)
+                .ThenBy(module => (int)module.Provider)
+                .Select(module => module.Provider)
+                .ToArray());
+        }
+
+        internal static void ConfigureNativeDependencySearchPath()
+        {
+            lock (NativeDependencyPathLock)
+            {
+                if (_nativeDependencyPathConfigured) return;
+                _nativeDependencyPathConfigured = true;
+
+                string configured = Environment.GetEnvironmentVariable(NativeDependencyPathEnvironmentVariable);
+                if (string.IsNullOrWhiteSpace(configured)) return;
+
+                string current = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
+                var currentDirectories = new HashSet<string>(
+                    current.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries),
+                    StringComparer.OrdinalIgnoreCase);
+                string[] additions = configured
+                    .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
+                    .Select(value => value.Trim().Trim('"'))
+                    .Where(Directory.Exists)
+                    .Where(currentDirectories.Add)
+                    .ToArray();
+                if (additions.Length == 0) return;
+
+                Environment.SetEnvironmentVariable(
+                    "PATH",
+                    string.Join(Path.PathSeparator.ToString(), additions.Append(current)));
+            }
         }
 
         private static string GetDeviceProviderName(OnnxExecutionProvider provider)
@@ -344,8 +533,10 @@ namespace KitsuMate.Onnx
             return provider switch
             {
                 OnnxExecutionProvider.Cuda => "Cuda",
-                OnnxExecutionProvider.TensorRt => "Tensorrt",
+                OnnxExecutionProvider.TensorRtRtx => "Cuda",
                 OnnxExecutionProvider.DirectMl => "DML",
+                OnnxExecutionProvider.WebGpu => "WebGPU",
+                OnnxExecutionProvider.CoreMl => "CoreML",
                 _ => null
             };
         }
@@ -368,12 +559,13 @@ namespace KitsuMate.Onnx
     /// </summary>
     internal class OnnxRuntimeSession : IOnnxDeviceSession
     {
-        private readonly InferenceSession _session;
+        private OnnxRuntimeSessionState _state;
+        private readonly Func<int, OnnxRuntimeSessionState> _fallbackFactory;
+        private readonly IReadOnlyList<OnnxExecutionProvider> _eligibleProviders;
+        private readonly object _transitionGate = new();
+        private readonly List<OnnxRuntimeSessionState> _retiredStates = new();
         private readonly List<string> _inputNames;
         private readonly List<string> _outputNames;
-        private readonly string _gpuProviderName; // e.g. "Cuda", "DML", "Tensorrt", or null for CPU-only
-        private readonly int _gpuDeviceId;
-        private OrtMemoryInfo _gpuMemInfo; // lazily created for IO Binding
         private int _disposed; // 0 = alive, 1 = disposed (atomic via Interlocked)
         
         // Tracks all OrtDeviceTensors created by this session so orphans can be
@@ -395,13 +587,29 @@ namespace KitsuMate.Onnx
             OnnxSessionDiagnostics diagnostics,
             string gpuProviderName = null,
             int gpuDeviceId = 0)
+            : this(
+                new OnnxRuntimeSessionState(
+                    session, diagnostics?.InitializedPrimaryProvider ?? OnnxExecutionProvider.Cpu,
+                    new OnnxExecutionDeviceInfo(
+                        diagnostics?.InitializedPrimaryProvider ?? OnnxExecutionProvider.Cpu,
+                        gpuDeviceId, gpuProviderName == null ? "CPU" : "GPU", 0, 0, string.Empty, string.Empty),
+                    gpuProviderName, 0, "legacy constructor"),
+                diagnostics, null, new[] { diagnostics?.InitializedPrimaryProvider ?? OnnxExecutionProvider.Cpu })
         {
-            _session = session ?? throw new ArgumentNullException(nameof(session));
+        }
+
+        internal OnnxRuntimeSession(
+            OnnxRuntimeSessionState state,
+            OnnxSessionDiagnostics diagnostics,
+            Func<int, OnnxRuntimeSessionState> fallbackFactory,
+            IReadOnlyList<OnnxExecutionProvider> eligibleProviders)
+        {
+            _state = state ?? throw new ArgumentNullException(nameof(state));
             Diagnostics = diagnostics ?? throw new ArgumentNullException(nameof(diagnostics));
-            _gpuProviderName = gpuProviderName;
-            _gpuDeviceId = gpuDeviceId;
-            _inputNames = session.InputMetadata.Keys.ToList();
-            _outputNames = session.OutputMetadata.Keys.ToList();
+            _fallbackFactory = fallbackFactory;
+            _eligibleProviders = eligibleProviders ?? throw new ArgumentNullException(nameof(eligibleProviders));
+            _inputNames = state.Session.InputMetadata.Keys.ToList();
+            _outputNames = state.Session.OutputMetadata.Keys.ToList();
         }
         
         public IReadOnlyDictionary<string, OnnxTensor> Run(IReadOnlyDictionary<string, OnnxTensor> inputs)
@@ -418,49 +626,97 @@ namespace KitsuMate.Onnx
         public IReadOnlyDictionary<string, OnnxTensor> Run(IReadOnlyList<OnnxNamedValue> inputs)
         {
             ThrowIfDisposed();
-            var sw = VerboseLogging ? Stopwatch.StartNew() : null;
-            
-            // Convert to ONNX Runtime format, auto-casting float↔float16 when needed
-            var ortInputs = new List<NamedOnnxValue>(inputs.Count);
-            foreach (var input in inputs)
+            while (true)
             {
-                var tensor = input.Value;
-                if (_session.InputMetadata.TryGetValue(input.Name, out var meta))
+                OnnxRuntimeSessionState state = _state;
+                try
+                {
+                    return RunCore(state, inputs);
+                }
+                catch (Exception exception) when (ShouldAttemptRuntimeFallback(exception))
+                {
+                    if (!TryTransition(state, exception)) throw;
+                }
+            }
+        }
+
+        private IReadOnlyDictionary<string, OnnxTensor> RunCore(
+            OnnxRuntimeSessionState state,
+            IReadOnlyList<OnnxNamedValue> inputs)
+        {
+            var sw = VerboseLogging ? Stopwatch.StartNew() : null;
+            var ortInputs = new List<NamedOnnxValue>(inputs.Count);
+            foreach (OnnxNamedValue input in inputs)
+            {
+                OnnxTensor tensor = input.Value;
+                if (state.Session.InputMetadata.TryGetValue(input.Name, out NodeMetadata meta))
                     tensor = CastTensorIfNeeded(tensor, meta.ElementDataType);
                 ortInputs.Add(ConvertToOrtValue(input.Name, tensor));
             }
-            
-            long inputConvertMs = 0;
-            if (sw != null)
-            {
-                inputConvertMs = sw.ElapsedMilliseconds;
-                sw.Restart();
-            }
-            
-            // Run inference
-            using var results = _session.Run(ortInputs);
-            
-            long inferenceMs = 0;
-            if (sw != null)
-            {
-                inferenceMs = sw.ElapsedMilliseconds;
-                sw.Restart();
-            }
-            
-            // Convert results back
+            long inputConvertMs = sw?.ElapsedMilliseconds ?? 0;
+            sw?.Restart();
+            using IDisposableReadOnlyCollection<DisposableNamedOnnxValue> results = state.Session.Run(ortInputs);
+            long inferenceMs = sw?.ElapsedMilliseconds ?? 0;
+            sw?.Restart();
             var outputs = new Dictionary<string, OnnxTensor>();
-            foreach (var result in results)
-            {
+            foreach (DisposableNamedOnnxValue result in results)
                 outputs[result.Name] = ConvertFromOrtValue(result);
-            }
-            
             if (sw != null)
-            {
-                long outputConvertMs = sw.ElapsedMilliseconds;
-                Debug.Log($"[OnnxSession] Run: inputConvert={inputConvertMs}ms, inference={inferenceMs}ms, outputConvert={outputConvertMs}ms ({inputs.Count} inputs → {outputs.Count} outputs)");
-            }
-            
+                Debug.Log($"[OnnxSession] Run: provider={state.Provider}, inputConvert={inputConvertMs}ms, inference={inferenceMs}ms, " +
+                          $"outputConvert={sw.ElapsedMilliseconds}ms ({inputs.Count} inputs → {outputs.Count} outputs)");
             return outputs;
+        }
+
+        private bool ShouldAttemptRuntimeFallback(Exception exception)
+        {
+            if (_fallbackFactory == null || exception is OperationCanceledException || exception is ObjectDisposedException ||
+                exception is OnnxModelContractException || exception is OnnxModelPreparationException)
+                return false;
+            Exception root = exception.GetBaseException();
+            if (root is not OnnxRuntimeException) return false;
+            string message = root.Message ?? string.Empty;
+            return message.Contains("[ErrorCode:Fail]", StringComparison.OrdinalIgnoreCase) ||
+                   message.Contains("[ErrorCode:RuntimeException]", StringComparison.OrdinalIgnoreCase) ||
+                   message.Contains("[ErrorCode:EngineError]", StringComparison.OrdinalIgnoreCase) ||
+                   message.Contains("[ErrorCode:EPFail]", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private bool TryTransition(OnnxRuntimeSessionState failedState, Exception executionException)
+        {
+            lock (_transitionGate)
+            {
+                ThrowIfDisposed();
+                if (!ReferenceEquals(failedState, _state)) return true;
+
+                var transitionFailures = new List<Exception> { executionException };
+                for (int index = failedState.ProviderIndex + 1; index < _eligibleProviders.Count; index++)
+                {
+                    try
+                    {
+                        OnnxRuntimeSessionState replacement = _fallbackFactory(index);
+                        _retiredStates.Add(failedState);
+                        _state = replacement;
+                        Diagnostics.RecordExecutionFallback(
+                            failedState.Provider, replacement.Provider, replacement.Device, executionException);
+                        Debug.LogWarning($"[OnnxRuntimeBackend] Provider execution failed; switched " +
+                                         $"{failedState.Provider} → {replacement.Provider}. " +
+                                         executionException.GetBaseException().Message);
+                        return true;
+                    }
+                    catch (Exception creationException)
+                    {
+                        transitionFailures.Add(creationException);
+                        Debug.LogWarning($"[OnnxRuntimeBackend] Runtime fallback provider " +
+                                         $"'{_eligibleProviders[index]}' failed to initialize: " +
+                                         creationException.GetBaseException().Message);
+                    }
+                }
+
+                throw new OnnxProviderUnavailableException(
+                    failedState.Provider,
+                    $"ONNX provider '{failedState.Provider}' failed during execution and no runtime fallback remains.",
+                    new AggregateException(transitionFailures));
+            }
         }
         
         public async Awaitable<IReadOnlyDictionary<string, OnnxTensor>> RunAsync(IReadOnlyDictionary<string, OnnxTensor> inputs)
@@ -615,18 +871,44 @@ namespace KitsuMate.Onnx
             IReadOnlyCollection<string> cpuOutputNames)
         {
             ThrowIfDisposed();
+            while (true)
+            {
+                OnnxRuntimeSessionState state = _state;
+                try
+                {
+                    return RunOnDeviceCore(state, cpuInputs, deviceInputs, cpuOutputNames);
+                }
+                catch (Exception exception) when (ShouldAttemptRuntimeFallback(exception))
+                {
+                    if (!TryTransition(state, exception)) throw;
+                }
+            }
+        }
+
+        private IReadOnlyList<IDeviceTensor> RunOnDeviceCore(
+            OnnxRuntimeSessionState state,
+            IReadOnlyList<OnnxNamedValue> cpuInputs,
+            IReadOnlyList<IDeviceTensor> deviceInputs,
+            IReadOnlyCollection<string> cpuOutputNames)
+        {
+            // Device tensors from a retired provider generation cannot be rebound to
+            // the replacement session. Stage them through CPU without exposing this
+            // transition detail to the caller.
+            if (deviceInputs.Any(input => input is OrtDeviceTensor tensor && !tensor.BelongsTo(this, state)))
+                return RunOnDeviceFallback(cpuInputs, deviceInputs, cpuOutputNames);
             
             var sw = VerboseLogging ? Stopwatch.StartNew() : null;
             
             // Lazily create GPU memory info for IO Binding output placement
-            if (_gpuMemInfo == null && _gpuProviderName != null)
+            if (state.GpuMemoryInfo == null && state.GpuProviderName != null)
             {
-                _gpuMemInfo = new OrtMemoryInfo(
-                    _gpuProviderName, OrtAllocatorType.DeviceAllocator, _gpuDeviceId, OrtMemType.Default);
+                state.GpuMemoryInfo = new OrtMemoryInfo(
+                    state.GpuProviderName, OrtAllocatorType.DeviceAllocator,
+                    state.Device.ProviderDeviceIndex, OrtMemType.Default);
             }
             
             // If no GPU available, fall back to regular Run wrapped in CpuDeviceTensors
-            if (_gpuMemInfo == null)
+            if (state.GpuMemoryInfo == null)
                 return RunOnDeviceFallback(cpuInputs, deviceInputs, cpuOutputNames);
             
             var cpuMemInfo = OrtMemoryInfo.DefaultInstance;
@@ -634,7 +916,7 @@ namespace KitsuMate.Onnx
                 ? new HashSet<string>(cpuOutputNames)
                 : null; // null = all on CPU
             
-            using var binding = _session.CreateIoBinding();
+            using var binding = state.Session.CreateIoBinding();
             var cpuOrtValues = new List<OrtValue>(cpuInputs.Count);
             
             try
@@ -643,7 +925,7 @@ namespace KitsuMate.Onnx
                 foreach (var input in cpuInputs)
                 {
                     var tensor = input.Value;
-                    if (_session.InputMetadata.TryGetValue(input.Name, out var meta))
+                    if (state.Session.InputMetadata.TryGetValue(input.Name, out var meta))
                         tensor = CastTensorIfNeeded(tensor, meta.ElementDataType);
                     var ortVal = CreateOrtValueFromTensor(tensor);
                     cpuOrtValues.Add(ortVal);
@@ -655,7 +937,7 @@ namespace KitsuMate.Onnx
                 {
                     if (dt is not OrtDeviceTensor ortDt)
                         throw new ArgumentException($"Device input '{dt?.Name}' was created by an incompatible backend.", nameof(deviceInputs));
-                    ortDt.ValidateFor(this, _session.InputMetadata.TryGetValue(dt.Name, out var metadata) ? metadata : null);
+                    ortDt.ValidateFor(this, state, state.Session.InputMetadata.TryGetValue(dt.Name, out var metadata) ? metadata : null);
                     binding.BindInput(dt.Name, ortDt.Value);
                 }
                 
@@ -665,7 +947,7 @@ namespace KitsuMate.Onnx
                     if (cpuOutputSet == null || cpuOutputSet.Contains(outName))
                         binding.BindOutputToDevice(outName, cpuMemInfo);
                     else
-                        binding.BindOutputToDevice(outName, _gpuMemInfo);
+                        binding.BindOutputToDevice(outName, state.GpuMemoryInfo);
                 }
                 
                 long bindMs = 0;
@@ -677,7 +959,7 @@ namespace KitsuMate.Onnx
                 
                 // Run inference with IO Binding
                 using var runOptions = new RunOptions();
-                _session.RunWithBinding(runOptions, binding);
+                state.Session.RunWithBinding(runOptions, binding);
                 
                 long inferenceMs = 0;
                 if (sw != null)
@@ -695,7 +977,7 @@ namespace KitsuMate.Onnx
                 {
                     for (int i = 0; i < resultCollection.Count; i++)
                     {
-                        var deviceTensor = new OrtDeviceTensor(resultCollection[i], _outputNames[i], this);
+                        var deviceTensor = new OrtDeviceTensor(resultCollection[i], _outputNames[i], this, state);
                         lock (_trackedDeviceTensors) _trackedDeviceTensors.Add(deviceTensor);
                         outputs.Add(deviceTensor);
                     }
@@ -806,9 +1088,10 @@ namespace KitsuMate.Onnx
                     dt.Dispose();
             }
             
-            _gpuMemInfo?.Dispose();
-            _gpuMemInfo = null;
-            _session?.Dispose();
+            _state?.Dispose();
+            foreach (OnnxRuntimeSessionState retiredState in _retiredStates)
+                retiredState.Dispose();
+            _retiredStates.Clear();
         }
         
         private void ThrowIfDisposed()
@@ -826,17 +1109,23 @@ namespace KitsuMate.Onnx
     {
         private OrtValue _value;
         private OnnxRuntimeSession _ownerSession;
+        private readonly OnnxRuntimeSessionState _ownerState;
         
         public string Name { get; set; }
         
         /// <summary>Internal access to the underlying OrtValue for IO Binding.</summary>
         internal OrtValue Value => _value;
         
-        public OrtDeviceTensor(OrtValue value, string name, OnnxRuntimeSession owner = null)
+        public OrtDeviceTensor(
+            OrtValue value,
+            string name,
+            OnnxRuntimeSession owner = null,
+            OnnxRuntimeSessionState ownerState = null)
         {
             _value = value ?? throw new ArgumentNullException(nameof(value));
             Name = name;
             _ownerSession = owner;
+            _ownerState = ownerState;
         }
         
         public OnnxTensor ToCpu()
@@ -874,11 +1163,20 @@ namespace KitsuMate.Onnx
             return OnnxTensor.FromArray(floats, shape, Name);
         }
 
-        internal void ValidateFor(OnnxRuntimeSession session, NodeMetadata metadata)
+        internal bool BelongsTo(OnnxRuntimeSession session, OnnxRuntimeSessionState state) =>
+            ReferenceEquals(_ownerSession, session) && ReferenceEquals(_ownerState, state);
+
+        internal void ValidateFor(
+            OnnxRuntimeSession session,
+            OnnxRuntimeSessionState state,
+            NodeMetadata metadata)
         {
             if (_value == null) throw new ObjectDisposedException(nameof(OrtDeviceTensor));
             if (!ReferenceEquals(_ownerSession, session))
                 throw new ArgumentException($"Device tensor '{Name}' belongs to a different ONNX Runtime session.");
+            if (!ReferenceEquals(_ownerState, state))
+                throw new OnnxRuntimeLifecycleException(
+                    $"Device tensor '{Name}' belongs to a retired provider generation and must be staged through CPU.");
             if (metadata == null)
                 throw new OnnxModelContractException($"Model does not declare device input '{Name}'.");
             var actual = _value.GetTensorTypeAndShape();

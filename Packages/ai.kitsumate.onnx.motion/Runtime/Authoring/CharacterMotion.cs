@@ -145,11 +145,19 @@ namespace KitsuMate.Onnx.Motion
                     result.Warning("empty_keyframe", $"Frame {keyframe.Frame} has no enabled constraints.");
                 if (!CharacterMotionSpace.IsFinite(keyframe.transform.position) || !CharacterMotionSpace.IsFinite(keyframe.transform.rotation))
                     result.Error("non_finite_transform", $"Frame {keyframe.Frame} contains a non-finite transform.");
+                Vector3 keyframeScale = keyframe.transform.lossyScale;
+                if (!CharacterMotionSpace.IsFinite(keyframeScale) ||
+                    Mathf.Max(Mathf.Abs(keyframeScale.x - 1f),
+                        Mathf.Max(Mathf.Abs(keyframeScale.y - 1f), Mathf.Abs(keyframeScale.z - 1f))) > 1e-3f)
+                    result.Error("keyframe_scale",
+                        $"Frame {keyframe.Frame} must have unit world scale; its Transform supplies root position and rotation only.");
                 if ((keyframe.Constraints & CharacterMotionConstraintType.RootHeading) != 0 &&
                     CharacterMotionSpace.WorldForwardToHeading(keyframe.transform.forward, ActionOrigin).sqrMagnitude < 0.5f)
                     result.Error("degenerate_heading", $"Frame {keyframe.Frame} has a degenerate root heading.");
                 if (keyframe.RequiresPose && !keyframe.Pose.IsCaptured)
                     result.Error("missing_pose", $"Frame {keyframe.Frame} requires a captured pose.");
+                else if (keyframe.RequiresPose && !keyframe.Pose.UsesCurrentRootSpace)
+                    result.Error("stale_pose_space", $"Frame {keyframe.Frame} uses legacy guide-root pose data. Recalculate the motion.");
                 else if (keyframe.RequiresPose && !keyframe.Pose.MatchesAvatar(avatar))
                     result.Error("stale_pose", $"Frame {keyframe.Frame} was captured for a different avatar.");
                 ValidateEffector(keyframe, CharacterMotionConstraintType.LeftHand, result);
@@ -187,12 +195,20 @@ namespace KitsuMate.Onnx.Motion
             return settings.CreateRequest(BuildConstraintSet());
         }
 
-        public CharacterMotionRequest BuildEngineRequest(KimodoTextEmbedding embedding, ICharacterMotionIntent runtimeIntent = null) => new CharacterMotionRequest
+        public CharacterMotionRequest BuildEngineRequest(KimodoTextEmbedding embedding, ICharacterMotionIntent runtimeIntent = null)
         {
-            Embedding = embedding,
-            Constraints = BuildConstraintSet(),
-            Generation = BuildGenerationRequest(runtimeIntent)
-        };
+            ICharacterMotionIntent resolved = ResolveIntent(runtimeIntent);
+            CharacterMotionGenerationSettings settings = overrideGenerationSettings
+                ? generationSettings.WithDefaults()
+                : GetPrimarySettings(resolved);
+            KimodoConstraintSet constraints = BuildConstraintSet();
+            return new CharacterMotionRequest
+            {
+                Embedding = embedding,
+                Constraints = constraints,
+                Generation = settings.CreateRequest(constraints)
+            };
+        }
 
         public string ComputeConstraintHash()
         {

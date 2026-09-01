@@ -22,18 +22,18 @@ namespace KitsuMate.Onnx.Motion
         [SerializeField, Min(0)] private int frame;
         [SerializeField] private CharacterMotionConstraintType constraints = CharacterMotionConstraintType.RootPosition;
         [SerializeField] private CharacterMotionPoseSnapshot pose = new CharacterMotionPoseSnapshot();
-        [SerializeField] private Transform leftHand;
-        [SerializeField] private Transform rightHand;
-        [SerializeField] private Transform leftFoot;
-        [SerializeField] private Transform rightFoot;
+        [NonSerialized] private Transform leftHand;
+        [NonSerialized] private Transform rightHand;
+        [NonSerialized] private Transform leftFoot;
+        [NonSerialized] private Transform rightFoot;
 
         public int Frame => frame;
         public CharacterMotionConstraintType Constraints => constraints;
         public CharacterMotionPoseSnapshot Pose => pose;
-        public Transform LeftHand => leftHand;
-        public Transform RightHand => rightHand;
-        public Transform LeftFoot => leftFoot;
-        public Transform RightFoot => rightFoot;
+        public Transform LeftHand => GetEffector(CharacterMotionConstraintType.LeftHand);
+        public Transform RightHand => GetEffector(CharacterMotionConstraintType.RightHand);
+        public Transform LeftFoot => GetEffector(CharacterMotionConstraintType.LeftFoot);
+        public Transform RightFoot => GetEffector(CharacterMotionConstraintType.RightFoot);
         public bool RequiresPose => (constraints & (CharacterMotionConstraintType.FullBodyPose |
             CharacterMotionConstraintType.LeftHand | CharacterMotionConstraintType.RightHand |
             CharacterMotionConstraintType.LeftFoot | CharacterMotionConstraintType.RightFoot)) != 0;
@@ -47,17 +47,45 @@ namespace KitsuMate.Onnx.Motion
 
         public Transform GetEffector(CharacterMotionConstraintType type)
         {
-            switch (type)
+            Transform cached = type switch
             {
-                case CharacterMotionConstraintType.LeftHand: return leftHand;
-                case CharacterMotionConstraintType.RightHand: return rightHand;
-                case CharacterMotionConstraintType.LeftFoot: return leftFoot;
-                case CharacterMotionConstraintType.RightFoot: return rightFoot;
-                default: throw new ArgumentOutOfRangeException(nameof(type));
-            }
+                CharacterMotionConstraintType.LeftHand => leftHand,
+                CharacterMotionConstraintType.RightHand => rightHand,
+                CharacterMotionConstraintType.LeftFoot => leftFoot,
+                CharacterMotionConstraintType.RightFoot => rightFoot,
+                _ => throw new ArgumentOutOfRangeException(nameof(type)),
+            };
+            if (IsNamedDirectChild(cached, type)) return cached;
+
+            cached = FindNamedDirectChild(type);
+            SetEffectorCache(type, cached);
+            return cached;
         }
 
         public void SetEffector(CharacterMotionConstraintType type, Transform value)
+        {
+            string controlName = GetEffectorName(type);
+            if (value != null && (value.parent != transform || value.name != controlName))
+                throw new ArgumentException(
+                    $"The {controlName} effector must be a direct child named '{controlName}'.", nameof(value));
+            SetEffectorCache(type, value);
+        }
+
+        private Transform FindNamedDirectChild(CharacterMotionConstraintType type)
+        {
+            string controlName = GetEffectorName(type);
+            for (int i = 0; i < transform.childCount; i++)
+            {
+                Transform child = transform.GetChild(i);
+                if (child.name == controlName) return child;
+            }
+            return null;
+        }
+
+        private bool IsNamedDirectChild(Transform value, CharacterMotionConstraintType type)
+            => value != null && value.parent == transform && value.name == GetEffectorName(type);
+
+        private void SetEffectorCache(CharacterMotionConstraintType type, Transform value)
         {
             switch (type)
             {
@@ -69,24 +97,14 @@ namespace KitsuMate.Onnx.Motion
             }
         }
 
-        private void OnDrawGizmos()
+        private static string GetEffectorName(CharacterMotionConstraintType type) => type switch
         {
-            Gizmos.color = Color.cyan;
-            Gizmos.DrawWireSphere(transform.position, 0.035f);
-            if ((constraints & CharacterMotionConstraintType.RootHeading) != 0)
-                Gizmos.DrawLine(transform.position, transform.position + transform.forward * 0.25f);
-            DrawEffector(leftHand, new Color(0.3f, 0.7f, 1f));
-            DrawEffector(rightHand, new Color(0.3f, 0.7f, 1f));
-            DrawEffector(leftFoot, new Color(1f, 0.65f, 0.2f));
-            DrawEffector(rightFoot, new Color(1f, 0.65f, 0.2f));
-        }
+            CharacterMotionConstraintType.LeftHand => nameof(CharacterMotionConstraintType.LeftHand),
+            CharacterMotionConstraintType.RightHand => nameof(CharacterMotionConstraintType.RightHand),
+            CharacterMotionConstraintType.LeftFoot => nameof(CharacterMotionConstraintType.LeftFoot),
+            CharacterMotionConstraintType.RightFoot => nameof(CharacterMotionConstraintType.RightFoot),
+            _ => throw new ArgumentOutOfRangeException(nameof(type)),
+        };
 
-        private void DrawEffector(Transform target, Color color)
-        {
-            if (target == null) return;
-            Gizmos.color = color;
-            Gizmos.DrawLine(transform.position, target.position);
-            Gizmos.DrawWireSphere(target.position, 0.025f);
-        }
     }
 }

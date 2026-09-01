@@ -36,20 +36,33 @@ namespace KitsuMate.Onnx.Motion.Kimodo
             int length = frameCount * KimodoTensorContract.MotionDimension;
             var raw = new float[length];
             var mask = new bool[length];
+            var explicitRootPositions = new bool[frameCount];
+            var explicitHeadings = new bool[frameCount];
+
+            // Explicit root controls are authored independently from the reference pose carried by
+            // full-body/end-effector constraints. Compile them first so they authoritatively replace
+            // the derived context features regardless of constraint ordering.
             foreach (IKimodoConstraint constraint in constraints.Constraints)
             {
                 if (constraint.Space != KimodoConstraintSpace.CanonicalYUpMeters)
                     throw new NotSupportedException($"Unsupported constraint space {constraint.Space}.");
+                if (constraint is KimodoRootConstraint root)
+                    CompileRoot(root, raw, mask, frameCount, explicitRootPositions, explicitHeadings);
+            }
+
+            foreach (IKimodoConstraint constraint in constraints.Constraints)
+            {
                 switch (constraint)
                 {
-                    case KimodoRootConstraint root:
-                        CompileRoot(root, raw, mask, frameCount);
+                    case KimodoRootConstraint:
                         break;
                     case KimodoFullBodyConstraint fullBody:
-                        CompileFullBody(fullBody, raw, mask, frameCount);
+                        CompileFullBody(fullBody, raw, mask, frameCount,
+                            explicitRootPositions, explicitHeadings);
                         break;
                     case KimodoEndEffectorConstraint endEffector:
-                        CompileEndEffector(endEffector, raw, mask, frameCount);
+                        CompileEndEffector(endEffector, raw, mask, frameCount,
+                            explicitRootPositions, explicitHeadings);
                         break;
                     default:
                         throw new NotSupportedException($"Unsupported Kimodo constraint type {constraint.GetType().Name}.");
@@ -66,7 +79,13 @@ namespace KitsuMate.Onnx.Motion.Kimodo
             return new KimodoConditioning(raw, mask, frameCount, copy: false);
         }
 
-        private static void CompileRoot(KimodoRootConstraint constraint, float[] raw, bool[] mask, int frames)
+        private static void CompileRoot(
+            KimodoRootConstraint constraint,
+            float[] raw,
+            bool[] mask,
+            int frames,
+            bool[] explicitRootPositions,
+            bool[] explicitHeadings)
         {
             ReadOnlySpan<int> indices = constraint.FrameIndices.Span;
             ReadOnlySpan<Vector2> positions = constraint.PositionsXZ.Span;
@@ -76,16 +95,24 @@ namespace KitsuMate.Onnx.Motion.Kimodo
                 int frame = ValidateFrame(indices[i], frames);
                 Set(raw, mask, frame, SmoothRootOffset, positions[i].x);
                 Set(raw, mask, frame, SmoothRootOffset + 2, positions[i].y);
+                explicitRootPositions[frame] = true;
                 if (constraint.HasHeadings)
                 {
                     Vector2 heading = NormalizeHeading(headings[i]);
                     Set(raw, mask, frame, HeadingOffset, heading.x);
                     Set(raw, mask, frame, HeadingOffset + 1, heading.y);
+                    explicitHeadings[frame] = true;
                 }
             }
         }
 
-        private static void CompileFullBody(KimodoFullBodyConstraint constraint, float[] raw, bool[] mask, int frames)
+        private static void CompileFullBody(
+            KimodoFullBodyConstraint constraint,
+            float[] raw,
+            bool[] mask,
+            int frames,
+            bool[] explicitRootPositions,
+            bool[] explicitHeadings)
         {
             ReadOnlySpan<int> indices = constraint.FrameIndices.Span;
             ReadOnlySpan<Vector3> positions = constraint.GlobalJointPositions.Span;
@@ -98,13 +125,20 @@ namespace KitsuMate.Onnx.Motion.Kimodo
                 Vector2 smoothRoot = constraint.HasSmoothedRootPositions
                     ? smoothRoots[sample]
                     : new Vector2(root.x, root.z);
-                SetRootAndHeading(raw, mask, frame, positions, poseOffset, smoothRoot, root.y);
+                SetRootAndHeading(raw, mask, frame, positions, poseOffset, smoothRoot, root.y,
+                    explicitRootPositions[frame], explicitHeadings[frame]);
                 for (int joint = 0; joint < KimodoTensorContract.JointCount; joint++)
                     SetLocalPosition(raw, mask, frame, joint, positions[poseOffset + joint], smoothRoot);
             }
         }
 
-        private static void CompileEndEffector(KimodoEndEffectorConstraint constraint, float[] raw, bool[] mask, int frames)
+        private static void CompileEndEffector(
+            KimodoEndEffectorConstraint constraint,
+            float[] raw,
+            bool[] mask,
+            int frames,
+            bool[] explicitRootPositions,
+            bool[] explicitHeadings)
         {
             ReadOnlySpan<int> indices = constraint.FrameIndices.Span;
             ReadOnlySpan<Vector3> positions = constraint.GlobalJointPositions.Span;
@@ -118,7 +152,8 @@ namespace KitsuMate.Onnx.Motion.Kimodo
                 Vector2 smoothRoot = constraint.HasSmoothedRootPositions
                     ? smoothRoots[sample]
                     : new Vector2(root.x, root.z);
-                SetRootAndHeading(raw, mask, frame, positions, poseOffset, smoothRoot, root.y);
+                SetRootAndHeading(raw, mask, frame, positions, poseOffset, smoothRoot, root.y,
+                    explicitRootPositions[frame], explicitHeadings[frame]);
 
                 if ((constraint.Effectors & KimodoEndEffectors.LeftHand) != 0)
                     SetEffector(raw, mask, frame, positions, rotations, poseOffset, smoothRoot, 13, 15);
@@ -132,11 +167,16 @@ namespace KitsuMate.Onnx.Motion.Kimodo
         }
 
         private static void SetRootAndHeading(
-            float[] raw, bool[] mask, int frame, ReadOnlySpan<Vector3> positions, int poseOffset, Vector2 smoothRoot, float rootY)
+            float[] raw, bool[] mask, int frame, ReadOnlySpan<Vector3> positions, int poseOffset,
+            Vector2 smoothRoot, float rootY, bool hasExplicitRootPosition, bool hasExplicitHeading)
         {
-            Set(raw, mask, frame, SmoothRootOffset, smoothRoot.x);
-            Set(raw, mask, frame, SmoothRootOffset + 2, smoothRoot.y);
+            if (!hasExplicitRootPosition)
+            {
+                Set(raw, mask, frame, SmoothRootOffset, smoothRoot.x);
+                Set(raw, mask, frame, SmoothRootOffset + 2, smoothRoot.y);
+            }
             Set(raw, mask, frame, SmoothRootOffset + 1, rootY);
+            if (hasExplicitHeading) return;
             Vector3 rightHip = positions[poseOffset + (int)KimodoJoint.RightLeg];
             Vector3 leftHip = positions[poseOffset + (int)KimodoJoint.LeftLeg];
             Vector3 difference = rightHip - leftHip;

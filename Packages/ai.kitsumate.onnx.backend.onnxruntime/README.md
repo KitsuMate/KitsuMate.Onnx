@@ -1,13 +1,54 @@
 # KitsuMate ONNX Runtime Backend
 
-Optional backend based on ONNX Runtime 1.24.4. Managed and native runtime artifacts are downloaded by release and CI workflows; they are intentionally not committed to this repository.
+The default backend uses ONNX Runtime 1.25.1 and selects acceleration automatically:
 
-The published package supports Windows x64, Linux x64, and Android ARM64/ARMv7. The default provider preference is `TensorRt, Cuda, DirectMl, OpenVino, Nnapi, Cpu`. Providers that are invalid for the current platform or absent from the active Build Profile are skipped without changing the configured order. CPU therefore remains the portable fallback without preventing an included accelerator from being preferred.
+- Windows x64: DirectML, then CPU.
+- Linux x64: WebGPU over Vulkan, then CPU.
+- Apple-silicon macOS: CoreML, then CPU.
+- Android ARM64/ARMv7: NNAPI, then CPU.
 
-On Android the first use of each external model copies it from the APK's read-only `StreamingAssets/KitsuMateModels` directory to `Application.persistentDataPath/KitsuMateModels`, validates its required SHA-256, and opens the staged filesystem path. The native runtime requires API 24, while Unity 6000.5 requires projects to target API 26 or newer. Use `SetProviderOrder(OnnxExecutionProvider.Nnapi, OnnxExecutionProvider.Cpu)` for NNAPI with initialization fallback, or omit `Cpu` to require NNAPI initialization. NNAPI requires API 27. ONNX Runtime can still assign unsupported graph nodes to its CPU implementation even when CPU is omitted from the initialization policy.
+New backend assets use `Automatic`. An Editor migration detects assets serialized
+before selection mode existed, writes the zero-valued `Explicit` mode, and preserves
+their provider order. Calling `SetProviderOrder` also selects Explicit mode.
 
-Providers are selected by the backend's ordered `ProviderOrder` and must also be included by the active Unity Build Profile. Supported defines are `KITSUMATE_ORT_DIRECTML`, `KITSUMATE_ORT_CUDA`, `KITSUMATE_ORT_TENSORRT`, `KITSUMATE_ORT_OPENVINO`, and Android-only `KITSUMATE_ORT_NNAPI`. TensorRT requires CUDA; DirectML is Windows-only; OpenVINO is Linux-only. An empty list and duplicate entries are invalid. Use `[Cpu]` for CPU-only operation or omit `Cpu` when initialization must fail instead of falling back.
+Device selection is provider-relative: DirectML device 1 and CUDA device 0 can refer
+to the same physical GPU. New assets use automatic device selection, which snapshots
+Unity's active render-device vendor/device IDs on the main thread and matches them
+against each provider's `OrtEpDevice` list. Existing assets migrate to Explicit and
+retain `_gpuDeviceId`. If no exact match exists, one exposed accelerator is selected;
+with several unmatched accelerators, provider index 0 is used deterministically and
+reported in diagnostics. DirectML is attached through the ORT V2 device API.
 
-DirectML and OpenVINO payloads are not published until the pinned ONNX Runtime 1.24.4 combined-core feasibility gate passes. Do not hydrate them from separate official packages: the core and every provider library must come from the same source build. The pre-build validator intentionally rejects a profile that enables a provider whose payload is absent.
+Install `ai.kitsumate.onnx.backend.onnxruntime.nvidia` and activate a profile with
+`KITSUMATE_ORT_NVIDIA` to prepend TensorRT-RTX and CUDA on Windows/Linux x64.
+`KITSUMATE_ORT_CUDA` is a deprecated CUDA-only alias. The legacy pair
+`KITSUMATE_ORT_CUDA` + `KITSUMATE_ORT_TENSORRT` maps to NVIDIA automatic behavior.
+Standalone `KITSUMATE_ORT_TENSORRT` and `KITSUMATE_ORT_OPENVINO` are build errors.
 
-DirectML, macOS, and iOS native runtimes are not bundled.
+The provider registry separates registration, platform support, V2 device selection,
+session configuration, priority, and diagnostics. WebGPU, CUDA, and TensorRT-RTX are
+registered as plug-in EP libraries and attached through the V2 device API. Legacy
+`TensorRt` and `OpenVino` enum values remain serialized-compatible but have no module.
+
+Build Profile changes recompile managed code and reselect providers. A Unity restart is
+not required for selection changes, although previously loaded inactive native libraries
+may remain mapped until restart.
+
+Native files are provisioned from separate checksum locks for this package and the NVIDIA
+package. Do not copy NVIDIA files into this package or introduce a second platform core.
+
+TODO: once platform/default provider ABIs warrant independent release cadence, extract
+the logically separated payload groups into dedicated packages without changing the
+registry or backend asset API.
+
+Automatic sessions also fall through to the next eligible provider when an operational
+EP failure occurs during `Run`, `RunAsync`, or `RunOnDevice` (for example a DirectML
+driver/operator execution failure). Invalid model graphs, invalid arguments, contract
+errors, cancellation, and disposal remain strict errors. Device tensors from a retired
+provider generation are staged through CPU before the retry. Explicit provider mode
+never changes providers at execution time.
+
+Editor package paths are resolved once on Unity's main thread and registered as native
+search roots. Worker-thread session creation therefore does not call Package Manager,
+and package installation remains agnostic to registry, Git, local, embedded, or cache
+folder names and locations supported by Unity.

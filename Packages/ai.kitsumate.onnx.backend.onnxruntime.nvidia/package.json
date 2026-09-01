@@ -1,0 +1,12 @@
+{
+  "name": "ai.kitsumate.onnx.backend.onnxruntime.nvidia",
+  "version": "1.0.0-alpha.1",
+  "displayName": "KitsuMate ONNX Runtime NVIDIA Providers",
+  "description": "Optional CUDA and TensorRT-RTX plug-in execution providers for the KitsuMate ONNX Runtime backend.",
+  "unity": "6000.0",
+  "keywords": ["onnx", "onnxruntime", "nvidia", "cuda", "tensorrt-rtx", "kitsumate"],
+  "author": { "name": "KitsuMate", "url": "https://github.com/KitsuMate" },
+  "dependencies": {
+    "ai.kitsumate.onnx.backend.onnxruntime": "1.0.0-alpha.1"
+  }
+}

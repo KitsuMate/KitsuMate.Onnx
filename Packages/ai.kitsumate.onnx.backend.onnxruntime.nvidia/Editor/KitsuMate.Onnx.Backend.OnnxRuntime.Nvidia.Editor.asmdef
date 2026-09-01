@@ -1,0 +1,19 @@
+{
+  "name": "KitsuMate.Onnx.Backend.OnnxRuntime.Nvidia.Editor",
+  "rootNamespace": "KitsuMate.Onnx.Nvidia.Editor",
+  "references": [
+    "KitsuMate.Onnx",
+    "KitsuMate.Onnx.Backend.OnnxRuntime",
+    "KitsuMate.Onnx.Backend.OnnxRuntime.Editor",
+    "KitsuMate.Onnx.Backend.OnnxRuntime.Nvidia"
+  ],
+  "includePlatforms": ["Editor"],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}
