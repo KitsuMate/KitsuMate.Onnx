@@ -19,6 +19,22 @@ namespace KitsuMate.Onnx.Embeddings
         
         [SerializeField, Tooltip("Tokenizer model file (sentencepiece .model or tokenizer.json)")]
         private TextAsset _tokenizerModel;
+        [SerializeField] private string tokenizerDirectory;
+        [SerializeField] private string queryPrefix = "";
+        [SerializeField] private string documentPrefix = "";
+        public string TokenizerDirectory => tokenizerDirectory;
+        public string FormatInput(string text, EmbeddingPurpose purpose) =>
+            (purpose == EmbeddingPurpose.Query ? queryPrefix : purpose == EmbeddingPurpose.Document ? documentPrefix : "") + (text ?? "");
+
+        public void ConfigureDownloaded(string directory, TextEmbeddingConfiguration configuration)
+        {
+            tokenizerDirectory = directory;
+            _embeddingDimension = configuration.Dimension;
+            _maxSequenceLength = configuration.MaxSequenceLength;
+            _normalizeEmbeddings = configuration.Normalize;
+            queryPrefix = configuration.QueryPrefix ?? "";
+            documentPrefix = configuration.DocumentPrefix ?? "";
+        }
         
         [Header("Configuration")]
         [SerializeField, Tooltip("Embedding dimension")]
@@ -59,7 +75,9 @@ namespace KitsuMate.Onnx.Embeddings
         public bool NormalizeEmbeddings => _normalizeEmbeddings;
         
         /// <summary>Check if required models are assigned.</summary>
-        public override bool IsComplete => _embeddingModelSource.IsAvailable && (_vocabulary != null || _tokenizerModel != null);
+        private bool HasDownloadedTokenizer => !string.IsNullOrEmpty(tokenizerDirectory) && System.IO.File.Exists(System.IO.Path.Combine(tokenizerDirectory, "tokenizer.json"));
+
+        public override bool IsComplete => _embeddingModelSource.IsAvailable && (HasDownloadedTokenizer || _vocabulary != null || _tokenizerModel != null);
         
         /// <summary>Gets all models in this set.</summary>
         public override IOnnxModelSource[] GetAllModels()
@@ -86,7 +104,7 @@ namespace KitsuMate.Onnx.Embeddings
             var result = new ModelValidationResult();
             if (!_embeddingModelSource.IsAvailable)
                 result.Error("missing_model", "Embedding model is required and must be available.");
-            if (_vocabulary == null && _tokenizerModel == null)
+            if (!HasDownloadedTokenizer && _vocabulary == null && _tokenizerModel == null)
                 result.Error("missing_tokenizer", "Vocabulary or tokenizer model file is required.");
             RequireInput(_embeddingModelSource, "input_ids", result);
             RequireInput(_embeddingModelSource, "attention_mask", result);

@@ -212,7 +212,8 @@ namespace KitsuMate.Onnx
                 IntraOpThreads = options.IntraOpThreads,
                 InterOpThreads = options.InterOpThreads
             };
-            IReadOnlyList<OnnxExecutionProvider> requested = EffectiveProviderOrder.ToArray();
+            IReadOnlyList<OnnxExecutionProvider> requested = options.Providers?.Length > 0
+                ? options.Providers.ToArray() : EffectiveProviderOrder.ToArray();
             IReadOnlyList<OnnxExecutionProvider> packaged = GetPackagedProviders();
             ValidateProviderOrder(requested);
             ResolveProviderOrder(requested, packaged, Application.platform,

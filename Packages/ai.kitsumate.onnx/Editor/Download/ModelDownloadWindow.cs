@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using UnityEditor;
+using KitsuMate.Onnx.Download;
 using UnityEngine;
 
 namespace KitsuMate.Onnx.Editor.Download
@@ -103,7 +104,7 @@ namespace KitsuMate.Onnx.Editor.Download
                     "Sentis setup shows only FP32 artifacts. Other ONNX artifacts are available with ONNX Runtime.",
                     MessageType.None);
             EditorGUILayout.HelpBox(
-                $"Models are installed under {ModelDownloader.ModelRoot()}. Each ONNX role can use a different artifact type.",
+                $"Models are installed under {EditorModelDownloader.ModelRoot()}. Each ONNX role can use a different artifact type.",
                 MessageType.None);
         }
 
@@ -130,7 +131,7 @@ namespace KitsuMate.Onnx.Editor.Download
 
                 int current = Array.FindIndex(choices, choice =>
                     string.Equals(choice.Model.Path, path, StringComparison.OrdinalIgnoreCase));
-                string[] labels = choices.Select(ModelDownloader.ArtifactLabel).ToArray();
+                string[] labels = choices.Select(HuggingFaceModelRepository.ArtifactLabel).ToArray();
                 using (new EditorGUI.DisabledScope(choices.Length == 1))
                 {
                     int next = EditorGUILayout.Popup(Humanize(role), Math.Max(0, current), labels);
@@ -183,7 +184,7 @@ namespace KitsuMate.Onnx.Editor.Download
             if (!discovered.Artifacts.TryGetValue(role, out DiscoveredArtifact[] artifacts))
                 return Array.Empty<DiscoveredArtifact>();
             return sentis
-                ? artifacts.Where(artifact => ModelDownloader.IsSentisArtifact(artifact.Type)).ToArray()
+                ? artifacts.Where(artifact => HuggingFaceModelRepository.IsSentisArtifact(artifact.Type)).ToArray()
                 : artifacts;
         }
 
@@ -191,7 +192,7 @@ namespace KitsuMate.Onnx.Editor.Download
         {
             return discovered != null && discovered.Artifacts.Values
                 .SelectMany(artifacts => artifacts)
-                .Any(artifact => !ModelDownloader.IsSentisArtifact(artifact.Type));
+                .Any(artifact => !HuggingFaceModelRepository.IsSentisArtifact(artifact.Type));
         }
 
         private async Awaitable ScanAsync()
@@ -199,7 +200,7 @@ namespace KitsuMate.Onnx.Editor.Download
             if (!Begin("Scanning repository...")) return;
             try
             {
-                discovered = await ModelDownloader.ScanAsync(Request(), token, cancellation.Token);
+                discovered = await HuggingFaceModelRepository.ScanAsync(Request(), token, cancellation.Token);
                 revision = discovered.Revision;
                 selected.Clear();
                 foreach (string role in discovered.Artifacts.Keys)
@@ -227,9 +228,9 @@ namespace KitsuMate.Onnx.Editor.Download
                 EnsureRequiredChoices();
                 var reporter = new Progress<float>(value => { progress = value; Repaint(); });
                 ModelDownloadResult result = sentis
-                    ? await ModelDownloader.DownloadForSentisAsync(Request(), SelectedArtifacts(), token, reporter,
+                    ? await EditorModelDownloader.DownloadForSentisAsync(Request(), SelectedArtifacts(), token, reporter,
                         cancellation.Token)
-                    : await ModelDownloader.DownloadAsync(Request(), SelectedArtifacts(), token, reporter,
+                    : await EditorModelDownloader.DownloadAsync(Request(), SelectedArtifacts(), token, reporter,
                         cancellation.Token);
                 completed?.Invoke(result);
                 SaveToken();

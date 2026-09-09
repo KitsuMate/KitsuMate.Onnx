@@ -26,7 +26,7 @@ namespace KitsuMate.Onnx
     [Serializable]
     public sealed class OnnxModelReference : IOnnxModelSource
     {
-        public enum SourceKind { Asset, File }
+        public enum SourceKind { Asset, File, DownloadedFile }
 
         [SerializeField] private SourceKind sourceKind;
         [SerializeField] private OnnxModelAsset asset;
@@ -84,6 +84,13 @@ namespace KitsuMate.Onnx
         internal async Task PrepareForRuntimeAsync(OnnxRuntimeEnvironment environment, CancellationToken cancellationToken)
         {
             if (environment == null) throw new ArgumentNullException(nameof(environment));
+            if (sourceKind == SourceKind.DownloadedFile)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!TryResolveFile(environment, out preparedRuntimePath))
+                    throw new OnnxModelPreparationException($"Downloaded model '{relativePath}' is not installed.");
+                return;
+            }
             if (sourceKind != SourceKind.File) return;
 #if UNITY_ANDROID && !UNITY_EDITOR
             preparedRuntimePath = await AndroidStager.StageAsync(relativePath, sha256, environment, cancellationToken);
@@ -97,6 +104,12 @@ namespace KitsuMate.Onnx
         private bool TryResolveFile(OnnxRuntimeEnvironment environment, out string resolved)
         {
             resolved = null;
+            if (sourceKind == SourceKind.DownloadedFile)
+            {
+                if (string.IsNullOrWhiteSpace(relativePath) || !Path.IsPathRooted(relativePath) || !File.Exists(relativePath)) return false;
+                resolved = relativePath;
+                return true;
+            }
             if (string.IsNullOrWhiteSpace(relativePath) || Path.IsPathRooted(relativePath)) return false;
             string normalized = relativePath.Replace('\\', '/').TrimStart('/');
             if (normalized.Split('/').Contains("..")) return false;
@@ -136,6 +149,28 @@ namespace KitsuMate.Onnx
             ClearFileCache();
         }
 
+        /// <summary>Uses a caller-owned downloaded file; never falls back to bundled model storage.</summary>
+        public void ConfigureDownloadedFile(string absolutePath, string hash,
+            IEnumerable<OnnxModelAsset.TensorInfo> inspectedInputs,
+            IEnumerable<OnnxModelAsset.TensorInfo> inspectedOutputs)
+        {
+            if (string.IsNullOrWhiteSpace(absolutePath) || !Path.IsPathRooted(absolutePath))
+                throw new ArgumentException("Downloaded model path must be absolute.", nameof(absolutePath));
+            Clear();
+            sourceKind = SourceKind.DownloadedFile;
+            relativePath = Path.GetFullPath(absolutePath);
+            sha256 = hash ?? string.Empty;
+            if (inspectedInputs != null) inputs.AddRange(inspectedInputs);
+            if (inspectedOutputs != null) outputs.AddRange(inspectedOutputs);
+            metadataInspected = outputs.Count > 0;
+            if (File.Exists(relativePath))
+            {
+                var file = new FileInfo(relativePath);
+                cachedFileSize = file.Length;
+                cachedWriteTimeUtcTicks = file.LastWriteTimeUtc.Ticks;
+            }
+        }
+
         public void ConfigureFile(string modelRootRelativePath, string hash,
             IEnumerable<OnnxModelAsset.TensorInfo> inspectedInputs,
             IEnumerable<OnnxModelAsset.TensorInfo> inspectedOutputs)
@@ -163,6 +198,7 @@ namespace KitsuMate.Onnx
 
         private void ClearFileCache()
         {
+            preparedRuntimePath = null;
             sha256 = string.Empty;
             cachedFileSize = 0;
             cachedWriteTimeUtcTicks = 0;

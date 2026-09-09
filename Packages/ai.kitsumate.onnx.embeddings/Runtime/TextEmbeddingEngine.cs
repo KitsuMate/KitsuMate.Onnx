@@ -13,10 +13,13 @@ namespace KitsuMate.Onnx.Embeddings
     public class TextEmbeddingEngine : EmbeddingEngine
     {
         [SerializeField] protected TextEmbeddingModelSet modelSet;
+        [SerializeField] private OnnxSessionOptions sessionOptions;
+        public void Configure(TextEmbeddingModelSet set, OnnxSessionOptions options = null)
+        { modelSet = set; sessionOptions = options; }
         public TextEmbeddingModelSet TypedModelSet => modelSet;
         public override ModelSet ModelSet => modelSet;
         public override int EmbeddingDimension => modelSet != null ? modelSet.EmbeddingDimension : 0;
-        protected override InferenceEngineRuntime<EmbeddingRequest, EmbeddingResult> CreateRuntime() => new TextEmbeddingEngineRuntime(modelSet);
+        protected override InferenceEngineRuntime<EmbeddingRequest, EmbeddingResult> CreateRuntime() => new TextEmbeddingEngineRuntime(modelSet, sessionOptions);
     }
 
     public sealed class TextEmbeddingEngineRuntime : EmbeddingEngineRuntime
@@ -24,16 +27,27 @@ namespace KitsuMate.Onnx.Embeddings
         private readonly TextEmbeddingModelSet modelSet;
         private IOnnxSession session;
         private Tokenizer tokenizer;
+        private readonly OnnxSessionOptions options;
 
-        public TextEmbeddingEngineRuntime(TextEmbeddingModelSet modelSet) { this.modelSet = modelSet; }
+        public TextEmbeddingEngineRuntime(TextEmbeddingModelSet modelSet, OnnxSessionOptions options = null) { this.modelSet = modelSet; this.options = options; }
 
         protected override Task OnLoadAsync(CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            TextAsset tokenizerAsset = modelSet.TokenizerModel;
-            if (tokenizerAsset != null && tokenizerAsset.text.TrimStart().StartsWith("{")) tokenizer = Tokenizer.FromTokenizerJson(tokenizerAsset.bytes);
-            else tokenizer = tokenizerAsset != null ? Tokenizer.CreateBpe(modelSet.Vocabulary.bytes, tokenizerAsset.bytes) : Tokenizer.CreateWordPiece(modelSet.Vocabulary.bytes);
-            return Task.Run(() => session = Backend.CreateSession(modelSet.EmbeddingModel), cancellationToken);
+            // Capture Unity asset data on the main thread; parse large tokenizers off-thread.
+            string directory = modelSet.TokenizerDirectory;
+            byte[] tokenizerBytes = modelSet.TokenizerModel != null ? modelSet.TokenizerModel.bytes : null;
+            byte[] vocabularyBytes = modelSet.Vocabulary != null ? modelSet.Vocabulary.bytes : null;
+            return Task.Run(() =>
+            {
+                tokenizer = !string.IsNullOrEmpty(directory) ? Tokenizer.FromLocal(directory)
+                    : tokenizerBytes != null && System.Text.Encoding.UTF8.GetString(tokenizerBytes).TrimStart().StartsWith("{")
+                        ? Tokenizer.FromTokenizerJson(tokenizerBytes)
+                        : tokenizerBytes != null ? Tokenizer.CreateBpe(vocabularyBytes, tokenizerBytes)
+                        : Tokenizer.CreateWordPiece(vocabularyBytes);
+                cancellationToken.ThrowIfCancellationRequested();
+                session = Backend.CreateSession(modelSet.EmbeddingModel, options);
+            }, cancellationToken);
         }
 
         protected override Task<EmbeddingResult> OnRunAsync(EmbeddingRequest request, CancellationToken cancellationToken)
@@ -44,11 +58,12 @@ namespace KitsuMate.Onnx.Embeddings
             var sw = Stopwatch.StartNew();
             float[][] vectors = new float[request.Texts.Length][];
             bool normalize = request.Normalize ?? modelSet.NormalizeEmbeddings;
-            int maxTokens = request.MaxTokenCount ?? modelSet.MaxSequenceLength;
+            int maxTokens = Math.Min(request.MaxTokenCount ?? modelSet.MaxSequenceLength, modelSet.MaxSequenceLength);
+            if (maxTokens < 2) throw new ArgumentOutOfRangeException(nameof(request.MaxTokenCount));
             for (int index = 0; index < request.Texts.Length; index++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var tokens = tokenizer.Encode(request.Texts[index] ?? string.Empty, addSpecialTokens: true, maxTokenCount: maxTokens);
+                var tokens = tokenizer.Encode(modelSet.FormatInput(request.Texts[index], request.Purpose), addSpecialTokens: true, maxTokenCount: maxTokens);
                 int[] mask = tokens.AttentionMask.ToArray();
                 long[] ids = tokens.Ids.Select(x => (long)x).ToArray();
                 long[] types = tokens.TypeIds.Count > 0 ? tokens.TypeIds.Select(x => (long)x).ToArray() : new long[ids.Length];
@@ -58,8 +73,11 @@ namespace KitsuMate.Onnx.Embeddings
                     ["attention_mask"] = OnnxTensor.FromArray(mask.Select(x => (long)x).ToArray(), new[] { 1, mask.Length }, "attention_mask"),
                     ["token_type_ids"] = OnnxTensor.FromArray(types, new[] { 1, types.Length }, "token_type_ids")
                 };
+                foreach (var name in inputs.Keys.Where(name => !session.InputNames.Contains(name)).ToArray()) inputs.Remove(name);
                 var outputs = session.Run(inputs);
                 float[] vector = Extract(outputs, mask, ids.Length, request.Pooling);
+                if (vector.Length != modelSet.EmbeddingDimension || vector.Any(value => float.IsNaN(value) || float.IsInfinity(value)))
+                    throw new InvalidOperationException("Embedding output has an invalid dimension or non-finite values.");
                 if (normalize) Normalize(vector);
                 vectors[index] = vector;
             }

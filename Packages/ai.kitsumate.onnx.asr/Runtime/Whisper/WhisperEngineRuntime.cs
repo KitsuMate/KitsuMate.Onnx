@@ -38,10 +38,11 @@ namespace KitsuMate.Onnx.Asr.Whisper
         private IOnnxSession _decoderSession;
         private IOnnxSession _decoderWithPastSession;
         private Tokenizer _tokenizer;
+        private readonly OnnxSessionOptions _sessionOptions;
         
         public WhisperEngineRuntime(IOnnxModelSource melSource, IOnnxModelSource encoderSource,
             IOnnxModelSource decoderSource, IOnnxModelSource decoderWithPastSource, TextAsset tokenizerJson,
-            string languageOverride, WhisperTask task, int maxTokens, bool verbose)
+            string languageOverride, WhisperTask task, int maxTokens, bool verbose, OnnxSessionOptions sessionOptions = null)
         {
             _melSource = melSource;
             _encoderSource = encoderSource;
@@ -52,6 +53,7 @@ namespace KitsuMate.Onnx.Asr.Whisper
             _task = task;
             _maxTokens = maxTokens;
             VerboseLogging = verbose;
+            _sessionOptions = sessionOptions;
         }
         
         /// <summary>Language override (empty for auto-detect).</summary>
@@ -80,11 +82,11 @@ namespace KitsuMate.Onnx.Asr.Whisper
         protected override void OnLoadBackground(OnnxBackend backend)
         {
             ValidateSources();
-            _melSession = backend.CreateSession(_melSource);
-            _encoderSession = backend.CreateSession(_encoderSource);
-            _decoderSession = backend.CreateSession(_decoderSource);
+            _melSession = backend.CreateSession(_melSource, _sessionOptions);
+            _encoderSession = backend.CreateSession(_encoderSource, _sessionOptions);
+            _decoderSession = backend.CreateSession(_decoderSource, _sessionOptions);
             if (_decoderWithPastSource != null && _decoderWithPastSource.IsAvailable)
-                _decoderWithPastSession = backend.CreateSession(_decoderWithPastSource);
+                _decoderWithPastSession = backend.CreateSession(_decoderWithPastSource, _sessionOptions);
             
             if (VerboseLogging)
                 Debug.Log($"[WhisperEngine] Loaded {_encoderSource.SourceName}");
