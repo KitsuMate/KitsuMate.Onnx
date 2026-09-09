@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using KitsuMate.Onnx.Editor.Download;
+using KitsuMate.Onnx.Download;
 using NUnit.Framework;
 
 namespace KitsuMate.Onnx.Tests
@@ -16,7 +17,7 @@ namespace KitsuMate.Onnx.Tests
         [TestCase("onnx/model_custom-precision.onnx", "model", "custom-precision")]
         public void DetectsArtifactTypeFromStandardFilename(string path, string stem, string expected)
         {
-            Assert.That(ModelDownloader.ArtifactType(path, stem), Is.EqualTo(expected));
+            Assert.That(HuggingFaceModelRepository.ArtifactType(path, stem), Is.EqualTo(expected));
         }
 
         [TestCase("default", true)]
@@ -27,7 +28,7 @@ namespace KitsuMate.Onnx.Tests
         [TestCase("custom", false)]
         public void SentisEligibilityUsesPositiveFp32Allowlist(string type, bool expected)
         {
-            Assert.That(ModelDownloader.IsSentisArtifact(type), Is.EqualTo(expected));
+            Assert.That(HuggingFaceModelRepository.IsSentisArtifact(type), Is.EqualTo(expected));
         }
 
         [Test]
@@ -49,7 +50,7 @@ namespace KitsuMate.Onnx.Tests
                 },
                 Array.Empty<DiscoveredFile>(), new[] { "encoder", "decoder" });
 
-            DiscoveredArtifact[] merged = ModelDownloader.SelectArtifacts(repository,
+            DiscoveredArtifact[] merged = HuggingFaceModelRepository.SelectArtifacts(repository,
                 new Dictionary<string, string>
                 {
                     ["encoder"] = encoderFp16.Model.Path,
@@ -61,7 +62,7 @@ namespace KitsuMate.Onnx.Tests
                 encoderFp16.Model.Path, decoderMergedQ4.Model.Path
             }));
 
-            DiscoveredArtifact[] split = ModelDownloader.SelectArtifacts(repository,
+            DiscoveredArtifact[] split = HuggingFaceModelRepository.SelectArtifacts(repository,
                 new Dictionary<string, string>
                 {
                     ["encoder"] = encoderDefault.Model.Path,
@@ -72,12 +73,34 @@ namespace KitsuMate.Onnx.Tests
         }
 
         [Test]
+        public void IncludesSelectedMelWithMergedWhisperDecoder()
+        {
+            var encoder = Artifact("encoder", "int8", "onnx/encoder_model_int8.onnx");
+            var decoder = Artifact("decoder", "int8", "onnx/decoder_model_merged_int8.onnx", true);
+            var mel = Artifact("mel", "default", "onnx/mel.onnx");
+            var cached = Artifact("decoder-with-past", "int8", "onnx/decoder_with_past_model_int8.onnx");
+            var repository = new DiscoveredRepository("owner", "whisper", "whisper", "revision",
+                new Dictionary<string, DiscoveredArtifact[]>
+                {
+                    ["encoder"] = new[] { encoder }, ["decoder"] = new[] { decoder },
+                    ["mel"] = new[] { mel }, ["decoder-with-past"] = new[] { cached }
+                }, Array.Empty<DiscoveredFile>(), new[] { "encoder", "decoder" });
+            var selection = new Dictionary<string, string>
+            {
+                ["encoder"] = encoder.Model.Path, ["decoder"] = decoder.Model.Path,
+                ["mel"] = mel.Model.Path, ["decoder-with-past"] = cached.Model.Path
+            };
+            var selected = HuggingFaceModelRepository.SelectArtifacts(repository, selection);
+            Assert.That(selected.Select(artifact => artifact.Role), Is.EquivalentTo(new[] { "encoder", "decoder", "mel" }));
+        }
+
+        [Test]
         public void RejectsUnsafeRepositoryPaths()
         {
             Assert.Throws<System.IO.InvalidDataException>(() =>
-                ModelDownloader.SafeRelativePath("../model.onnx"));
+                HuggingFaceModelRepository.SafeRelativePath("../model.onnx"));
             Assert.Throws<System.IO.InvalidDataException>(() =>
-                ModelDownloader.SafeRelativePath("onnx//model.onnx"));
+                HuggingFaceModelRepository.SafeRelativePath("onnx//model.onnx"));
         }
 
         [Test]
@@ -85,7 +108,7 @@ namespace KitsuMate.Onnx.Tests
         {
             Assert.That(typeof(ModelIdentity).GetField("Variant"), Is.Null);
             Assert.That(typeof(ModelDownloadRequest).GetProperty("Variant"), Is.Null);
-            Assert.That(typeof(ModelDownloader).GetMethod("GetVariantsAsync"), Is.Null);
+            Assert.That(typeof(HuggingFaceModelRepository).GetMethod("GetVariantsAsync"), Is.Null);
         }
 
         private static DiscoveredArtifact Artifact(string role, string type, string path, bool merged = false)
@@ -105,7 +128,7 @@ namespace KitsuMate.Onnx.Tests
                 "aff7a1dc4e8a1ea593e6ea21e95c22ef0a25966f",
                 "text-embedding");
 
-            var discovery = await ModelDownloader.GetArtifactsAsync(request);
+            var discovery = await HuggingFaceModelRepository.GetArtifactsAsync(request);
 
             Assert.That(discovery.Revision, Is.EqualTo(request.Revision));
             Assert.That(discovery.Artifacts.Keys, Is.EqualTo(new[] { "model" }));
@@ -123,7 +146,7 @@ namespace KitsuMate.Onnx.Tests
             var request = new ModelDownloadRequest(
                 "KitsuMate/all-MiniLM-L6-v2-onnx", revision, "text-embedding");
 
-            var discovery = await ModelDownloader.GetArtifactsAsync(request);
+            var discovery = await HuggingFaceModelRepository.GetArtifactsAsync(request);
 
             Assert.That(discovery.Revision, Is.EqualTo(revision));
             Assert.That(discovery.Artifacts["model"], Does.Contain("onnx/model.onnx"));
@@ -139,7 +162,7 @@ namespace KitsuMate.Onnx.Tests
                 "ff4177021cc41f7db950912b73ea4fdf7d01d8e7",
                 "whisper");
 
-            var discovery = await ModelDownloader.GetArtifactsAsync(request);
+            var discovery = await HuggingFaceModelRepository.GetArtifactsAsync(request);
 
             Assert.That(discovery.Artifacts.Keys,
                 Is.SupersetOf(new[] { "encoder", "decoder", "decoder-with-past" }));
@@ -160,7 +183,7 @@ namespace KitsuMate.Onnx.Tests
                 "7320dc3cfac446f5d689565d1f701fd1a0b8e516",
                 "chatterbox");
 
-            var discovery = await ModelDownloader.GetArtifactsAsync(request);
+            var discovery = await HuggingFaceModelRepository.GetArtifactsAsync(request);
 
             Assert.That(discovery.Artifacts.Keys, Is.EquivalentTo(new[]
             {
@@ -185,7 +208,7 @@ namespace KitsuMate.Onnx.Tests
                 "b70ba9ceb90a146e93af372d805ec76baaa48b0b",
                 "chatterbox");
 
-            var discovery = await ModelDownloader.GetArtifactsAsync(request);
+            var discovery = await HuggingFaceModelRepository.GetArtifactsAsync(request);
 
             Assert.That(discovery.Artifacts["embed-tokens"].Single(), Does.Contain("_fp16."));
             Assert.That(discovery.Artifacts["speech-encoder"].Single(), Does.Contain("_q4f16."));
@@ -202,7 +225,7 @@ namespace KitsuMate.Onnx.Tests
                 "a7be7c65cc118137683f49eff0f80fdf9d5b5dbf",
                 "omnivoice");
 
-            var discovery = await ModelDownloader.GetArtifactsAsync(request);
+            var discovery = await HuggingFaceModelRepository.GetArtifactsAsync(request);
 
             Assert.That(discovery.Artifacts.Keys, Is.SupersetOf(new[]
             {
@@ -224,7 +247,7 @@ namespace KitsuMate.Onnx.Tests
                 "omnivoice");
 
             System.IO.InvalidDataException failure = null;
-            try { await ModelDownloader.GetArtifactsAsync(request); }
+            try { await HuggingFaceModelRepository.GetArtifactsAsync(request); }
             catch (System.IO.InvalidDataException exception) { failure = exception; }
             Assert.That(failure, Is.Not.Null);
         }
@@ -234,9 +257,9 @@ namespace KitsuMate.Onnx.Tests
         public async Task ScansCanonicalOmniVoiceProfilesIndependently()
         {
             const string revision = "45d20c87b64f35c4ac203c5bac7ad97a3e60ca95";
-            var cpu = await ModelDownloader.GetArtifactsAsync(new ModelDownloadRequest(
+            var cpu = await HuggingFaceModelRepository.GetArtifactsAsync(new ModelDownloadRequest(
                 "KitsuMate/omnivoice-onnx", revision, "omnivoice-cpu"));
-            var portable = await ModelDownloader.GetArtifactsAsync(new ModelDownloadRequest(
+            var portable = await HuggingFaceModelRepository.GetArtifactsAsync(new ModelDownloadRequest(
                 "KitsuMate/omnivoice-onnx", revision, "omnivoice-portable"));
 
             Assert.That(cpu.Artifacts.Keys, Does.Contain("merged-backbone"));

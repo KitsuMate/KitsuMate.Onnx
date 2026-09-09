@@ -24,6 +24,8 @@ namespace KitsuMate.Onnx
         public bool EnableCpuMemArena = true;
         public int IntraOpThreads = 0;
         public int InterOpThreads = 0;
+        /// <summary>Optional per-session execution policy. Empty uses the backend's configured order.</summary>
+        public OnnxExecutionProvider[] Providers = Array.Empty<OnnxExecutionProvider>();
         
         public static OnnxSessionOptions Default => new();
     }
@@ -71,6 +73,17 @@ namespace KitsuMate.Onnx
             if (string.IsNullOrWhiteSpace(path) || !System.IO.File.Exists(path))
                 throw new InvalidOperationException($"ONNX model source '{source.SourceName}' could not be resolved.");
             return CreateSession(path, OnnxSessionOptions.Default);
+        }
+
+        public virtual IOnnxSession CreateSession(IOnnxModelSource source, OnnxSessionOptions options)
+        {
+            if (options == null) return CreateSession(source);
+            if (source == null) throw new ArgumentNullException(nameof(source));
+            if (source.ImportedAsset != null)
+                return CreateSession(source.ImportedAsset.ModelDataAsset.GetDataRef(), options);
+            string path = source.ResolveModelPath();
+            if (string.IsNullOrWhiteSpace(path)) throw new InvalidOperationException($"Model '{source.SourceName}' is not available.");
+            return CreateSession(path, options);
         }
         
         /// <summary>

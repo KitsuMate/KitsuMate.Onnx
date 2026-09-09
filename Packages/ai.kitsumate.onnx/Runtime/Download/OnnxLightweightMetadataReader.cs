@@ -1,10 +1,9 @@
-#if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
 
-namespace KitsuMate.Onnx.Editor
+namespace KitsuMate.Onnx
 {
     /// <summary>Streams ONNX protobuf metadata and skips initializer payloads. Never creates an ORT session.</summary>
     // Uses a local wire reader because Google.Protobuf's nested-limit APIs are not public in the bundled assembly.
@@ -235,4 +234,3 @@ namespace KitsuMate.Onnx.Editor
         };
     }
 }
-#endif

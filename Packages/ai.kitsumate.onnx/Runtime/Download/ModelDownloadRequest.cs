@@ -1,6 +1,6 @@
 using System;
 
-namespace KitsuMate.Onnx.Editor.Download
+namespace KitsuMate.Onnx.Download
 {
     /// <summary>Identifies a Hugging Face ONNX repository.</summary>
     public sealed class ModelDownloadRequest
@@ -9,7 +9,7 @@ namespace KitsuMate.Onnx.Editor.Download
         public string Revision { get; }
         public string ExpectedFamily { get; }
 
-        public ModelDownloadRequest(string repository, string revision, string expectedFamily = null)
+        public ModelDownloadRequest(string repository, string revision = "main", string expectedFamily = null)
         {
             Repository = Required(repository, nameof(repository));
             Revision = Required(revision, nameof(revision));

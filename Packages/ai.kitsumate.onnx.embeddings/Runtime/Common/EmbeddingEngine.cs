@@ -3,12 +3,15 @@ using KitsuMate.Onnx;
 
 namespace KitsuMate.Onnx.Embeddings
 {
+    public enum EmbeddingPurpose { Unspecified, Query, Document }
+
     public enum EmbeddingPooling { ModelDefault, Mean, Cls }
 
     [Serializable]
     public sealed class EmbeddingRequest
     {
         public string[] Texts;
+        public EmbeddingPurpose Purpose;
         public bool? Normalize;
         public int? MaxTokenCount;
         public EmbeddingPooling Pooling;

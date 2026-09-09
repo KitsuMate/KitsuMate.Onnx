@@ -26,7 +26,9 @@ Add to your `manifest.json`:
 2. Create a `Uni2005ModelSet` asset and assign model + vocabulary
 3. Create a `Uni2005Engine` asset
 4. Add `LipSyncPlayer` component to your character
-5. Assign the engine and configure blend shape mapping
+5. Assign the engine, backend, and AudioSource
+6. Add `BlendShapeVisemeTarget`, assign its root and blend-shape profile, and add it
+   to the player's Targets list. Other presentations can implement `VisemeTarget`.
 
 ## Visemes
 
@@ -53,10 +55,25 @@ Standard 15 visemes supported:
 ## Components
 
 ### LipSyncPlayer
-Plays viseme timeline on blend shapes.
+Analyzes audio and sends timed visemes to independent visual targets. Timeline
+playback follows AudioSource sample position. Output includes changing weights,
+silence gaps, and explicit reset on stop/disable. `OnVisemeChanged` delivers sampled
+frames, even when consecutive frames use the same viseme.
 
-### BlendShapeMapper
-Maps visemes to specific blend shape indices.
+Use `AnalyzeClipAsync` when another component owns audio playback, or `PlayAsync`
+for standalone previews. `SetTimeline(clip, timeline)` accepts precomputed data.
+The clip must match the timeline. Cancellation invalidates pending work so stale
+analysis cannot start a replaced or stopped playback request.
+
+### BlendShapeVisemeTarget
+Maps visemes through a `VisemeBlendShapeProfile` and smooths transitions. Multiple
+visemes mapped to one shape combine before writing the renderer. Root discovery,
+profile selection, maximum weight, and smoothing live on this target rather than
+on the player. `Refresh()` rebuilds bindings after changing meshes or profiles.
+
+### VisemeTarget
+Implement `ApplyViseme(VisemeFrame)` and `ResetVisemes()` for another presentation,
+such as mouth sprites. Inference and audio control remain independent of rendering.
 
 ## License
 

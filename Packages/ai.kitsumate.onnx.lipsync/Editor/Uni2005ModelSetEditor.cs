@@ -2,6 +2,7 @@
 using KitsuMate.Onnx.Editor;
 using KitsuMate.Onnx.LipSync.Uni2005;
 using KitsuMate.Onnx.Editor.Download;
+using KitsuMate.Onnx.Download;
 using System.IO;
 using UnityEditor;
 using UnityEngine;

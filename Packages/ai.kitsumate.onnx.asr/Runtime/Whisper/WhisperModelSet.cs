@@ -76,13 +76,15 @@ namespace KitsuMate.Onnx.Asr.Whisper
             return ValidateCommon(context, result);
         }
         
-#if UNITY_EDITOR
         public void SetTokenizer(TextAsset tokenizerJson)
         {
             _tokenizerJson = tokenizerJson;
+#if UNITY_EDITOR
             UnityEditor.EditorUtility.SetDirty(this);
+#endif
         }
 
+#if UNITY_EDITOR
         /// <summary>
         /// Sets the models programmatically. Editor-only.
         /// </summary>

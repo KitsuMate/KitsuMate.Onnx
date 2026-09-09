@@ -20,9 +20,9 @@ namespace KitsuMate.Onnx.LipSync.Editor
             EditorGUILayout.LabelField("Preview", EditorStyles.boldLabel);
 
             bool hasClip = player.AudioSource != null && player.AudioSource.clip != null;
-            bool hasProfile = player.Profile != null;
+            bool hasTargets = player.Targets.Length > 0;
             bool hasEngine = player.Engine != null;
-            bool canPreview = hasProfile && hasEngine && (player.Mode == LipSyncPlayer.PlaybackMode.Realtime || hasClip);
+            bool canPreview = hasTargets && hasEngine && (player.Mode == LipSyncPlayer.PlaybackMode.Realtime || hasClip);
 
             EditorGUI.BeginDisabledGroup(!canPreview);
 
@@ -73,8 +73,8 @@ namespace KitsuMate.Onnx.LipSync.Editor
                 else
                     EditorGUILayout.HelpBox("Assign an AudioSource to preview realtime mode. A microphone clip routed through that source also works.", MessageType.Warning);
             }
-            else if (!hasProfile)
-                EditorGUILayout.HelpBox("Assign a VisemeBlendShapeProfile to preview.", MessageType.Warning);
+            else if (!hasTargets)
+                EditorGUILayout.HelpBox("Assign a viseme target to preview.", MessageType.Warning);
             else if (!hasEngine)
                 EditorGUILayout.HelpBox("Assign a LipSyncEngine to preview.", MessageType.Warning);
         }

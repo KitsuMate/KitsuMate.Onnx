@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
@@ -10,8 +9,7 @@ namespace KitsuMate.Onnx.LipSync
     /// <summary>
     /// Component that plays viseme animations based on lip sync data.
     /// Supports real-time audio analysis or pre-generated timelines.
-    /// Discovers all SkinnedMeshRenderers under the target root and applies
-    /// blend shapes wherever they exist, driven by a VisemeBlendShapeProfile.
+    /// Sends timed visemes to independent visual targets.
     /// </summary>
     [AddComponentMenu("KitsuMate/ONNX/Lip Sync Player")]
     public class LipSyncPlayer : MonoBehaviour
@@ -55,38 +53,19 @@ namespace KitsuMate.Onnx.LipSync
         [SerializeField, Range(0f, 0.1f), Tooltip("Minimum RMS required before realtime analysis updates visemes")]
         private float _realtimeMinRms = 0.01f;
         
-        [Header("Target")]
-        [SerializeField, Tooltip("Root GameObject to search for SkinnedMeshRenderers. If null, uses this GameObject.")]
-        private GameObject _targetRoot;
-        
-        [SerializeField, Tooltip("Include inactive SkinnedMeshRenderers in the search")]
-        private bool _includeInactive;
-        
-        [Header("Blend Shape Profile")]
-        [SerializeField, Tooltip("Profile that maps visemes to blend shape names and weights")]
-        private VisemeBlendShapeProfile _profile;
-        
-        [Header("Animation")]
-        [SerializeField, Range(0f, 1f), Tooltip("Maximum blend shape weight")]
-        private float _maxWeight = 1f;
-        
-        [SerializeField, Range(0.01f, 0.5f), Tooltip("Smoothing time for transitions")]
-        private float _smoothTime = 0.05f;
-        
+        [Header("Output")]
+        [SerializeField] private VisemeTarget[] _targets = Array.Empty<VisemeTarget>();
+
         [SerializeField, Tooltip("Time offset in seconds (negative = earlier, positive = later)")]
         private float _timeOffset = 0f;
         
         [Header("Events")]
         [SerializeField]
-        private UnityEvent<VisemeFrame> _onVisemeChanged;
+        private UnityEvent<VisemeFrame> _onVisemeChanged = new();
         
         // Runtime state
         private VisemeTimeline _timeline;
         private AudioClip _timelineClip;
-        private List<ResolvedBlendShapeTarget> _resolvedTargets;
-        private float[] _currentWeights;
-        private float[] _targetWeights;
-        private float[] _velocities;
         private Viseme _currentViseme;
         private CancellationTokenSource _analysisCts;
         private LipSyncEngineRuntime _runtime;
@@ -96,6 +75,7 @@ namespace KitsuMate.Onnx.LipSync
         private bool _wasAudioPlaying;
         private int _playbackGeneration;
         private int _timelineGeneration;
+        private int _runtimeGeneration;
         private PlaybackRequest? _pendingPlaybackRequest;
         private AudioSourceSampleTap _realtimeSampleTap;
         private float[] _realtimeAnalysisBuffer;
@@ -117,14 +97,10 @@ namespace KitsuMate.Onnx.LipSync
             public VisemeFrame? Frame;
         }
         
-        private struct ResolvedBlendShapeTarget
-        {
-            public SkinnedMeshRenderer Renderer;
-            public int BlendShapeIndex;
-            public float TargetWeight;
-            public int VisemeIndex;
-        }
-        
+        public VisemeTarget[] Targets { get => _targets; set => _targets = value ?? Array.Empty<VisemeTarget>(); }
+        public OnnxBackend Backend { get => _backend; set => _backend = value; }
+        public VisemeFrame CurrentFrame { get; private set; }
+
         /// <summary>LipSync engine for detection.</summary>
         public LipSyncEngine Engine
         {
@@ -142,7 +118,7 @@ namespace KitsuMate.Onnx.LipSync
                     return;
 
                 _audioSource = value;
-                _wasAudioPlaying = _audioSource != null && _audioSource.isPlaying;
+                _wasAudioPlaying = false;
             }
         }
 
@@ -153,39 +129,18 @@ namespace KitsuMate.Onnx.LipSync
             set => _mode = value;
         }
         
-        /// <summary>Root GameObject to search for SkinnedMeshRenderers.</summary>
-        public GameObject TargetRoot
-        {
-            get => _targetRoot;
-            set => _targetRoot = value;
-        }
-        
-        /// <summary>Viseme-to-blend-shape profile.</summary>
-        public VisemeBlendShapeProfile Profile
-        {
-            get => _profile;
-            set => _profile = value;
-        }
-        
         /// <summary>Current viseme timeline.</summary>
-        public VisemeTimeline Timeline
+        public VisemeTimeline Timeline => _timeline;
+
+        /// <summary>Assign precomputed data to its audio clip before playback.</summary>
+        public void SetTimeline(AudioClip clip, VisemeTimeline timeline)
         {
-            get => _timeline;
-            set => _timeline = value;
-        }
-        
-        /// <summary>Maximum blend shape weight.</summary>
-        public float MaxWeight
-        {
-            get => _maxWeight;
-            set => _maxWeight = Mathf.Clamp01(value);
-        }
-        
-        /// <summary>Smoothing time for transitions.</summary>
-        public float SmoothTime
-        {
-            get => _smoothTime;
-            set => _smoothTime = Mathf.Clamp(value, 0.01f, 0.5f);
+            if (clip == null) throw new ArgumentNullException(nameof(clip));
+            if (timeline == null) throw new ArgumentNullException(nameof(timeline));
+            CancelAnalysis();
+            _timeline = timeline;
+            _timelineClip = clip;
+            _timelineGeneration = _playbackGeneration;
         }
         
         /// <summary>Time offset for synchronization.</summary>
@@ -205,7 +160,7 @@ namespace KitsuMate.Onnx.LipSync
         /// <summary>Whether realtime mode is actively following a playing AudioSource.</summary>
         public bool IsRealtimeActive => _mode == PlaybackMode.Realtime && _audioSource != null && _audioSource.isPlaying;
         
-        /// <summary>Event fired when viseme changes.</summary>
+        /// <summary>Sampled output, including updated weights and silence between frames.</summary>
         public UnityEvent<VisemeFrame> OnVisemeChanged => _onVisemeChanged;
         
         /// <summary>Current active viseme.</summary>
@@ -219,27 +174,14 @@ namespace KitsuMate.Onnx.LipSync
         
         private void Awake()
         {
-            int visemeCount = Enum.GetValues(typeof(Viseme)).Length;
-            _currentWeights = new float[visemeCount];
-            _targetWeights = new float[visemeCount];
-            _velocities = new float[visemeCount];
-            _wasAudioPlaying = _audioSource != null && _audioSource.isPlaying;
-            
-            Refresh();
+            _wasAudioPlaying = false;
         }
 
-        private async void OnEnable()
-        {
-            if (_engine == null || _backend == null || _runtime != null) return;
-            try { _runtime = (LipSyncEngineRuntime)await _engine.CreateRuntimeAsync(_backend); }
-            catch (Exception exception) { Debug.LogException(exception, this); }
-        }
-        
-
-        
         private void OnDisable()
         {
+            _runtimeGeneration++;
             CancelAnalysis();
+            ResetVisemes();
             _runtime?.Dispose();
             _runtime = null;
             _modelLoadTask = null;
@@ -254,8 +196,6 @@ namespace KitsuMate.Onnx.LipSync
         {
             UpdatePlaybackState();
             UpdateVisemes();
-            
-            ApplyBlendShapes();
         }
 
         private void UpdatePlaybackState()
@@ -297,10 +237,10 @@ namespace KitsuMate.Onnx.LipSync
         private void OnPlaybackStopped()
         {
             _timelineDriver.Reset();
+            ResetVisemes();
             if (_mode == PlaybackMode.Realtime)
             {
                 ResetRealtimeState();
-                ResetVisemes();
             }
         }
 
@@ -326,6 +266,7 @@ namespace KitsuMate.Onnx.LipSync
 
             if (_runtime == null)
             {
+                EnsureModelPreloadStarted();
                 SetVisemeSilence();
                 return;
             }
@@ -381,73 +322,26 @@ namespace KitsuMate.Onnx.LipSync
         }
         
         /// <summary>
-        /// Re-discover SkinnedMeshRenderers and resolve blend shape indices.
-        /// Call after changing the target root, profile, or after the hierarchy changes at runtime.
-        /// </summary>
-        public void Refresh()
-        {
-            _resolvedTargets = new List<ResolvedBlendShapeTarget>();
-            
-            if (_profile == null)
-                return;
-            
-            var root = _targetRoot != null ? _targetRoot : gameObject;
-            var renderers = root.GetComponentsInChildren<SkinnedMeshRenderer>(_includeInactive);
-            
-            var visemes = (Viseme[])Enum.GetValues(typeof(Viseme));
-            
-            foreach (var renderer in renderers)
-            {
-                if (renderer.sharedMesh == null)
-                    continue;
-                
-                var mesh = renderer.sharedMesh;
-                
-                foreach (var viseme in visemes)
-                {
-                    var targets = _profile.GetTargetsForViseme(viseme);
-                    
-                    foreach (var target in targets)
-                    {
-                        int index = VisemeBlendShapeProfile.ResolveBlendShapeIndex(mesh, target.BlendShapeName);
-                        if (index >= 0)
-                        {
-                            _resolvedTargets.Add(new ResolvedBlendShapeTarget
-                            {
-                                Renderer = renderer,
-                                BlendShapeIndex = index,
-                                TargetWeight = target.Weight,
-                                VisemeIndex = (int)viseme
-                            });
-                        }
-                    }
-                }
-            }
-        }
-        
-        /// <summary>
         /// Analyze an audio clip and store the timeline.
         /// </summary>
         public async Awaitable AnalyzeClipAsync(AudioClip clip, CancellationToken cancellationToken = default)
         {
+            if (clip == null) throw new ArgumentNullException(nameof(clip));
             if (_engine == null || _backend == null)
-                throw new InvalidOperationException("LipSyncEngine is not assigned");
-            if (_runtime == null) _runtime = (LipSyncEngineRuntime)await _engine.CreateRuntimeAsync(_backend, cancellationToken);
-            
+                throw new InvalidOperationException("LipSync engine and backend must be assigned.");
             CancelAnalysis(invalidatePlayback: false);
-            _analysisCts = new CancellationTokenSource();
+            var request = new CancellationTokenSource();
+            _analysisCts = request;
             int generation = _playbackGeneration;
-            
-            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
-                cancellationToken, _analysisCts.Token);
-            
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, request.Token);
             _isAnalyzing = true;
             try
             {
-                var timeline = await _runtime.RunAsync(new LipSyncRequest(clip), linkedCts.Token);
-                if (cancellationToken.IsCancellationRequested || generation != _playbackGeneration)
-                    return;
-
+                await EnsureRuntimeAsync();
+                linked.Token.ThrowIfCancellationRequested();
+                var timeline = await _runtime.RunAsync(new LipSyncRequest(clip), linked.Token);
+                linked.Token.ThrowIfCancellationRequested();
+                if (generation != _playbackGeneration) throw new OperationCanceledException();
                 _timeline = timeline;
                 _timelineClip = clip;
                 _timelineGeneration = generation;
@@ -455,13 +349,30 @@ namespace KitsuMate.Onnx.LipSync
             }
             finally
             {
-                _isAnalyzing = false;
+                if (_analysisCts == request)
+                {
+                    _isAnalyzing = false;
+                    _analysisCts = null;
+                }
+                request.Dispose();
             }
+        }
+
+        private async Task EnsureRuntimeAsync()
+        {
+            if (_runtime != null) return;
+            var load = _modelLoadTask ??= PreloadModelAsync();
+            try { await load; }
+            finally { if (_modelLoadTask == load) _modelLoadTask = null; }
         }
 
         private async Task PreloadModelAsync()
         {
-            if (_runtime == null) _runtime = (LipSyncEngineRuntime)await _engine.CreateRuntimeAsync(_backend);
+            if (_runtime != null) return;
+            int generation = _runtimeGeneration;
+            var runtime = (LipSyncEngineRuntime)await _engine.CreateRuntimeAsync(_backend);
+            if (!isActiveAndEnabled || generation != _runtimeGeneration) { runtime.Dispose(); throw new OperationCanceledException(); }
+            _runtime = runtime;
         }
 
         private void EnsureModelPreloadStarted()
@@ -505,6 +416,8 @@ namespace KitsuMate.Onnx.LipSync
                 _timelineDriver.NotifyTimelineReady(generation);
             }
 
+            cancellationToken.ThrowIfCancellationRequested();
+            if (generation != _playbackGeneration || !isActiveAndEnabled) throw new OperationCanceledException();
             _audioSource.Play();
         }
 
@@ -530,6 +443,8 @@ namespace KitsuMate.Onnx.LipSync
                 _timelineDriver.NotifyTimelineReady(generation);
             }
 
+            cancellationToken.ThrowIfCancellationRequested();
+            if (generation != _playbackGeneration || !isActiveAndEnabled) throw new OperationCanceledException();
             _audioSource.PlayDelayed(Mathf.Max(0f, delaySeconds));
         }
 
@@ -568,10 +483,15 @@ namespace KitsuMate.Onnx.LipSync
         private void CancelAnalysis(bool invalidatePlayback)
         {
             if (invalidatePlayback)
+            {
                 _playbackGeneration++;
+                _wasAudioPlaying = false;
+                _pendingPlaybackRequest = null;
+                _timelineDriver.Reset();
+            }
 
             _analysisCts?.Cancel();
-            _analysisCts?.Dispose();
+
             _analysisCts = null;
             _isAnalyzing = false;
             ResetRealtimeState();
@@ -582,32 +502,26 @@ namespace KitsuMate.Onnx.LipSync
         /// </summary>
         public void ResetVisemes()
         {
-            for (int i = 0; i < _targetWeights.Length; i++)
-            {
-                _targetWeights[i] = 0;
-            }
-            _currentViseme = Viseme.sil;
+            PublishFrame(new VisemeFrame(Viseme.sil, 0f, 0f, 0f));
+            foreach (var target in _targets)
+                if (target != null) target.ResetVisemes();
         }
-        
-        /// <summary>
-        /// Set the current viseme directly (for manual control).
-        /// </summary>
+
         public void SetViseme(Viseme viseme, float weight = 1f)
         {
-            for (int i = 0; i < _targetWeights.Length; i++)
-            {
-                _targetWeights[i] = 0;
-            }
-            
-            _targetWeights[(int)viseme] = weight * _maxWeight;
-            
-            if (_currentViseme != viseme)
-            {
-                _currentViseme = viseme;
-                _onVisemeChanged?.Invoke(new VisemeFrame(viseme, 0, 0, weight));
-            }
+            if ((uint)viseme > (uint)Viseme.ou) throw new ArgumentOutOfRangeException(nameof(viseme));
+            PublishFrame(new VisemeFrame(viseme, 0f, 0f, Mathf.Clamp01(weight)));
         }
-        
+
+        private void PublishFrame(VisemeFrame frame)
+        {
+            _currentViseme = frame.Viseme;
+            CurrentFrame = frame;
+            foreach (var target in _targets)
+                if (target != null && target.isActiveAndEnabled) target.ApplyViseme(frame);
+            _onVisemeChanged?.Invoke(frame);
+        }
+
         private void UpdateVisemesFromTimeline()
         {
             if (_timeline == null || _timelineGeneration != _playbackGeneration)
@@ -632,32 +546,10 @@ namespace KitsuMate.Onnx.LipSync
 
         private void ApplyTimelineFrame(VisemeFrame? frame)
         {
-            for (int i = 0; i < _targetWeights.Length; i++)
-                _targetWeights[i] = 0f;
-
-            if (!frame.HasValue)
-            {
-                _currentViseme = Viseme.sil;
-                return;
-            }
-
-            var value = frame.Value;
-            _targetWeights[(int)value.Viseme] = value.Weight * _maxWeight;
-
-            if (_currentViseme != value.Viseme)
-            {
-                _currentViseme = value.Viseme;
-                _onVisemeChanged?.Invoke(value);
-            }
+            PublishFrame(frame ?? new VisemeFrame(Viseme.sil, 0f, 0f, 0f));
         }
 
-        private void SetVisemeSilence()
-        {
-            for (int i = 0; i < _targetWeights.Length; i++)
-                _targetWeights[i] = 0f;
-
-            _currentViseme = Viseme.sil;
-        }
+        private void SetVisemeSilence() => ApplyTimelineFrame(null);
 
         private AudioSourceSampleTap EnsureRealtimeTap()
         {
@@ -842,31 +734,6 @@ namespace KitsuMate.Onnx.LipSync
             }
         }
         
-        private void ApplyBlendShapes()
-        {
-            if (_resolvedTargets == null || _resolvedTargets.Count == 0)
-                return;
-            
-            // Smooth viseme weights
-            for (int i = 0; i < _targetWeights.Length; i++)
-            {
-                _currentWeights[i] = Mathf.SmoothDamp(
-                    _currentWeights[i],
-                    _targetWeights[i],
-                    ref _velocities[i],
-                    _smoothTime
-                );
-            }
-            
-            // Apply to all resolved blend shape targets
-            for (int i = 0; i < _resolvedTargets.Count; i++)
-            {
-                var t = _resolvedTargets[i];
-                float weight = _currentWeights[t.VisemeIndex] * t.TargetWeight * 100f; // Unity blend shapes are 0-100
-                t.Renderer.SetBlendShapeWeight(t.BlendShapeIndex, weight);
-            }
-        }
-        
 #if UNITY_EDITOR
         private void OnValidate()
         {
@@ -875,10 +742,7 @@ namespace KitsuMate.Onnx.LipSync
             _realtimeAnalysisInterval = Mathf.Clamp(_realtimeAnalysisInterval, 0.02f, 0.25f);
             _realtimeLookbackSeconds = Mathf.Clamp(_realtimeLookbackSeconds, 0f, 0.12f);
             _realtimeMinRms = Mathf.Clamp(_realtimeMinRms, 0f, 0.1f);
-            if (_profile != null && (_targetRoot != null || gameObject.activeInHierarchy))
-            {
-                Refresh();
-            }
+
         }
 #endif
     }

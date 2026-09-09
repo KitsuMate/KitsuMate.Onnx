@@ -2,6 +2,7 @@
 using KitsuMate.Onnx.Editor;
 using KitsuMate.Onnx.Motion.Kimodo;
 using KitsuMate.Onnx.Editor.Download;
+using KitsuMate.Onnx.Download;
 using KitsuMate.Onnx.Embeddings;
 using System.IO;
 using UnityEditor;
