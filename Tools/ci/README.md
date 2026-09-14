@@ -1,6 +1,11 @@
 # CI fixtures
 
-The Unity job requires Docker and Unity 6000.5.3f1. Configure one supported
+The Unity job runs on our `unity-linux-cpu` worker. Any Linux x64 GitHub runner
+with that label, Python 3, and access to Docker can run it. Unity 6000.5.3f1
+is supplied by the GameCI container; no host Unity installation or custom user
+ID, home directory, or cache environment variables are required. The container
+uses its default user for activation and returns generated files to the runner's
+detected UID/GID. Configure one supported
 Unity activation method through repository secrets:
 
 - Personal: `UNITY_LICENSE` and, when required, `UNITY_EMAIL` and
@@ -12,11 +17,26 @@ The workflow stages `ExampleProject~` as `ExampleProject`, then
 the model fixtures listed in `Dependencies/fixtures/ci.lock.json`.
 
 The job keeps content-addressed model fixtures below
-`RUNNER_TOOL_CACHE`. A fixture is fetched only when its SHA-256-named cache file
+`RUNNER_TOOL_CACHE`, falling back to `XDG_CACHE_HOME` or `$HOME/.cache` when
+unset. `KITSUMATE_CACHE_ROOT` and `KITSUMATE_MODEL_CACHE` can override the paths.
+A fixture is fetched only when its SHA-256-named cache file
 is absent. Clean checkouts copy verified files from this persistent cache
 instead of downloading them again. The workflow does not use `actions/cache`
 for model weights because the fixture set is large and already persists in the
 tool cache.
+
+Register a replacement worker once using GitHub's short-lived registration token,
+then install the runner with its standard `svc.sh install` and `svc.sh start`
+commands. Keep the runner directory on persistent storage and enable its service
+at boot. Do not register or remove it on every restart. Its stored registration
+credentials survive restarts; a long-lived PAT is not needed. Containerized
+runners must also persist registration and expose job workspace paths at the
+same absolute location to the host Docker daemon.
+
+GitHub runner registration and Unity activation are separate. Unity credentials
+remain repository secrets and are applied to each test container. Moving to a
+different machine may require a new valid Unity license for the chosen licensing
+method; a GitHub PAT cannot fix Unity licensing.
 
 Runtime fixtures are stored outside Unity's `Assets` folder under
 `ExampleProject/KitsuMateOnnxFixtures`. Only Unity AI Inference models are placed

@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-: "${RUNNER_TOOL_CACHE:?Set a persistent CI tool cache directory.}"
-
-cache_root="${KITSUMATE_CACHE_ROOT:-$RUNNER_TOOL_CACHE/kitsumate}"
+cache_root="${KITSUMATE_CACHE_ROOT:-${RUNNER_TOOL_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}}/kitsumate}"
 model_cache="${KITSUMATE_MODEL_CACHE:-$cache_root/models}"
 mkdir -p "$model_cache"
 
