@@ -52,6 +52,8 @@ jobs:
         run: |
           rm -rf ExampleProject
           cp -a ExampleProject~ ExampleProject
+          # GameCI chowns each result directory, but not its parent.
+          mkdir -p TestResults/EditMode TestResults/PlayMode
       - name: Verify bundled runtime and download test fixtures
         shell: bash
         run: bash Tools/ci/run-unity-tests.sh
