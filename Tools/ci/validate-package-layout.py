@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import re
 import sys
+import subprocess
 from pathlib import Path
 
 
@@ -131,6 +132,12 @@ def main() -> int:
             if forbidden in source:
                 fail(f"Core runtime is not backend-neutral: {forbidden} in {source_file}")
 
+    # A clean Git checkout must already contain a complete default backend.
+    subprocess.run([
+        sys.executable, str(repository_root / "Tools/ci/validate-onnxruntime.py"),
+        "--lock", str(repository_root / "Dependencies/onnxruntime.lock.json"),
+        "--directory", str(onnxruntime_package / "Runtime/Plugins"),
+    ], check=True)
     print(f"Validated {len(packages)} packages; {len(test_packages)} optional test packages.")
     return 0
 

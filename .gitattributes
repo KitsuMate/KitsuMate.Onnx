@@ -1,3 +1,7 @@
 # Managed dependencies are reviewed via the checksum lock, not textual diffs.
 *.dll binary
+*.so binary
+*.dylib binary
+# License bytes are also checksum-pinned; keep CRLF conversion from changing them.
+Packages/ai.kitsumate.onnx.backend.onnxruntime/Runtime/Plugins/Licenses/*.txt -text
 *.sh text eol=lf

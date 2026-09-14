@@ -34,8 +34,16 @@ Build Profile changes recompile managed code and reselect providers. A Unity res
 not required for selection changes, although previously loaded inactive native libraries
 may remain mapped until restart.
 
-Native files are provisioned from separate checksum locks for this package and the NVIDIA
-package. Do not copy NVIDIA files into this package or introduce a second platform core.
+This package includes all default native libraries, managed bindings, licenses, and
+Unity importer settings as ordinary Git files. Git/submodule and UPM archive installs
+require no download step. CI verifies the payload against `Dependencies/onnxruntime.lock.json`.
+The optional NVIDIA package is assembled separately as a complete release archive;
+do not copy its files into this package or introduce a second platform core.
+
+Windows availability and device discovery validate and load the core from this package's
+resolved native directory before calling ONNX Runtime. Missing DLLs or a core version
+that differs from the managed binding produce a managed error; the backend must not
+fall through to Windows' system ONNX Runtime, which can crash with a newer binding.
 
 TODO: once platform/default provider ABIs warrant independent release cadence, extract
 the logically separated payload groups into dedicated packages without changing the

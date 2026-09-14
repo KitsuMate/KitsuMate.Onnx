@@ -8,6 +8,46 @@ namespace KitsuMate.Onnx.Tests
     public sealed class OnnxRuntimeFixtureIntegrationTests
     {
         [Test]
+        public void WindowsRuntime_RejectsMissingCoreBeforeNativeInitialization()
+        {
+            Assert.Throws<DllNotFoundException>(() => OnnxRuntimeProviderRegistry.ValidateWindowsRuntime(
+                Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"), "onnxruntime.dll")));
+        }
+
+        [Test]
+        public void WindowsRuntime_RejectsMissingDirectMlBeforeNativeInitialization()
+        {
+            string directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(directory);
+            try
+            {
+                string core = Path.Combine(directory, "onnxruntime.dll");
+                File.WriteAllBytes(core, new byte[] { 0 });
+                Assert.That(Assert.Throws<DllNotFoundException>(() =>
+                    OnnxRuntimeProviderRegistry.ValidateWindowsRuntime(core)).Message, Does.Contain("DirectML"));
+            }
+            finally { Directory.Delete(directory, true); }
+        }
+
+#if UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN
+        [Test]
+        public void WindowsRuntime_RejectsWrongVersionBeforeNativeInitialization()
+        {
+            string directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(directory);
+            try
+            {
+                string core = Path.Combine(directory, "onnxruntime.dll");
+                File.Copy(typeof(object).Assembly.Location, core);
+                File.WriteAllBytes(Path.Combine(directory, "DirectML.dll"), new byte[] { 0 });
+                Assert.That(Assert.Throws<InvalidOperationException>(() =>
+                    OnnxRuntimeProviderRegistry.ValidateWindowsRuntime(core)).Message, Does.Contain("does not match"));
+            }
+            finally { Directory.Delete(directory, true); }
+        }
+#endif
+
+        [Test]
         public void ProviderOrder_RejectsDuplicates()
         {
             var backend = ScriptableObject.CreateInstance<OnnxRuntimeBackend>();

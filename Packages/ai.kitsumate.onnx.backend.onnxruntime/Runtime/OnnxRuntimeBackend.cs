@@ -159,7 +159,7 @@ namespace KitsuMate.Onnx
                 if (!_supportedPlatforms.Contains(Application.platform)) return false;
                 try
                 {
-                    _ = OrtEnv.Instance();
+                    _ = OnnxRuntimeProviderRegistry.GetEnvironment();
                     return true;
                 }
                 catch (Exception)
@@ -281,6 +281,7 @@ namespace KitsuMate.Onnx
             int gpuDeviceId)
         {
             ConfigureNativeDependencySearchPath();
+            OnnxRuntimeProviderRegistry.EnsureNativeRuntime();
             var ortOptions = new SessionOptions
             {
                 GraphOptimizationLevel = ToOrtOptimizationLevel(options.OptimizationLevel),
@@ -383,7 +384,7 @@ namespace KitsuMate.Onnx
         internal static IReadOnlyList<string> GetRuntimeAvailableProviderNames()
         {
             ConfigureNativeDependencySearchPath();
-            return Array.AsReadOnly(OrtEnv.Instance().GetAvailableProviders().ToArray());
+            return Array.AsReadOnly(OnnxRuntimeProviderRegistry.GetEnvironment().GetAvailableProviders().ToArray());
         }
 
         internal static string GetRuntimeVersion()

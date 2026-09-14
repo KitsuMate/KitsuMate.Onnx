@@ -15,4 +15,6 @@ jobs:
       - uses: actions/checkout@v4
       - name: Validate package layout and artifact policy
         shell: bash
-        run: python3 Tools/ci/validate-package-layout.py
+        run: |
+          python3 Tools/ci/validate-package-layout.py
+          python3 -m unittest Tools/ci/test_validate_onnxruntime.py Tools/native/test_update_onnxruntime.py -v

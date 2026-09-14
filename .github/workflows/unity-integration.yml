@@ -28,7 +28,7 @@ jobs:
       - name: Validate package layout
         run: |
           python3 Tools/ci/validate-package-layout.py
-          python3 -m unittest Tools/ci/test_download_onnxruntime.py -v
+          python3 -m unittest Tools/native/test_update_onnxruntime.py Tools/ci/test_validate_onnxruntime.py -v
       - name: Build package archives
         run: python3 Tools/ci/package-upm.py --output Artifacts
 
@@ -49,7 +49,7 @@ jobs:
         run: |
           rm -rf ExampleProject
           cp -a ExampleProject~ ExampleProject
-      - name: Download checksum-pinned runtime and test fixtures
+      - name: Verify bundled runtime and download test fixtures
         shell: bash
         run: bash Tools/ci/run-unity-tests.sh
       - name: Run EditMode tests

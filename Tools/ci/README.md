@@ -8,10 +8,10 @@ Unity activation method through repository secrets:
 - Professional: `UNITY_SERIAL`, `UNITY_EMAIL`, and `UNITY_PASSWORD`.
 
 The workflow stages `ExampleProject~` as `ExampleProject`, then
-`run-unity-tests.sh` downloads checksum-pinned ONNX Runtime files and the model
-fixtures listed in `Dependencies/fixtures/ci.lock.json`.
+`run-unity-tests.sh` verifies the tracked ONNX Runtime files offline and downloads
+the model fixtures listed in `Dependencies/fixtures/ci.lock.json`.
 
-The job keeps content-addressed artifacts and models below
+The job keeps content-addressed model fixtures below
 `RUNNER_TOOL_CACHE`. A fixture is fetched only when its SHA-256-named cache file
 is absent. Clean checkouts copy verified files from this persistent cache
 instead of downloading them again. The workflow does not use `actions/cache`
@@ -28,14 +28,15 @@ manual test flags. Missing or checksum-mismatched files fail the run. Small
 project-authored regression vectors, such as the Kimodo constraint compiler
 cases, stay inside their test package; model weights do not.
 
-Production model weights and native runtime binaries are never committed to the
-repository. Release jobs provision and validate the default backend and NVIDIA
-provider package independently from `onnxruntime.lock.json` and
-`onnxruntime-nvidia.lock.json`; a file may belong to only one lock/package.
+Production model weights are not committed. The default backend's complete native
+payload is committed and checked against `onnxruntime.lock.json` on every validation
+run. Release jobs package those same bytes. The large optional NVIDIA release is
+assembled with `Tools/native/update-onnxruntime.py` and independently validated
+against `onnxruntime-nvidia.lock.json`; a file may belong to only one lock/package.
 
 The Windows DirectML core is source-built from the pinned ONNX Runtime commit.
-Before tagging a release, publish the checksum-matching archive named in the
-main lock. CUDA provider plug-ins are built with the scripts under
+Its reviewed build output and checksum lock are committed together; a GitHub
+native release is not required. CUDA provider plug-ins are built with the scripts under
 `Tools/native`; TensorRT-RTX consumes its separately pinned standalone EP ABI
 artifact. Archive validation rejects missing, extra, mismatched, and
 cross-package native files.
