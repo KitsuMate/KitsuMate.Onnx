@@ -42,8 +42,11 @@ jobs:
         with:
           clean: true
       - name: Validate Unity prerequisites
+        id: worker
         shell: bash
-        run: bash Tools/ci/verify-worker.sh
+        run: |
+          bash Tools/ci/verify-worker.sh
+          echo "ownership=$(id -u):$(id -g)" >> "$GITHUB_OUTPUT"
       - name: Stage openable Unity test project
         shell: bash
         run: |
@@ -67,7 +70,9 @@ jobs:
           artifactsPath: TestResults/EditMode
           githubToken: ${{ secrets.GITHUB_TOKEN }}
           checkName: Unity EditMode tests
-          runAsHostUser: true
+          # The image needs its default user and home to write activation files.
+          runAsHostUser: false
+          chownFilesTo: ${{ steps.worker.outputs.ownership }}
       - name: Run PlayMode tests
         id: playmode
         if: ${{ !cancelled() && (steps.editmode.outcome == 'success' || steps.editmode.outcome == 'failure') }}
@@ -84,7 +89,8 @@ jobs:
           artifactsPath: TestResults/PlayMode
           githubToken: ${{ secrets.GITHUB_TOKEN }}
           checkName: Unity PlayMode tests
-          runAsHostUser: true
+          runAsHostUser: false
+          chownFilesTo: ${{ steps.worker.outputs.ownership }}
       - name: Upload Unity results and logs
         if: always()
         uses: actions/upload-artifact@v4
