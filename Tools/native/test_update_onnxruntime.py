@@ -1,0 +1,153 @@
+import hashlib
+import json
+import subprocess
+import sys
+import tempfile
+import unittest
+import zipfile
+from pathlib import Path
+
+
+SCRIPT = Path(__file__).with_name("update-onnxruntime.py")
+
+
+class ArtifactProvisioningTests(unittest.TestCase):
+    def test_nested_extraction_preserves_meta_and_removes_stale_payload(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            nested = root / "runtime.aar"
+            with zipfile.ZipFile(nested, "w") as archive:
+                archive.writestr("jni/arm64-v8a/libonnxruntime.so", b"native")
+            package = root / "package.nupkg"
+            with zipfile.ZipFile(package, "w") as archive:
+                archive.writestr("runtimes/android/native/onnxruntime.aar", nested.read_bytes())
+                archive.writestr("lib/netstandard2.0/runtime.dll", b"managed")
+
+            destination = root / "output"
+            destination.mkdir()
+            (destination / "tracked.meta").write_text("guid: retained", encoding="utf-8")
+            (destination / "stale.bin").write_bytes(b"stale")
+            files = [
+                {
+                    "archive": "runtimes/android/native/onnxruntime.aar",
+                    "source": "jni/arm64-v8a/libonnxruntime.so",
+                    "destination": "Android/arm64-v8a/libonnxruntime.so",
+                    "sha256": hashlib.sha256(b"native").hexdigest(),
+                },
+                {
+                    "source": "lib/netstandard2.0/runtime.dll",
+                    "destination": "Managed/runtime.dll",
+                    "sha256": hashlib.sha256(b"managed").hexdigest(),
+                },
+            ]
+            lock = root / "lock.json"
+            lock.write_text(json.dumps({
+                "version": "test",
+                "packages": [{"id": "fixture", "url": package.as_uri(), "files": files}],
+            }), encoding="utf-8")
+
+            completed = subprocess.run([
+                sys.executable, str(SCRIPT), "--lock", str(lock),
+                "--cache", str(root / "cache"), "--destination", str(destination),
+            ], capture_output=True, text=True)
+            self.assertEqual(0, completed.returncode, completed.stderr)
+            self.assertEqual(b"native", (destination / files[0]["destination"]).read_bytes())
+            self.assertEqual(b"managed", (destination / files[1]["destination"]).read_bytes())
+            self.assertTrue((destination / "tracked.meta").is_file())
+            self.assertFalse((destination / "stale.bin").exists())
+
+    def test_rejects_destination_traversal(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            package = root / "package.nupkg"
+            with zipfile.ZipFile(package, "w") as archive:
+                archive.writestr("value", b"data")
+            lock = root / "lock.json"
+            lock.write_text(json.dumps({
+                "version": "test",
+                "packages": [{"id": "fixture", "url": package.as_uri(), "files": [{
+                    "source": "value", "destination": "../escaped",
+                    "sha256": hashlib.sha256(b"data").hexdigest(),
+                }]}],
+            }), encoding="utf-8")
+            completed = subprocess.run([
+                sys.executable, str(SCRIPT), "--lock", str(lock),
+                "--cache", str(root / "cache"), "--destination", str(root / "output"),
+            ], capture_output=True, text=True)
+            self.assertNotEqual(0, completed.returncode)
+            self.assertFalse((root / "escaped").exists())
+
+    def test_recovers_corrupt_cached_archive(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            package = root / "source.nupkg"
+            with zipfile.ZipFile(package, "w") as archive:
+                archive.writestr("value", b"data")
+            cache = root / "cache"
+            cache.mkdir()
+            (cache / "fixture.test.zip").write_bytes(b"not a zip")
+            lock = root / "lock.json"
+            lock.write_text(json.dumps({
+                "version": "test",
+                "packages": [{"id": "fixture", "url": package.as_uri(), "files": [{
+                    "source": "value", "destination": "value.bin",
+                    "sha256": hashlib.sha256(b"data").hexdigest(),
+                }]}],
+            }), encoding="utf-8")
+            completed = subprocess.run([
+                sys.executable, str(SCRIPT), "--lock", str(lock),
+                "--cache", str(cache), "--destination", str(root / "output"),
+            ], capture_output=True, text=True)
+            self.assertEqual(0, completed.returncode, completed.stderr)
+
+    def test_download_failure_names_package_and_url(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            missing_package = (root / "missing.nupkg").as_uri()
+            destination = root / "output"
+            destination.mkdir()
+            existing = destination / "value.bin"
+            existing.write_bytes(b"installed runtime")
+            lock = root / "lock.json"
+            lock.write_text(json.dumps({
+                "version": "test",
+                "packages": [{"id": "missing-runtime", "url": missing_package, "files": [{
+                    "source": "value", "destination": "value.bin",
+                    "sha256": hashlib.sha256(b"data").hexdigest(),
+                }]}],
+            }), encoding="utf-8")
+            completed = subprocess.run([
+                sys.executable, str(SCRIPT), "--lock", str(lock),
+                "--cache", str(root / "cache"), "--destination", str(root / "output"),
+            ], capture_output=True, text=True)
+            self.assertNotEqual(0, completed.returncode)
+            self.assertIn("missing-runtime", completed.stderr)
+            self.assertIn(missing_package, completed.stderr)
+            self.assertEqual(b"installed runtime", existing.read_bytes())
+
+    def test_source_build_uses_reviewed_files_without_a_release_url(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            source.mkdir()
+            (source / "onnxruntime.dll").write_bytes(b"built runtime")
+            lock = root / "lock.json"
+            lock.write_text(json.dumps({"version": "test", "packages": [{
+                "id": "source-runtime", "sourceBuild": {"commit": "reviewed"},
+                "files": [{"source": "onnxruntime.dll", "destination": "Windows/x86_64/onnxruntime.dll",
+                           "sha256": hashlib.sha256(b"built runtime").hexdigest()}],
+            }]}))
+            command = [sys.executable, str(SCRIPT), "--lock", str(lock), "--cache", str(root / "cache"),
+                       "--destination", str(root / "output"), "--source-build", str(source)]
+            completed = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, completed.returncode, completed.stderr)
+            installed = root / "output/Windows/x86_64/onnxruntime.dll"
+            self.assertEqual(b"built runtime", installed.read_bytes())
+            (source / "onnxruntime.dll").write_bytes(b"unreviewed runtime")
+            completed = subprocess.run(command, capture_output=True, text=True)
+            self.assertNotEqual(0, completed.returncode)
+            self.assertEqual(b"built runtime", installed.read_bytes())
+
+
+if __name__ == "__main__":
+    unittest.main()

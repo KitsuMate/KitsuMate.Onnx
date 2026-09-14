@@ -70,6 +70,54 @@ namespace KitsuMate.Onnx
         private static readonly object Gate = new();
         private static readonly Dictionary<OnnxExecutionProvider, IOnnxRuntimeProviderModule> Modules = new();
         private static readonly Dictionary<Assembly, HashSet<string>> NativeSearchRoots = new();
+        private static IntPtr _windowsRuntime;
+
+        // Never let Windows resolve a missing package core to its older system copy.
+        internal static OrtEnv GetEnvironment()
+        {
+            EnsureNativeRuntime();
+            return OrtEnv.Instance();
+        }
+
+        internal static void EnsureNativeRuntime()
+        {
+#if UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN
+            lock (Gate)
+            {
+                if (_windowsRuntime != IntPtr.Zero) return;
+#if UNITY_EDITOR
+                string[] directories = GetNativeSearchRoots(typeof(OnnxRuntimeBackend).Assembly)
+                    .Select(root => Path.Combine(root, "Windows", "x86_64")).ToArray();
+#else
+                string[] directories = { Path.Combine(Application.dataPath, "Plugins", "x86_64"), Path.Combine(Application.dataPath, "Plugins") };
+#endif
+                string path = directories.Select(directory => Path.Combine(directory, "onnxruntime.dll"))
+                    .FirstOrDefault(File.Exists);
+                if (path == null)
+                    throw new DllNotFoundException("The ONNX Runtime package's Windows payload is missing. " +
+                        "Reinstall the complete package or restore its tracked Runtime/Plugins files. " +
+                        "The Windows system ONNX Runtime is not a compatible substitute.");
+                ValidateWindowsRuntime(path);
+                _windowsRuntime = LoadLibraryEx(path, IntPtr.Zero, 0x00000100 | 0x00001000);
+                if (_windowsRuntime == IntPtr.Zero)
+                    throw new DllNotFoundException($"Could not load packaged ONNX Runtime '{path}' (Windows error {Marshal.GetLastWin32Error()}).");
+            }
+#endif
+        }
+
+        internal static void ValidateWindowsRuntime(string path)
+        {
+            if (!File.Exists(path)) throw new DllNotFoundException($"Missing packaged ONNX Runtime: {path}");
+            string directMl = Path.Combine(Path.GetDirectoryName(path), "DirectML.dll");
+            if (!File.Exists(directMl)) throw new DllNotFoundException($"Missing packaged DirectML dependency: {directMl}");
+            Version managed = typeof(OrtEnv).Assembly.GetName().Version;
+            var native = System.Diagnostics.FileVersionInfo.GetVersionInfo(path);
+            if (native.FileMajorPart != managed.Major || native.FileMinorPart != managed.Minor || native.FileBuildPart != managed.Build)
+                throw new InvalidOperationException($"Packaged ONNX Runtime {native.FileVersion} does not match managed binding {managed}.");
+        }
+
+        [DllImport("kernel32", EntryPoint = "LoadLibraryExW", SetLastError = true, CharSet = CharSet.Unicode)]
+        private static extern IntPtr LoadLibraryEx(string path, IntPtr file, uint flags);
 
         static OnnxRuntimeProviderRegistry()
         {
@@ -164,7 +212,7 @@ namespace KitsuMate.Onnx
         {
             if (!IsEnabled)
                 throw new OnnxProviderUnavailableException(Provider, $"Provider module '{Provider}' is disabled by the active Build Profile.");
-            OrtEnv env = OrtEnv.Instance();
+            OrtEnv env = OnnxRuntimeProviderRegistry.GetEnvironment();
             EnsureRegistered(env);
             return Array.AsReadOnly(env.GetEpDevices()
                 .Where(device => string.Equals(device.EpName, RuntimeProviderName, StringComparison.OrdinalIgnoreCase))
@@ -175,7 +223,7 @@ namespace KitsuMate.Onnx
         public void Append(SessionOptions options, int deviceId)
         {
             if (options == null) throw new ArgumentNullException(nameof(options));
-            OrtEnv env = OrtEnv.Instance();
+            OrtEnv env = OnnxRuntimeProviderRegistry.GetEnvironment();
             EnsureRegistered(env);
             OrtEpDevice[] devices = GetOrtDevices(env);
             if (devices.Length == 0)
@@ -193,7 +241,7 @@ namespace KitsuMate.Onnx
                 new Dictionary<string, string>());
         }
 
-        public void EnsureRegistered() => EnsureRegistered(OrtEnv.Instance());
+        public void EnsureRegistered() => EnsureRegistered(OnnxRuntimeProviderRegistry.GetEnvironment());
 
         protected virtual string LocateLibrary()
         {
@@ -323,14 +371,14 @@ namespace KitsuMate.Onnx
         }
         public void Append(SessionOptions options, int deviceId)
         {
-            OrtEnv env = OrtEnv.Instance();
+            OrtEnv env = OnnxRuntimeProviderRegistry.GetEnvironment();
             OrtEpDevice[] devices = GetOrtDevices();
             if ((uint)deviceId >= (uint)devices.Length)
                 throw new OnnxProviderUnavailableException(Provider,
                     $"Invalid device id {deviceId}; '{RuntimeProviderName}' exposed {devices.Length} device(s).");
             options.AppendExecutionProvider(env, new[] { devices[deviceId] }, new Dictionary<string, string>());
         }
-        private OrtEpDevice[] GetOrtDevices() => OrtEnv.Instance().GetEpDevices()
+        private OrtEpDevice[] GetOrtDevices() => OnnxRuntimeProviderRegistry.GetEnvironment().GetEpDevices()
             .Where(device => string.Equals(device.EpName, RuntimeProviderName, StringComparison.OrdinalIgnoreCase))
             .ToArray();
     }

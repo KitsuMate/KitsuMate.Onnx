@@ -24,17 +24,12 @@ jobs:
           -Provider DirectML
           -Source "$env:GITHUB_WORKSPACE/onnxruntime-source"
           -Output "$env:RUNNER_TEMP/directml"
-      - name: Verify locked checksums
+      - name: Package maintainer build output
         shell: pwsh
         run: |
-          $expected = @{
-            'onnxruntime.dll' = '070844500b249a28a8714edd47c47cbf8bd21a716e5754ab66854d8f89e9779d'
-            'DirectML.dll' = '9c9e6d822561c6c41b90e6994b3e8857cf1d66dbfb1e0c4c799c7c89b4e92da1'
-          }
-          foreach ($entry in $expected.GetEnumerator()) {
-            $actual = (Get-FileHash "$env:RUNNER_TEMP/directml/$($entry.Key)" -Algorithm SHA256).Hash.ToLowerInvariant()
-            if ($actual -ne $entry.Value) { throw "$($entry.Key) checksum mismatch: $actual" }
-          }
+          Get-ChildItem "$env:RUNNER_TEMP/directml" -File | ForEach-Object {
+            "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $_.Name
+          } | Set-Content "$env:RUNNER_TEMP/directml/SHA256SUMS" -Encoding utf8
           Compress-Archive "$env:RUNNER_TEMP/directml/*" "$env:RUNNER_TEMP/kitsumate-onnxruntime-directml-win-x64-1.25.1.zip"
       - uses: actions/upload-artifact@v4
         with:

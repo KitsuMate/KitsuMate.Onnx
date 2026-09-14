@@ -42,13 +42,12 @@ jobs:
         run: python3 Tools/release/set-version.py "${{ steps.version.outputs.version }}" --check
       - name: Validate package layout
         run: python3 Tools/ci/validate-package-layout.py
-      - name: Add ONNX Runtime release binaries
+      - name: Validate bundled runtime and assemble optional NVIDIA package
         run: |
-          python3 Tools/ci/download-onnxruntime.py \
+          python3 Tools/ci/validate-onnxruntime.py \
             --lock Dependencies/onnxruntime.lock.json \
-            --cache "$RUNNER_TEMP/kitsumate-artifacts" \
-            --destination Packages/ai.kitsumate.onnx.backend.onnxruntime/Runtime/Plugins
-          python3 Tools/ci/download-onnxruntime.py \
+            --directory Packages/ai.kitsumate.onnx.backend.onnxruntime/Runtime/Plugins
+          python3 Tools/native/update-onnxruntime.py \
             --lock Dependencies/onnxruntime-nvidia.lock.json \
             --cache "$RUNNER_TEMP/kitsumate-artifacts" \
             --destination Packages/ai.kitsumate.onnx.backend.onnxruntime.nvidia/Runtime/Plugins
@@ -56,10 +55,10 @@ jobs:
         shell: bash
         run: |
           python3 Tools/ci/package-upm.py --output Artifacts
-          python3 Tools/ci/validate-onnxruntime-archive.py \
+          python3 Tools/ci/validate-onnxruntime.py \
             --lock Dependencies/onnxruntime.lock.json \
             --archive "$(find Artifacts -maxdepth 1 -name 'ai.kitsumate.onnx.backend.onnxruntime-*.tgz' -print -quit)"
-          python3 Tools/ci/validate-onnxruntime-archive.py \
+          python3 Tools/ci/validate-onnxruntime.py \
             --lock Dependencies/onnxruntime-nvidia.lock.json \
             --archive "$(find Artifacts -maxdepth 1 -name 'ai.kitsumate.onnx.backend.onnxruntime.nvidia-*.tgz' -print -quit)"
           (cd Artifacts && sha256sum *.tgz > SHA256SUMS)

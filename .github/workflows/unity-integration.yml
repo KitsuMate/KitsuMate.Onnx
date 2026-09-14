@@ -28,7 +28,7 @@ jobs:
       - name: Validate package layout
         run: |
           python3 Tools/ci/validate-package-layout.py
-          python3 -m unittest Tools/ci/test_download_onnxruntime.py -v
+          python3 -m unittest Tools/native/test_update_onnxruntime.py Tools/ci/test_validate_onnxruntime.py -v
       - name: Build package archives
         run: python3 Tools/ci/package-upm.py --output Artifacts
 
@@ -42,14 +42,19 @@ jobs:
         with:
           clean: true
       - name: Validate Unity prerequisites
+        id: worker
         shell: bash
-        run: bash Tools/ci/verify-worker.sh
+        run: |
+          bash Tools/ci/verify-worker.sh
+          echo "ownership=$(id -u):$(id -g)" >> "$GITHUB_OUTPUT"
       - name: Stage openable Unity test project
         shell: bash
         run: |
           rm -rf ExampleProject
           cp -a ExampleProject~ ExampleProject
-      - name: Download checksum-pinned runtime and test fixtures
+          # GameCI chowns each result directory, but not its parent.
+          mkdir -p TestResults/EditMode TestResults/PlayMode
+      - name: Verify bundled runtime and download test fixtures
         shell: bash
         run: bash Tools/ci/run-unity-tests.sh
       - name: Run EditMode tests
@@ -67,7 +72,9 @@ jobs:
           artifactsPath: TestResults/EditMode
           githubToken: ${{ secrets.GITHUB_TOKEN }}
           checkName: Unity EditMode tests
-          runAsHostUser: true
+          # The image needs its default user and home to write activation files.
+          runAsHostUser: false
+          chownFilesTo: ${{ steps.worker.outputs.ownership }}
       - name: Run PlayMode tests
         id: playmode
         if: ${{ !cancelled() && (steps.editmode.outcome == 'success' || steps.editmode.outcome == 'failure') }}
@@ -84,7 +91,8 @@ jobs:
           artifactsPath: TestResults/PlayMode
           githubToken: ${{ secrets.GITHUB_TOKEN }}
           checkName: Unity PlayMode tests
-          runAsHostUser: true
+          runAsHostUser: false
+          chownFilesTo: ${{ steps.worker.outputs.ownership }}
       - name: Upload Unity results and logs
         if: always()
         uses: actions/upload-artifact@v4
