@@ -36,10 +36,7 @@ The backbone follows the backend provider policy and retains KV-cache tensors on
 device when IO binding is available; only logits return to CPU. Loaded sessions are reused
 across requests. Small top-k sampling avoids sorting the full vocabulary.
 **Use CPU Codec** in the model set defaults to enabled because WebGPU corrupts audio
-with the original codec's stride-480 ConvTranspose. For GPU decoding, regenerate the codec
-with `Tools/neutts/prepare_codec.py`, assign that graph, and disable **Use CPU Codec**.
-The prepared graph uses an equivalent overlap Conv without changing the learned weights.
-It also uses tensor Gather instead of CPU-only sequence operations inside the codec.
+with the original codec's stride-480 ConvTranspose.
 For WebGPU, prefer the FP32 or FP16-storage backbone. Dynamic INT8 matrix operations
 fall back to CPU and introduce many transfers between CPU and GPU within each token step.
 The 2048-token context includes text and reference speech; oversized prompts are rejected.
@@ -51,8 +48,8 @@ It does not apply upstream's optional Perth watermark.
 Literal digits and times are unreliable in the source model; spell numbers out in words before synthesis.
 
 The backbone retains the NeuTTS Open License v1.0, including its commercial-use restriction;
-the codec and reference assets retain Apache-2.0. See the model repository for licenses and validation
-limits, and `Tools/neutts` in the source repository for reproducible conversion scripts.
+the codec and reference assets retain Apache-2.0. See the model repository for licenses and
+validation limits.
 
 ## OmniVoice artifacts
 

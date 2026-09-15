@@ -23,7 +23,7 @@ namespace KitsuMate.Onnx.Tts.NeuTts
 
         [SerializeField] private OnnxModelReference backbone = new();
         [SerializeField] private OnnxModelReference codecDecoder = new();
-        [Tooltip("Use CPU for the original NeuCodec graph. Disable for the overlap-Conv codec produced by prepare_codec.py.")]
+        [Tooltip("Use CPU for the original NeuCodec graph. Disable only when using a compatible overlap-Conv codec.")]
         [SerializeField] private bool useCpuCodec = true;
         [SerializeField] private TextFileReference tokenizer = new();
         [SerializeField] private TextFileReference metadata = new();
