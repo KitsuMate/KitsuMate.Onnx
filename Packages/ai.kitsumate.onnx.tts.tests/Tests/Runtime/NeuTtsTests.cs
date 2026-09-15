@@ -76,7 +76,7 @@ namespace KitsuMate.Onnx.Tts.Tests
         [Test]
         public void PromptsMatchPinnedUpstream()
         {
-            if (!File.Exists(Path.Combine(Artifacts, "prompt-fixtures.json"))) Assert.Ignore("Prepare NeuTTS artifacts with reference_parity.py.");
+            if (!File.Exists(Path.Combine(Artifacts, "prompt-fixtures.json"))) Assert.Ignore("NeuTTS parity fixtures are not available.");
             var metadata = JsonUtility.FromJson<NeuTtsMetadata>(File.ReadAllText(Path.Combine(Artifacts, "neutts.json")));
             metadata.Validate();
             var tokenizer = Tokenizer.FromTokenizerJson(File.ReadAllBytes(Path.Combine(Artifacts, "tokenizer.json")));
