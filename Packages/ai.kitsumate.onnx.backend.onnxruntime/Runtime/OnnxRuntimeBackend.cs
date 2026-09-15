@@ -51,7 +51,7 @@ namespace KitsuMate.Onnx
     /// 
     /// Supported platforms: Windows x64, Linux x64, macOS arm64, and Android ARM.
     /// 
-    /// Automatic acceleration: DirectML on Windows, WebGPU on Linux, CoreML on
+    /// Automatic acceleration: WebGPU on Windows and Linux, CoreML on
     /// Apple-silicon macOS, and NNAPI on Android, each with CPU fallback.
     /// The optional NVIDIA package prepends TensorRT-RTX and CUDA on Windows/Linux.
     /// </summary>
@@ -72,7 +72,6 @@ namespace KitsuMate.Onnx
         {
             OnnxExecutionProvider.TensorRtRtx,
             OnnxExecutionProvider.Cuda,
-            OnnxExecutionProvider.DirectMl,
             OnnxExecutionProvider.WebGpu,
             OnnxExecutionProvider.CoreMl,
             OnnxExecutionProvider.Nnapi,
@@ -285,14 +284,16 @@ namespace KitsuMate.Onnx
             var ortOptions = new SessionOptions
             {
                 GraphOptimizationLevel = ToOrtOptimizationLevel(options.OptimizationLevel),
-                EnableMemoryPattern = provider == OnnxExecutionProvider.DirectMl ? false : options.EnableMemoryPattern,
+                EnableMemoryPattern = options.EnableMemoryPattern,
                 EnableCpuMemArena = options.EnableCpuMemArena,
                 LogSeverityLevel = OrtLoggingLevel.ORT_LOGGING_LEVEL_ERROR
             };
 
-            if (provider == OnnxExecutionProvider.DirectMl)
-                ortOptions.ExecutionMode = ExecutionMode.ORT_SEQUENTIAL;
-            
+            // ORT 1.30.0 fuses Conv with Gelu/Elu, which the bundled WebGPU 0.3.0
+            // cannot initialize. Remove when an updated plugin passes the activation regression test.
+            if (provider == OnnxExecutionProvider.WebGpu)
+                ortOptions.AddSessionConfigEntry("optimization.disable_specified_optimizers", "ConvActivationFusion");
+
             if (options.IntraOpThreads > 0)
                 ortOptions.IntraOpNumThreads = options.IntraOpThreads;
             
@@ -536,7 +537,6 @@ namespace KitsuMate.Onnx
             {
                 OnnxExecutionProvider.Cuda => "Cuda",
                 OnnxExecutionProvider.TensorRtRtx => "Cuda",
-                OnnxExecutionProvider.DirectMl => "DML",
                 OnnxExecutionProvider.WebGpu => "WebGPU",
                 OnnxExecutionProvider.CoreMl => "CoreML",
                 _ => null
@@ -647,26 +647,45 @@ namespace KitsuMate.Onnx
             IReadOnlyList<OnnxNamedValue> inputs)
         {
             var sw = VerboseLogging ? Stopwatch.StartNew() : null;
-            var ortInputs = new List<NamedOnnxValue>(inputs.Count);
-            foreach (OnnxNamedValue input in inputs)
+            // CPUOutput (-1), the managed default, is rejected by WebGPU host transfers.
+            using var memoryInfo = new OrtMemoryInfo("Cpu", OrtAllocatorType.DeviceAllocator, 0, OrtMemType.Default);
+            var ortInputs = new List<OrtValue>(inputs.Count);
+            var names = new List<string>(inputs.Count);
+            try
             {
-                OnnxTensor tensor = input.Value;
-                if (state.Session.InputMetadata.TryGetValue(input.Name, out NodeMetadata meta))
-                    tensor = CastTensorIfNeeded(tensor, meta.ElementDataType);
-                ortInputs.Add(ConvertToOrtValue(input.Name, tensor));
+                foreach (OnnxNamedValue input in inputs)
+                {
+                    OnnxTensor tensor = input.Value;
+                    if (state.Session.InputMetadata.TryGetValue(input.Name, out NodeMetadata meta))
+                        tensor = CastTensorIfNeeded(tensor, meta.ElementDataType);
+                    names.Add(input.Name);
+                    ortInputs.Add(CreateOrtValueFromTensor(tensor, memoryInfo));
+                }
+                long inputConvertMs = sw?.ElapsedMilliseconds ?? 0;
+                sw?.Restart();
+                using var runOptions = new RunOptions();
+                using var results = state.Session.Run(runOptions, names, ortInputs, _outputNames);
+                long inferenceMs = sw?.ElapsedMilliseconds ?? 0;
+                sw?.Restart();
+                var outputs = new Dictionary<string, OnnxTensor>();
+                try
+                {
+                    for (int i = 0; i < results.Count; i++)
+                        outputs[_outputNames[i]] = OrtDeviceTensor.CopyToCpu(results[i], _outputNames[i]);
+                    if (sw != null)
+                        Debug.Log($"[OnnxSession] Run: provider={state.Provider}, inputConvert={inputConvertMs}ms, inference={inferenceMs}ms, outputConvert={sw.ElapsedMilliseconds}ms");
+                    return outputs;
+                }
+                catch
+                {
+                    foreach (OnnxTensor output in outputs.Values) output.Dispose();
+                    throw;
+                }
             }
-            long inputConvertMs = sw?.ElapsedMilliseconds ?? 0;
-            sw?.Restart();
-            using IDisposableReadOnlyCollection<DisposableNamedOnnxValue> results = state.Session.Run(ortInputs);
-            long inferenceMs = sw?.ElapsedMilliseconds ?? 0;
-            sw?.Restart();
-            var outputs = new Dictionary<string, OnnxTensor>();
-            foreach (DisposableNamedOnnxValue result in results)
-                outputs[result.Name] = ConvertFromOrtValue(result);
-            if (sw != null)
-                Debug.Log($"[OnnxSession] Run: provider={state.Provider}, inputConvert={inputConvertMs}ms, inference={inferenceMs}ms, " +
-                          $"outputConvert={sw.ElapsedMilliseconds}ms ({inputs.Count} inputs → {outputs.Count} outputs)");
-            return outputs;
+            finally
+            {
+                foreach (OrtValue input in ortInputs) input.Dispose();
+            }
         }
 
         private bool ShouldAttemptRuntimeFallback(Exception exception)
@@ -781,92 +800,6 @@ namespace KitsuMate.Onnx
             return tensor;
         }
         
-        /// <summary>Convert float32 to IEEE 754 half-precision (ushort).</summary>
-        /// <summary>Convert IEEE 754 half-precision (ushort) to float32.</summary>
-        private static NamedOnnxValue ConvertToOrtValue(string name, OnnxTensor tensor)
-        {
-            var shape = tensor.Shape;
-            
-            return tensor.ElementType switch
-            {
-                OnnxTensorElementType.Float => NamedOnnxValue.CreateFromTensor(name, 
-                    new DenseTensor<float>(tensor.AsFloatArray(), shape)),
-                OnnxTensorElementType.Int32 => NamedOnnxValue.CreateFromTensor(name,
-                    new DenseTensor<int>(tensor.AsIntArray(), shape)),
-                OnnxTensorElementType.Int64 => NamedOnnxValue.CreateFromTensor(name,
-                    new DenseTensor<long>(tensor.AsLongArray(), shape)),
-                OnnxTensorElementType.UInt8 => NamedOnnxValue.CreateFromTensor(name,
-                    new DenseTensor<byte>(tensor.AsByteArray(), shape)),
-                OnnxTensorElementType.Bool => NamedOnnxValue.CreateFromTensor(name,
-                    new DenseTensor<bool>(tensor.AsBoolArray(), shape)),
-                OnnxTensorElementType.Float16 => ConvertFloat16ToOrtValue(name, tensor.AsFloat16Array(), shape),
-                _ => throw new NotSupportedException($"Tensor element type {tensor.ElementType} not supported")
-            };
-        }
-        
-        /// <summary>
-        /// Convert ushort[] (raw FP16 bits) to DenseTensor&lt;Float16&gt; for ONNX Runtime.
-        /// DenseTensor&lt;ushort&gt; maps to UInt16, not Float16 — ORT requires the Float16 struct.
-        /// </summary>
-        private static NamedOnnxValue ConvertFloat16ToOrtValue(string name, ushort[] data, int[] shape)
-        {
-            var f16Data = new Float16[data.Length];
-            for (int i = 0; i < data.Length; i++)
-                f16Data[i] = new Float16(data[i]);
-            return NamedOnnxValue.CreateFromTensor(name, new DenseTensor<Float16>(f16Data, shape));
-        }
-        
-        private static OnnxTensor ConvertFromOrtValue(NamedOnnxValue value)
-        {
-            if (value.Value is Tensor<float> tensor)
-            {
-                var shape = tensor.Dimensions.ToArray();
-                var data = tensor.ToArray();
-                return OnnxTensor.FromArray(data, shape, value.Name);
-            }
-            
-            if (value.Value is Tensor<int> intTensor)
-            {
-                var shape = intTensor.Dimensions.ToArray();
-                var data = intTensor.ToArray();
-                return OnnxTensor.FromArray(data, shape, value.Name);
-            }
-            
-            if (value.Value is Tensor<long> longTensor)
-            {
-                var shape = longTensor.Dimensions.ToArray();
-                var data = longTensor.ToArray();
-                return OnnxTensor.FromArray(data, shape, value.Name);
-            }
-
-            if (value.Value is Tensor<byte> byteTensor)
-            {
-                return OnnxTensor.FromArray(byteTensor.ToArray(), byteTensor.Dimensions.ToArray(), value.Name);
-            }
-
-            if (value.Value is Tensor<bool> boolTensor)
-            {
-                var shape = boolTensor.Dimensions.ToArray();
-                var data = boolTensor.ToArray();
-                return OnnxTensor.FromArray(data, shape, value.Name);
-            }
-            
-            // Float16 output (e.g. quantized models) — convert to float
-            if (value.Value is Tensor<Float16> f16Tensor)
-            {
-                var shape = f16Tensor.Dimensions.ToArray();
-                var f16Data = f16Tensor.ToArray();
-                var floatData = new float[f16Data.Length];
-                for (int i = 0; i < f16Data.Length; i++)
-                    floatData[i] = (float)f16Data[i];
-                return OnnxTensor.FromArray(floatData, shape, value.Name);
-            }
-            
-            throw new NotSupportedException($"Cannot convert output '{value.Name}' - unsupported type");
-        }
-        
-        // ── IO Binding / RunOnDevice ──────────────────────────────────────
-        
         public IReadOnlyList<IDeviceTensor> RunOnDevice(
             IReadOnlyList<OnnxNamedValue> cpuInputs,
             IReadOnlyList<IDeviceTensor> deviceInputs,
@@ -904,16 +837,29 @@ namespace KitsuMate.Onnx
             // Lazily create GPU memory info for IO Binding output placement
             if (state.GpuMemoryInfo == null && state.GpuProviderName != null)
             {
-                state.GpuMemoryInfo = new OrtMemoryInfo(
-                    state.GpuProviderName, OrtAllocatorType.DeviceAllocator,
-                    state.Device.ProviderDeviceIndex, OrtMemType.Default);
+                if (state.Provider == OnnxExecutionProvider.WebGpu)
+                {
+                    // Plugin devices supply their allocator descriptor; the name-based API
+                    // only recognizes built-in devices and cannot describe WebGPU memory.
+                    OnnxRuntimeProviderRegistry.TryGet(state.Provider, out var module);
+                    var device = OnnxRuntimeProviderRegistry.GetEnvironment().GetEpDevices()
+                        .Where(candidate => candidate.EpName == module.RuntimeProviderName)
+                        .ElementAt(state.Device.ProviderDeviceIndex);
+                    state.GpuMemoryInfo = device.GetMemoryInfo(OrtDeviceMemoryType.DEFAULT);
+                }
+                else
+                {
+                    state.GpuMemoryInfo = new OrtMemoryInfo(
+                        state.GpuProviderName, OrtAllocatorType.DeviceAllocator,
+                        state.Device.ProviderDeviceIndex, OrtMemType.Default);
+                }
             }
             
             // If no GPU available, fall back to regular Run wrapped in CpuDeviceTensors
             if (state.GpuMemoryInfo == null)
                 return RunOnDeviceFallback(cpuInputs, deviceInputs, cpuOutputNames);
             
-            var cpuMemInfo = OrtMemoryInfo.DefaultInstance;
+            using var cpuMemInfo = new OrtMemoryInfo("Cpu", OrtAllocatorType.DeviceAllocator, 0, OrtMemType.Default);
             var cpuOutputSet = cpuOutputNames != null
                 ? new HashSet<string>(cpuOutputNames)
                 : null; // null = all on CPU
@@ -929,7 +875,7 @@ namespace KitsuMate.Onnx
                     var tensor = input.Value;
                     if (state.Session.InputMetadata.TryGetValue(input.Name, out var meta))
                         tensor = CastTensorIfNeeded(tensor, meta.ElementDataType);
-                    var ortVal = CreateOrtValueFromTensor(tensor);
+                    var ortVal = CreateOrtValueFromTensor(tensor, cpuMemInfo);
                     cpuOrtValues.Add(ortVal);
                     binding.BindInput(input.Name, ortVal);
                 }
@@ -1034,34 +980,34 @@ namespace KitsuMate.Onnx
         /// Create an OrtValue from an OnnxTensor, pinning the managed array memory.
         /// The OrtValue must be disposed after use to unpin the memory.
         /// </summary>
-        private static OrtValue CreateOrtValueFromTensor(OnnxTensor tensor)
+        private static OrtValue CreateOrtValueFromTensor(OnnxTensor tensor, OrtMemoryInfo memoryInfo)
         {
             var longShape = Array.ConvertAll(tensor.Shape, d => (long)d);
             
             return tensor.ElementType switch
             {
                 OnnxTensorElementType.Float => OrtValue.CreateTensorValueFromMemory<float>(
-                    tensor.AsFloatArray(), longShape),
+                    memoryInfo, tensor.AsFloatArray(), longShape),
                 OnnxTensorElementType.Int32 => OrtValue.CreateTensorValueFromMemory<int>(
-                    tensor.AsIntArray(), longShape),
+                    memoryInfo, tensor.AsIntArray(), longShape),
                 OnnxTensorElementType.Int64 => OrtValue.CreateTensorValueFromMemory<long>(
-                    tensor.AsLongArray(), longShape),
+                    memoryInfo, tensor.AsLongArray(), longShape),
                 OnnxTensorElementType.UInt8 => OrtValue.CreateTensorValueFromMemory<byte>(
-                    tensor.AsByteArray(), longShape),
+                    memoryInfo, tensor.AsByteArray(), longShape),
                 OnnxTensorElementType.Bool => OrtValue.CreateTensorValueFromMemory<bool>(
-                    tensor.AsBoolArray(), longShape),
-                OnnxTensorElementType.Float16 => CreateFloat16OrtValueNative(tensor.AsFloat16Array(), longShape),
+                    memoryInfo, tensor.AsBoolArray(), longShape),
+                OnnxTensorElementType.Float16 => CreateFloat16OrtValueNative(tensor.AsFloat16Array(), longShape, memoryInfo),
                 _ => throw new NotSupportedException($"Tensor type {tensor.ElementType} not supported for OrtValue creation")
             };
         }
         
         /// <summary>Convert ushort[] (raw FP16 bits) into an OrtValue with Float16 element type.</summary>
-        private static OrtValue CreateFloat16OrtValueNative(ushort[] data, long[] shape)
+        private static OrtValue CreateFloat16OrtValueNative(ushort[] data, long[] shape, OrtMemoryInfo memoryInfo)
         {
             var f16Data = new Float16[data.Length];
             for (int i = 0; i < data.Length; i++)
                 f16Data[i] = new Float16(data[i]);
-            return OrtValue.CreateTensorValueFromMemory<Float16>(f16Data, shape);
+            return OrtValue.CreateTensorValueFromMemory<Float16>(memoryInfo, f16Data, shape);
         }
         
         internal void UntrackDeviceTensor(OrtDeviceTensor tensor)
@@ -1135,34 +1081,49 @@ namespace KitsuMate.Onnx
             if (_value == null)
                 throw new ObjectDisposedException(nameof(OrtDeviceTensor));
             
-            var typeAndShape = _value.GetTensorTypeAndShape();
+            return CopyToCpu(_value, Name);
+        }
+
+        internal static OnnxTensor CopyToCpu(OrtValue value, string name)
+        {
+            var typeAndShape = value.GetTensorTypeAndShape();
+            using var memoryInfo = value.GetTensorMemoryInfo();
+            if (memoryInfo.Name != "Cpu")
+            {
+                // GetTensorDataAsSpan exposes the allocation; it does not perform a
+                // device readback. Copy synchronously before accessing GPU tensor data.
+                using var cpuValue = OrtValue.CreateAllocatedTensorValue(
+                    OrtAllocator.DefaultInstance, typeAndShape.ElementDataType, typeAndShape.Shape);
+                OrtEnv.Instance().CopyTensors(new[] { value }, new[] { cpuValue }, null);
+                return CopyToCpu(cpuValue, name);
+            }
             var shape = Array.ConvertAll(typeAndShape.Shape, l => (int)l);
             
             return typeAndShape.ElementDataType switch
             {
                 TensorElementType.Float => OnnxTensor.FromArray(
-                    _value.GetTensorDataAsSpan<float>().ToArray(), shape, Name),
+                    value.GetTensorDataAsSpan<float>().ToArray(), shape, name),
                 TensorElementType.Int32 => OnnxTensor.FromArray(
-                    _value.GetTensorDataAsSpan<int>().ToArray(), shape, Name),
+                    value.GetTensorDataAsSpan<int>().ToArray(), shape, name),
                 TensorElementType.Int64 => OnnxTensor.FromArray(
-                    _value.GetTensorDataAsSpan<long>().ToArray(), shape, Name),
+                    value.GetTensorDataAsSpan<long>().ToArray(), shape, name),
                 TensorElementType.UInt8 => OnnxTensor.FromArray(
-                    _value.GetTensorDataAsSpan<byte>().ToArray(), shape, Name),
+                    value.GetTensorDataAsSpan<byte>().ToArray(), shape, name),
                 TensorElementType.Bool => OnnxTensor.FromArray(
-                    _value.GetTensorDataAsSpan<bool>().ToArray(), shape, Name),
-                TensorElementType.Float16 => ConvertFloat16ToCpu(shape),
+                    value.GetTensorDataAsSpan<bool>().ToArray(), shape, name),
+                TensorElementType.Float16 => ConvertFloat16ToCpu(value, shape, name),
                 _ => throw new NotSupportedException(
                     $"Cannot convert device tensor type {typeAndShape.ElementDataType} to CPU")
             };
         }
         
-        private OnnxTensor ConvertFloat16ToCpu(int[] shape)
+        private static OnnxTensor ConvertFloat16ToCpu(OrtValue value, int[] shape, string name)
         {
-            var f16Span = _value.GetTensorDataAsSpan<Float16>();
+            var f16Span = value.GetTensorDataAsSpan<Float16>();
             var floats = new float[f16Span.Length];
             for (int i = 0; i < f16Span.Length; i++)
                 floats[i] = (float)f16Span[i];
-            return OnnxTensor.FromArray(floats, shape, Name);
+            return OnnxTensor.FromArray(floats, shape, name);
         }
 
         internal bool BelongsTo(OnnxRuntimeSession session, OnnxRuntimeSessionState state) =>

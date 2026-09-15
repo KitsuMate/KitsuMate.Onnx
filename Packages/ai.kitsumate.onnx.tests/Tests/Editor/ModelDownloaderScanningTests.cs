@@ -254,20 +254,12 @@ namespace KitsuMate.Onnx.Tests
 
         [Test]
         [Category("Integration")]
-        public async Task ScansCanonicalOmniVoiceProfilesIndependently()
+        public async Task ScansCanonicalOmniVoiceArtifacts()
         {
-            const string revision = "45d20c87b64f35c4ac203c5bac7ad97a3e60ca95";
-            var cpu = await HuggingFaceModelRepository.GetArtifactsAsync(new ModelDownloadRequest(
-                "KitsuMate/omnivoice-onnx", revision, "omnivoice-cpu"));
-            var portable = await HuggingFaceModelRepository.GetArtifactsAsync(new ModelDownloadRequest(
-                "KitsuMate/omnivoice-onnx", revision, "omnivoice-portable"));
-
-            Assert.That(cpu.Artifacts.Keys, Does.Contain("merged-backbone"));
-            Assert.That(cpu.Artifacts.Keys, Does.Not.Contain("audio-embeddings"));
-            Assert.That(cpu.Artifacts["acoustic-encoder"].Single(), Does.Contain("codec-fp32"));
-            Assert.That(portable.Artifacts.Keys, Does.Contain("merged-backbone"));
-            Assert.That(portable.Artifacts.Keys, Does.Not.Contain("audio-embeddings"));
-            Assert.That(portable.Artifacts["acoustic-encoder"].Single(), Does.Contain("codec-fp32"));
+            var repository = await HuggingFaceModelRepository.GetArtifactsAsync(new ModelDownloadRequest(
+                "KitsuMate/omnivoice-onnx", "45d20c87b64f35c4ac203c5bac7ad97a3e60ca95", "omnivoice"));
+            Assert.That(repository.Artifacts["merged-backbone"], Has.Count.EqualTo(2));
+            Assert.That(repository.Artifacts["acoustic-encoder"].Single(), Does.Contain("codec-fp32"));
         }
     }
 }

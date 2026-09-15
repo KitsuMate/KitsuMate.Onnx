@@ -11,15 +11,6 @@ namespace KitsuMate.Onnx.Motion.Kimodo
         private const int LocalPositionOffset = 5;
         private const int GlobalRotationOffset = 95;
 
-        private static readonly int[] Parents =
-        {
-            -1, 0, 1, 2, 3, 4, 5, 6, 6, 6,
-            3, 10, 11, 12, 13, 13,
-            3, 16, 17, 18, 19, 19,
-            0, 22, 23, 24,
-            0, 26, 27, 28
-        };
-
         private static readonly (int Joint, HumanBodyBones Bone)[] HumanoidMap =
         {
             (0, HumanBodyBones.Hips),
@@ -100,7 +91,7 @@ namespace KitsuMate.Onnx.Motion.Kimodo
                         Feature(offset), Feature(offset + 1), Feature(offset + 2),
                         Feature(offset + 3), Feature(offset + 4), Feature(offset + 5));
 
-                    int parent = Parents[joint];
+                    int parent = KimodoSomaRuntimeData.Parents[joint];
                     local[joint] = parent < 0
                         ? Matrix3.Multiply(Matrix3.Yaw(-heading), global[joint])
                         : Matrix3.TransposeMultiply(global[parent], global[joint]);

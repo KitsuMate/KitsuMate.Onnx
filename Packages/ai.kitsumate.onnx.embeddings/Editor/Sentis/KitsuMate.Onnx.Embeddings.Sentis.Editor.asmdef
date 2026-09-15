@@ -5,6 +5,7 @@
     "KitsuMate.Onnx",
     "KitsuMate.Onnx.Editor",
     "KitsuMate.Onnx.Embeddings",
+    "KitsuMate.Onnx.Embeddings.Editor",
     "KitsuMate.Onnx.Backend.UnityInference",
     "KitsuMate.Onnx.Embeddings.Sentis",
     "Unity.InferenceEngine"

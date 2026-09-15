@@ -10,7 +10,6 @@ namespace KitsuMate.Onnx
     public enum OnnxExecutionProvider
     {
         Cpu = 0,
-        DirectMl = 1,
         Cuda = 2,
         TensorRt = 3,
         OpenVino = 4,

@@ -57,6 +57,9 @@ namespace KitsuMate.Onnx.Tts
         /// <summary>Optional OmniVoice decoding overrides. Null uses the engine defaults.</summary>
         public OmniVoice.OmniVoiceGenerationConfig OmniVoice;
 
+        /// <summary>Optional NeuTTS settings. Null uses the engine defaults.</summary>
+        public NeuTts.NeuTtsGenerationConfig NeuTts;
+
         public TtsRequest() { }
 
         public TtsRequest(string text, string languageId = null)

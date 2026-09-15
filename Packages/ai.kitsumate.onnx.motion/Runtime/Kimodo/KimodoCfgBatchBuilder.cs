@@ -13,7 +13,7 @@ namespace KitsuMate.Onnx.Motion.Kimodo
         {
             if (embedding == null) throw new ArgumentNullException(nameof(embedding));
             if (conditioning == null) throw new ArgumentNullException(nameof(conditioning));
-            int motionLength = KimodoTensorContract.Frames * KimodoTensorContract.MotionDimension;
+            int motionLength = conditioning.FrameCount * KimodoTensorContract.MotionDimension;
             int textLength = KimodoTensorContract.Batch * KimodoTensorContract.TextTokens * KimodoTensorContract.TextDimension;
             if (textBatch == null || textBatch.Length != textLength) throw new ArgumentException("Text CFG batch has the wrong shape.", nameof(textBatch));
             if (constraintMaskBatch == null || constraintMaskBatch.Length != KimodoTensorContract.Batch * motionLength)

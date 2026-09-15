@@ -9,10 +9,10 @@ namespace KitsuMate.Onnx.Download
         public string Revision { get; }
         public string ExpectedFamily { get; }
 
-        public ModelDownloadRequest(string repository, string revision = "main", string expectedFamily = null)
+        public ModelDownloadRequest(string repository, string revision = "", string expectedFamily = null)
         {
             Repository = Required(repository, nameof(repository));
-            Revision = Required(revision, nameof(revision));
+            Revision = revision?.Trim() ?? string.Empty;
             ExpectedFamily = expectedFamily?.Trim() ?? string.Empty;
         }
 

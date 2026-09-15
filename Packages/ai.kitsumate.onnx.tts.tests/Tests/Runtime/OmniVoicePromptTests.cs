@@ -104,22 +104,17 @@ namespace KitsuMate.Onnx.Tts.Tests
         }
 
         [Test]
-        public void ModelSet_TopologyAndCodecProfile_AreIndependent()
+        public void ModelSet_TopologySelectsRequiredGraphs()
         {
             var set = ScriptableObject.CreateInstance<OmniVoiceModelSet>();
             var tokenizer = new TextAsset("{}");
             try
             {
-                set.Configure(OmniVoiceBackboneTopology.Split, OmniVoiceTensorPrecision.Float32,
-                    "CPU compact", tokenizer);
+                set.Configure(OmniVoiceBackboneTopology.Split, tokenizer);
                 Assert.That(set.GetAllModels(), Has.Length.EqualTo(7));
-                Assert.That(set.CodecPrecision, Is.EqualTo(OmniVoiceTensorPrecision.Float32));
-                Assert.That(set.Profile, Is.EqualTo("CPU compact"));
 
-                set.Configure(OmniVoiceBackboneTopology.Merged, OmniVoiceTensorPrecision.Float32,
-                    "Portable FP32", tokenizer);
+                set.Configure(OmniVoiceBackboneTopology.Merged, tokenizer);
                 Assert.That(set.GetAllModels(), Has.Length.EqualTo(5));
-                Assert.That(set.Profile, Is.EqualTo("Portable FP32"));
             }
             finally
             {

@@ -17,7 +17,7 @@ namespace KitsuMate.Onnx.Motion
 
     public sealed class KimodoModelCapabilities
     {
-        public int FrameCount { get; }
+        public int MaxFrameCount { get; }
         public float FramesPerSecond { get; }
         public int MotionFeatureCount { get; }
         public int InternalJointCount { get; }
@@ -26,7 +26,7 @@ namespace KitsuMate.Onnx.Motion
         public KimodoConstraintCapabilities Constraints { get; }
 
         public KimodoModelCapabilities(
-            int frameCount,
+            int maxFrameCount,
             float framesPerSecond,
             int motionFeatureCount,
             int internalJointCount,
@@ -34,7 +34,7 @@ namespace KitsuMate.Onnx.Motion
             bool supportsSeparatedGuidance,
             KimodoConstraintCapabilities constraints)
         {
-            FrameCount = frameCount;
+            MaxFrameCount = maxFrameCount;
             FramesPerSecond = framesPerSecond;
             MotionFeatureCount = motionFeatureCount;
             InternalJointCount = internalJointCount;

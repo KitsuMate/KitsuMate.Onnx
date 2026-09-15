@@ -19,7 +19,7 @@ Consumer
 - Disposing a runtime never disposes its caller-owned backend.
 - A model-set asset selects one repository artifact independently for each required ONNX role.
 - Stable model identity and structured diagnostics drive cache invalidation and compatibility checks.
-- ONNX models may be imported or external-file-backed under StreamingAssets.
+- ONNX models use a shared disk installation or explicitly configured local/imported sources.
 
 ## Usage
 
@@ -34,11 +34,21 @@ Inference is asynchronous. Synchronous forwarding APIs are intentionally not pro
 
 ## Model installation
 
-Use a feature ModelSet inspector to scan a Hugging Face repository and select an artifact for each ONNX role. Standard filenames such as `model.onnx`, `model_fp16.onnx`, and `model_q4.onnx` are detected without a repository manifest. The Editor installer uses partial files, cancellation, SHA-256 verification, external ONNX data, engine validation, and automatic model-set assignment.
+Configure the installation folder in `OnnxSettings`, relative to `Application.persistentDataPath`. Each model set saves its repository, revision, explicit folder beneath that root, and one artifact selection per submodel. The application UI and model-set Inspector use the same `ModelInstallationStore`.
 
-The default storage root is `Assets/StreamingAssets/KitsuMateModels` and can be changed in `OnnxSettings`. Player builds use installed models read-only; runtime downloading is not included.
+The model-set Inspector exposes graph and text references directly. Each supports **Asset** or **File**, with persistent-data-relative paths for files inside `Application.persistentDataPath`. External absolute paths remain machine-specific.
 
-ONNX Runtime setup exposes every discovered suffix. Sentis setup exposes only unsuffixed and explicit `fp32` artifacts, imports the raw ONNX as a Unity `ModelAsset`, and validates it before assigning the ModelSet. The same unsuffixed raw file can also be opened directly by ONNX Runtime.
+**Download models** opens the download window, where quant choices stay visible for installed models. Each single-line entry offers **Download** or **Redownload**; **Download all missing files** handles the full selection. Only selected model roles, external weights, and consumer-declared supporting files are included. **Choose file** supplies an existing file; **Use files from folder** accepts a repository-layout folder. The primary action downloads missing files and assigns file references to the model set. Downloads and project asset migration are separate actions.
+
+Completed downloads survive cancellation and are reused on retry. The interrupted file restarts from zero; byte-range resumption is not implemented. A working installation remains available until its replacement completes. `installation.json` records relative paths, repository identity, sizes, and graph metadata. Size checks do not detect same-size content changes. File contents are **not SHA-256 verified**.
+
+**Move files into Assets** in the Inspector moves the assigned files beside the model set and changes successful references to Asset. Source files are moved, not retained as duplicate copies. Already migrated references are skipped, so the remaining file-reference count also represents partial migration state. A failed import retains a file reference to the new location so it can be retried. Existing destination files are not overwritten. Unity can still generate its own imported data in Library. Unity AI Inference requires imported graphs. Test compatibility in the target player.
+
+**Move files into data folder** performs the reverse operation for ONNX and text source assets: it moves them under the configured persistent-data root and assigns portable File references. Imported Unity AI Inference graphs remain assets because that backend does not accept files.
+
+`StreamingAssets` is a read-only bundled location, not a download destination. On Android and WebGL it requires URL-based access. This workflow bundles Unity assets instead. WebGL uses imported Unity AI Inference assets; raw ONNX sessions and browser downloads are not supported by this workflow. Browser persistent storage is separate from the Editor's disk installation. Merely downloading models in the Editor does not include them in a player.
+
+See [Engine Inspector inference tests](Documentation~/EDITOR_INFERENCE_TESTS.md) for the Edit Mode workflow. A new family provides `BindInstallationAsync` for its file-role contract and a typed family Editor; the core has no dependency on family packages.
 
 ## ONNX Runtime
 

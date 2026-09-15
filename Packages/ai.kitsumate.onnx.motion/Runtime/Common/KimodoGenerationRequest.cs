@@ -2,7 +2,7 @@ using System;
 
 namespace KitsuMate.Onnx.Motion
 {
-    /// <summary>Kimodo v1 generation controls and optional semantic constraints.</summary>
+    /// <summary>Sampling settings and requested output length for one prompt segment.</summary>
     public sealed class KimodoGenerationRequest
     {
         public int Seed { get; }
@@ -11,7 +11,6 @@ namespace KitsuMate.Onnx.Motion
         public float ConstraintGuidance { get; }
         public float FirstHeadingRadians { get; }
         public int FrameCount { get; }
-        public KimodoConstraintSet Constraints { get; }
 
         // Test/reference hook. Production generation leaves this null and uses Seed.
         internal float[] InitialNoiseOverride { get; set; }
@@ -22,8 +21,7 @@ namespace KitsuMate.Onnx.Motion
             float textGuidance = 2f,
             float constraintGuidance = 2f,
             float firstHeadingRadians = 0f,
-            int frameCount = 60,
-            KimodoConstraintSet constraints = null)
+            int frameCount = 60)
         {
             if (denoisingSteps < 2 || denoisingSteps > 1000)
                 throw new ArgumentOutOfRangeException(nameof(denoisingSteps), "Denoising steps must be in [2, 1000].");
@@ -38,7 +36,6 @@ namespace KitsuMate.Onnx.Motion
             ConstraintGuidance = constraintGuidance;
             FirstHeadingRadians = firstHeadingRadians;
             FrameCount = frameCount;
-            Constraints = constraints ?? KimodoConstraintSet.Empty;
         }
 
         private static bool IsFinite(float value) => !float.IsNaN(value) && !float.IsInfinity(value);

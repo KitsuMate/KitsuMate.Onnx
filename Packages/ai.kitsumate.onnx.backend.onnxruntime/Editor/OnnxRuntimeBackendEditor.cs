@@ -131,7 +131,6 @@ namespace KitsuMate.Onnx.Editor
             {
                 OnnxExecutionProvider.TensorRt => "TensorRT",
                 OnnxExecutionProvider.TensorRtRtx => "TensorRT-RTX",
-                OnnxExecutionProvider.DirectMl => "DirectML",
                 OnnxExecutionProvider.WebGpu => "WebGPU",
                 OnnxExecutionProvider.CoreMl => "CoreML",
                 OnnxExecutionProvider.OpenVino => "OpenVINO",
@@ -147,7 +146,6 @@ namespace KitsuMate.Onnx.Editor
             {
                 OnnxExecutionProvider.TensorRt => "TensorrtExecutionProvider",
                 OnnxExecutionProvider.TensorRtRtx => "NvTensorRTRTXExecutionProvider",
-                OnnxExecutionProvider.DirectMl => "DmlExecutionProvider",
                 OnnxExecutionProvider.WebGpu => "WebGpuExecutionProvider",
                 OnnxExecutionProvider.CoreMl => "CoreMLExecutionProvider",
                 OnnxExecutionProvider.OpenVino => "OpenVINOExecutionProvider",
@@ -164,8 +162,7 @@ namespace KitsuMate.Onnx.Editor
                 OnnxExecutionProvider.TensorRt => "Compatible NVIDIA driver, CUDA, cuDNN, and TensorRT native libraries.",
                 OnnxExecutionProvider.TensorRtRtx => "RTX 30-series/Ampere or newer GPU and a compatible NVIDIA driver. Runtime libraries are bundled by the NVIDIA package.",
                 OnnxExecutionProvider.Cuda => "Compatible NVIDIA driver. CUDA 12 and cuDNN 9 runtime libraries are bundled on Windows and Linux.",
-                OnnxExecutionProvider.DirectMl => "Windows x64 with a DirectX 12-capable GPU driver.",
-                OnnxExecutionProvider.WebGpu => "Linux x64 with a Vulkan-capable GPU driver.",
+                OnnxExecutionProvider.WebGpu => "Windows x64 with a DirectX 12-capable GPU driver, or Linux x64 with Vulkan.",
                 OnnxExecutionProvider.CoreMl => "Apple-silicon macOS with CoreML support.",
                 OnnxExecutionProvider.OpenVino => "Compatible OpenVINO runtime libraries on Linux x64.",
                 OnnxExecutionProvider.Nnapi => "Android device API level 27 or newer.",
@@ -182,6 +179,7 @@ namespace KitsuMate.Onnx.Editor
                     "onnxruntime_providers_cuda.dll", "onnxruntime_providers_shared.dll", "cudart64_12.dll",
                     "cublas64_12.dll", "cublasLt64_12.dll", "cufft64_11.dll", "curand64_10.dll", "cudnn64_9.dll"
                 },
+                OnnxExecutionProvider.WebGpu => new[] { "onnxruntime_providers_webgpu.dll", "dxcompiler.dll", "dxil.dll" },
                 OnnxExecutionProvider.TensorRtRtx => new[]
                 {
                     "onnxruntime_providers_nv_tensorrt_rtx.dll", "cudart64_12.dll", "nvrtc64_120_0.dll",
@@ -217,10 +215,10 @@ namespace KitsuMate.Onnx.Editor
 
         private static bool IsBundledWindowsLibrary(string fileName)
         {
-            const string root = "Packages/ai.kitsumate.onnx.backend.onnxruntime.nvidia/Runtime/Plugins/Windows/x86_64";
-            return AssetDatabase.FindAssets(Path.GetFileNameWithoutExtension(fileName), new[] { root })
-                .Select(AssetDatabase.GUIDToAssetPath)
-                .Any(path => string.Equals(Path.GetFileName(path), fileName, StringComparison.OrdinalIgnoreCase));
+            return OnnxRuntimeProviderRegistry.GetModules()
+                .SelectMany(module => OnnxRuntimeProviderRegistry.GetNativeSearchRoots(module.GetType().Assembly))
+                .Distinct()
+                .Any(root => File.Exists(Path.Combine(root, "Windows", "x86_64", fileName)));
         }
 
         private static OnnxProviderReadiness State(OnnxProviderReadinessKind kind, string text, string reason) => new(kind, text, reason);
@@ -391,7 +389,6 @@ namespace KitsuMate.Onnx.Editor
             {
                 OnnxExecutionProvider.Cuda => "cuda",
                 OnnxExecutionProvider.TensorRtRtx => "nv_tensorrt_rtx",
-                OnnxExecutionProvider.DirectMl => "directml",
                 OnnxExecutionProvider.WebGpu => "webgpu",
                 OnnxExecutionProvider.CoreMl => "onnxruntime",
                 OnnxExecutionProvider.OpenVino => "openvino",
@@ -706,7 +703,7 @@ namespace KitsuMate.Onnx.Editor
             {
                 OnnxExecutionProvider.TensorRtRtx => 0,
                 OnnxExecutionProvider.Cuda => 1,
-                OnnxExecutionProvider.DirectMl or OnnxExecutionProvider.WebGpu or OnnxExecutionProvider.CoreMl or OnnxExecutionProvider.Nnapi => 2,
+                OnnxExecutionProvider.WebGpu or OnnxExecutionProvider.CoreMl or OnnxExecutionProvider.Nnapi => 2,
                 OnnxExecutionProvider.Cpu => 3,
                 _ => 4
             };

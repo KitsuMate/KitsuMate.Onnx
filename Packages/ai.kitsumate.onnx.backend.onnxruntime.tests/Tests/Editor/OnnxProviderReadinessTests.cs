@@ -41,10 +41,10 @@ namespace KitsuMate.Onnx.Editor.Tests
         [Test]
         public void PlayerReadiness_ReportsMissingOwningPackagePayload()
         {
-            OnnxProviderReadiness directMl = OnnxProviderReadinessEvaluator.EvaluatePlayer(
-                OnnxExecutionProvider.DirectMl, true, RuntimePlatform.WindowsPlayer, true, false, true);
-            Assert.That(directMl.Text, Is.EqualTo("Payload missing"));
-            Assert.That(directMl.Reason, Does.Contain("owning package"));
+            OnnxProviderReadiness webGpu = OnnxProviderReadinessEvaluator.EvaluatePlayer(
+                OnnxExecutionProvider.WebGpu, true, RuntimePlatform.WindowsPlayer, true, false, true);
+            Assert.That(webGpu.Text, Is.EqualTo("Payload missing"));
+            Assert.That(webGpu.Reason, Does.Contain("owning package"));
 
             OnnxProviderReadiness cuda = OnnxProviderReadinessEvaluator.EvaluatePlayer(
                 OnnxExecutionProvider.Cuda, true, RuntimePlatform.WindowsPlayer, true, false, true);
@@ -61,7 +61,7 @@ namespace KitsuMate.Onnx.Editor.Tests
             {
                 OnnxExecutionProvider.TensorRtRtx,
                 OnnxExecutionProvider.Cuda,
-                OnnxExecutionProvider.DirectMl,
+                OnnxExecutionProvider.WebGpu,
                 OnnxExecutionProvider.Cpu
             }));
 
@@ -71,7 +71,7 @@ namespace KitsuMate.Onnx.Editor.Tests
                 Is.EqualTo(new[]
                 {
                     OnnxExecutionProvider.Cuda,
-                    OnnxExecutionProvider.DirectMl,
+                    OnnxExecutionProvider.WebGpu,
                     OnnxExecutionProvider.Cpu
                 }));
             Assert.That(OnnxRuntimeProviderPluginFilter.GetPackagedProviders(
@@ -100,8 +100,8 @@ namespace KitsuMate.Onnx.Editor.Tests
             bool nvidia = OnnxRuntimeProviderRegistry.TryGet(OnnxExecutionProvider.Cuda, out IOnnxRuntimeProviderModule cuda) && cuda.IsEnabled;
             Assert.That(OnnxRuntimeProviderRegistry.ResolveAutomatic(RuntimePlatform.WindowsPlayer),
                 Is.EqualTo(nvidia
-                    ? new[] { OnnxExecutionProvider.TensorRtRtx, OnnxExecutionProvider.Cuda, OnnxExecutionProvider.DirectMl, OnnxExecutionProvider.Cpu }
-                    : new[] { OnnxExecutionProvider.DirectMl, OnnxExecutionProvider.Cpu }));
+                    ? new[] { OnnxExecutionProvider.TensorRtRtx, OnnxExecutionProvider.Cuda, OnnxExecutionProvider.WebGpu, OnnxExecutionProvider.Cpu }
+                    : new[] { OnnxExecutionProvider.WebGpu, OnnxExecutionProvider.Cpu }));
             Assert.That(OnnxRuntimeProviderRegistry.ResolveAutomatic(RuntimePlatform.LinuxPlayer),
                 Is.EqualTo(nvidia
                     ? new[] { OnnxExecutionProvider.TensorRtRtx, OnnxExecutionProvider.Cuda, OnnxExecutionProvider.WebGpu, OnnxExecutionProvider.Cpu }

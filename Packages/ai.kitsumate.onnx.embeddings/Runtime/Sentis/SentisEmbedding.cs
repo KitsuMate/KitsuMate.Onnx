@@ -1,3 +1,4 @@
+using KitsuMate.Onnx.Download;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -12,27 +13,41 @@ namespace KitsuMate.Onnx.Embeddings.Sentis
     [CreateAssetMenu(fileName = "SentisEmbeddingModelSet", menuName = "KitsuMate/ONNX/Embeddings/Sentis Model Set")]
     public sealed class SentisEmbeddingModelSet : StandardModelSet
     {
+        public override string[] DownloadCompanionRoles => new[] { "tokenizer", "vocabulary" };
+
+        public override TextFileReference[] GetAllTextFiles() => new[] { vocabulary, tokenizerModel };
+
+        public override System.Collections.Generic.IEnumerable<(string Family, string Repository)> RepositorySuggestions =>
+            TextEmbeddingModelSet.SupportedRepositories;
+
+        protected override Task BindInstallationAsync(DownloadedModel installation, ResolvedModelSet resources, CancellationToken cancellationToken)
+        {
+            vocabulary = resources.ReadText(installation, "vocabulary", optional: true);
+            tokenizerModel = resources.ReadText(installation, "tokenizer", optional: true);
+            return Task.CompletedTask;
+        }
+
         [SerializeField] private UnityAiInferenceModelAsset embeddingModel;
-        [SerializeField] private TextAsset vocabulary;
-        [SerializeField] private TextAsset tokenizerModel;
+        [SerializeField] private TextFileReference vocabulary = new();
+        [SerializeField] private TextFileReference tokenizerModel = new();
         [SerializeField] private int embeddingDimension = 384;
         [SerializeField] private int maxSequenceLength = 512;
         [SerializeField] private bool useMeanPooling = true;
         [SerializeField] private bool normalizeEmbeddings = true;
 
         public UnityAiInferenceModelAsset EmbeddingModel => embeddingModel;
-        public TextAsset Vocabulary => vocabulary;
-        public TextAsset TokenizerModel => tokenizerModel;
+        public TextFileReference Vocabulary => vocabulary?.IsAvailable == true ? vocabulary : null;
+        public TextFileReference TokenizerModel => tokenizerModel?.IsAvailable == true ? tokenizerModel : null;
         public int EmbeddingDimension => embeddingDimension;
         public int MaxSequenceLength => maxSequenceLength;
         public bool UseMeanPooling => useMeanPooling;
         public bool NormalizeEmbeddings => normalizeEmbeddings;
         public override string DisplayName => string.IsNullOrEmpty(name) ? "Sentis Embedding Model Set" : name;
-        public override bool IsComplete => embeddingModel != null && embeddingModel.IsAvailable && (vocabulary != null || tokenizerModel != null);
+        public override bool IsComplete => embeddingModel != null && embeddingModel.IsAvailable && (vocabulary?.IsAvailable == true || tokenizerModel?.IsAvailable == true);
         public override IOnnxModelSource[] GetAllModels() => embeddingModel == null ? Array.Empty<IOnnxModelSource>() : new IOnnxModelSource[] { embeddingModel };
 
 #if UNITY_EDITOR
-        public void SetModels(UnityAiInferenceModelAsset model, TextAsset vocabularyAsset, TextAsset tokenizerAsset)
+        public void SetModels(UnityAiInferenceModelAsset model, TextFileReference vocabularyAsset, TextFileReference tokenizerAsset)
         {
             embeddingModel = model;
             vocabulary = vocabularyAsset;
@@ -45,8 +60,8 @@ namespace KitsuMate.Onnx.Embeddings.Sentis
         {
             var result = new ModelValidationResult();
             if (embeddingModel == null || !embeddingModel.IsAvailable) result.Error("missing_model", "A Unity AI Inference ModelAsset is required.");
-            if (vocabulary == null && tokenizerModel == null) result.Error("missing_tokenizer", "Vocabulary or tokenizer model file is required.");
-            if (tokenizerModel != null && vocabulary == null && !tokenizerModel.text.TrimStart().StartsWith("{"))
+            if (vocabulary?.IsAvailable != true && tokenizerModel?.IsAvailable != true) result.Error("missing_tokenizer", "Vocabulary or tokenizer model file is required.");
+            if (tokenizerModel?.IsAvailable == true && vocabulary?.IsAvailable != true && !tokenizerModel.text.TrimStart().StartsWith("{"))
                 result.Error("missing_vocabulary", "A vocabulary is required for a non-JSON tokenizer model.");
             if (embeddingDimension < 1) result.Error("invalid_dimension", "Embedding dimension must be positive.");
             if (maxSequenceLength < 1) result.Error("invalid_sequence", "Maximum sequence length must be positive.");
@@ -60,7 +75,7 @@ namespace KitsuMate.Onnx.Embeddings.Sentis
         [SerializeField] private SentisEmbeddingModelSet modelSet;
         public override ModelSet ModelSet => modelSet;
         public override int EmbeddingDimension => modelSet != null ? modelSet.EmbeddingDimension : 0;
-        protected override InferenceEngineRuntime<EmbeddingRequest, EmbeddingResult> CreateRuntime() => new SentisEmbeddingRuntime(modelSet);
+        protected override InferenceEngineRuntime<EmbeddingRequest, EmbeddingResult> CreateRuntime(ModelSet resolvedModelSet) => new SentisEmbeddingRuntime((SentisEmbeddingModelSet)resolvedModelSet);
     }
 
     internal sealed class SentisEmbeddingRuntime : EmbeddingEngineRuntime
@@ -135,7 +150,7 @@ namespace KitsuMate.Onnx.Embeddings.Sentis
 
         private static Tokenizer CreateTokenizer(SentisEmbeddingModelSet modelSet)
         {
-            TextAsset tokenizerAsset = modelSet.TokenizerModel;
+            TextFileReference tokenizerAsset = modelSet.TokenizerModel;
             if (tokenizerAsset != null && tokenizerAsset.text.TrimStart().StartsWith("{"))
                 return Tokenizer.FromTokenizerJson(tokenizerAsset.bytes);
             if (tokenizerAsset != null)

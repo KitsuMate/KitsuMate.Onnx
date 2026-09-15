@@ -12,6 +12,39 @@ SCRIPT = Path(__file__).with_name("update-onnxruntime.py")
 
 
 class ArtifactProvisioningTests(unittest.TestCase):
+    def test_locked_runtime_prevents_partial_replacement(self):
+        import importlib.util
+        from unittest.mock import patch
+        spec = importlib.util.spec_from_file_location("runtime_updater", SCRIPT)
+        updater = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(updater)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = root / "output"
+            output.mkdir()
+            for name in ("managed.dll", "native.dll"):
+                (output / name).write_bytes(b"old")
+            lock = root / "lock.json"
+            lock.write_text('{"packages": []}')
+
+            def stage(_, args):
+                for name in ("managed.dll", "native.dll"):
+                    (args.destination / name).write_bytes(b"new")
+
+            original_open = Path.open
+            def open_file(path, mode="r", *args, **kwargs):
+                if path == output / "native.dll" and mode == "r+b":
+                    raise PermissionError("native DLL is loaded")
+                return original_open(path, mode, *args, **kwargs)
+
+            with patch.object(updater, "provision_payload", stage), patch.object(Path, "open", open_file), patch.object(sys, "argv", [
+                str(SCRIPT), "--lock", str(lock), "--cache", str(root / "cache"), "--destination", str(output)
+            ]):
+                with self.assertRaises(PermissionError):
+                    updater.main()
+            self.assertEqual(b"old", (output / "managed.dll").read_bytes())
+            self.assertEqual(b"old", (output / "native.dll").read_bytes())
+
     def test_nested_extraction_preserves_meta_and_removes_stale_payload(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -125,28 +158,6 @@ class ArtifactProvisioningTests(unittest.TestCase):
             self.assertIn(missing_package, completed.stderr)
             self.assertEqual(b"installed runtime", existing.read_bytes())
 
-    def test_source_build_uses_reviewed_files_without_a_release_url(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            source = root / "source"
-            source.mkdir()
-            (source / "onnxruntime.dll").write_bytes(b"built runtime")
-            lock = root / "lock.json"
-            lock.write_text(json.dumps({"version": "test", "packages": [{
-                "id": "source-runtime", "sourceBuild": {"commit": "reviewed"},
-                "files": [{"source": "onnxruntime.dll", "destination": "Windows/x86_64/onnxruntime.dll",
-                           "sha256": hashlib.sha256(b"built runtime").hexdigest()}],
-            }]}))
-            command = [sys.executable, str(SCRIPT), "--lock", str(lock), "--cache", str(root / "cache"),
-                       "--destination", str(root / "output"), "--source-build", str(source)]
-            completed = subprocess.run(command, capture_output=True, text=True)
-            self.assertEqual(0, completed.returncode, completed.stderr)
-            installed = root / "output/Windows/x86_64/onnxruntime.dll"
-            self.assertEqual(b"built runtime", installed.read_bytes())
-            (source / "onnxruntime.dll").write_bytes(b"unreviewed runtime")
-            completed = subprocess.run(command, capture_output=True, text=True)
-            self.assertNotEqual(0, completed.returncode)
-            self.assertEqual(b"built runtime", installed.read_bytes())
 
 
 if __name__ == "__main__":

@@ -17,7 +17,10 @@ namespace KitsuMate.Onnx.Motion
         public Vector3[] RootPositions { get; }
         public Quaternion[] RootRotations { get; }
         public bool[] BoneAvailability { get; }
-        public KimodoGenerationDiagnostics Diagnostics { get; }
+        public KimodoGenerationDiagnostics Diagnostics { get; internal set; }
+        internal float[] SourceMotion { get; private set; }
+
+        internal void SetSourceMotion(float[] value) => SourceMotion = value;
 
         public KimodoHumanoidMotion(
             int frameCount,

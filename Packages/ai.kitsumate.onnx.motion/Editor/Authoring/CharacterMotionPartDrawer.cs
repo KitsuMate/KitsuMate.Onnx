@@ -13,6 +13,7 @@ namespace KitsuMate.Onnx.Motion.Editor
             EditorGUI.BeginProperty(position, label, property);
             SerializedProperty intent = property.FindPropertyRelative("intent");
             SerializedProperty repetitions = property.FindPropertyRelative("repetitions");
+            SerializedProperty duration = property.FindPropertyRelative("durationSeconds");
             SerializedProperty overrideSettings = property.FindPropertyRelative("overrideGenerationSettings");
             SerializedProperty settings = property.FindPropertyRelative("generationSettings");
             float line = EditorGUIUtility.singleLineHeight;
@@ -31,6 +32,8 @@ namespace KitsuMate.Onnx.Motion.Editor
             y += line + Gap;
             EditorGUI.PropertyField(new Rect(position.x, y, position.width, line), repetitions);
             y += line + Gap;
+            EditorGUI.PropertyField(new Rect(position.x, y, position.width, line), duration);
+            y += line + Gap;
             EditorGUI.PropertyField(new Rect(position.x, y, position.width, line), overrideSettings,
                 new GUIContent("Override Generation Settings"));
             if (overrideSettings.boolValue)
@@ -47,7 +50,7 @@ namespace KitsuMate.Onnx.Motion.Editor
         {
             float line = EditorGUIUtility.singleLineHeight;
             if (!property.isExpanded) return line;
-            float result = line * 4f + Gap * 3f;
+            float result = line * 5f + Gap * 4f;
             SerializedProperty overrideSettings = property.FindPropertyRelative("overrideGenerationSettings");
             if (overrideSettings.boolValue)
             {

@@ -54,9 +54,7 @@ run. Release jobs package those same bytes. The large optional NVIDIA release is
 assembled with `Tools/native/update-onnxruntime.py` and independently validated
 against `onnxruntime-nvidia.lock.json`; a file may belong to only one lock/package.
 
-The Windows DirectML core is source-built from the pinned ONNX Runtime commit.
-Its reviewed build output and checksum lock are committed together; a GitHub
-native release is not required. CUDA provider plug-ins are built with the scripts under
-`Tools/native`; TensorRT-RTX consumes its separately pinned standalone EP ABI
+The default runtime and optional CUDA providers come from checksum-pinned official
+NuGet packages. TensorRT-RTX consumes its separately pinned standalone EP ABI
 artifact. Archive validation rejects missing, extra, mismatched, and
 cross-package native files.

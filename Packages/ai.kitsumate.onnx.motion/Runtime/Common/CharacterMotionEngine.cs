@@ -6,9 +6,24 @@ namespace KitsuMate.Onnx.Motion
 {
     public sealed class CharacterMotionRequest
     {
-        public KimodoTextEmbedding Embedding;
+        public CharacterMotionSegment[] Segments;
         public KimodoConstraintSet Constraints;
-        public KimodoGenerationRequest Generation;
+        public KimodoHumanoidMotion PreviousMotion;
+        public int EntryHistoryFrames = 5;
+        public int HistoryFrames = 5;
+        public IProgress<int> Progress;
+    }
+
+    public sealed class CharacterMotionSegment
+    {
+        public KimodoTextEmbedding Embedding { get; }
+        public KimodoGenerationRequest Generation { get; }
+
+        public CharacterMotionSegment(KimodoTextEmbedding embedding, KimodoGenerationRequest generation)
+        {
+            Embedding = embedding ?? throw new ArgumentNullException(nameof(embedding));
+            Generation = generation ?? throw new ArgumentNullException(nameof(generation));
+        }
     }
 
     public sealed class CharacterMotionResult

@@ -35,12 +35,6 @@ namespace KitsuMate.Onnx.Motion.Editor
             if (!validation.IsValid) throw new InvalidOperationException(string.Join("\n", validation.Diagnostics));
             if (motion.MotionEngine == null) throw new InvalidOperationException("Assign a Character Motion engine.");
             ModelIdentity encoderIdentity = motion.RequiredEmbeddingModelIdentity;
-            if (!motion.Intent.TryGetEmbedding(encoderIdentity, out KimodoTextEmbedding embedding))
-            {
-                throw new InvalidOperationException(
-                    $"The selected intent has no current embedding compatible with '{encoderIdentity}'. " +
-                    "Select the CharacterMotionIntent and bake its embedding before baking animation.");
-            }
             CharacterMotionSkeleton skeleton = motion.GetComponentInChildren<CharacterMotionSkeleton>(true);
             if (skeleton == null || skeleton.BindLocalRotations.Length != (int)HumanBodyBones.LastBone)
                 throw new InvalidOperationException("Create or rebuild the Character Motion skeleton before baking so bind rotations are known.");
@@ -50,10 +44,11 @@ namespace KitsuMate.Onnx.Motion.Editor
             if (motion.MotionEngine.Backend == null)
                 throw new InvalidOperationException($"Motion engine '{motion.MotionEngine.name}' has no backend assigned.");
             using InferenceEngineRuntime<CharacterMotionRequest, CharacterMotionResult> runtime = await motion.MotionEngine.CreateRuntimeAsync();
-            CharacterMotionResult generated = await runtime.RunAsync(motion.BuildEngineRequest(embedding));
+            CharacterMotionResult generated = await runtime.RunAsync(motion.BuildEngineRequest());
             AnimationClip clip = WriteClip(motion, generated.Motion);
             Undo.RecordObject(motion, "Assign Baked Character Motion");
             motion.SetBakedClip(clip, encoderIdentity.ToString(), generated.ModelIdentity.ToString());
+            motion.SetBakedHistory(generated.Motion);
             EditorUtility.SetDirty(motion);
             AssetDatabase.SaveAssets();
         }
@@ -75,6 +70,13 @@ namespace KitsuMate.Onnx.Motion.Editor
                     AnimationUtility.SetEditorCurve(clip, binding, null);
             }
 
+            PopulateClip(clip, motion, generated);
+            EditorUtility.SetDirty(clip);
+            return clip;
+        }
+
+        internal static void PopulateClip(AnimationClip clip, CharacterMotion motion, KimodoHumanoidMotion generated)
+        {
             clip.frameRate = generated.FramesPerSecond;
             clip.wrapMode = WrapMode.ClampForever;
             Animator animator = motion.TargetAnimator;
@@ -102,8 +104,6 @@ namespace KitsuMate.Onnx.Motion.Editor
             }
 
             clip.EnsureQuaternionContinuity();
-            EditorUtility.SetDirty(clip);
-            return clip;
         }
 
         private static void BuildPoseCurves(CharacterMotion motion, KimodoHumanoidMotion generated,

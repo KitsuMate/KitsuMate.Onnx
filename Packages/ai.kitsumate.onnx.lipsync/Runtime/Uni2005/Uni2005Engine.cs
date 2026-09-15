@@ -10,6 +10,6 @@ namespace KitsuMate.Onnx.LipSync.Uni2005
         [SerializeField, Range(0f, 1f)] private float volumeThreshold = 0.01f;
         [SerializeField] private bool verboseLogging;
         public override ModelSet ModelSet => modelSet;
-        protected override InferenceEngineRuntime<LipSyncRequest, VisemeTimeline> CreateRuntime() => new Uni2005EngineRuntime(modelSet, framesPerBatch, volumeThreshold, verboseLogging);
+        protected override InferenceEngineRuntime<LipSyncRequest, VisemeTimeline> CreateRuntime(ModelSet resolvedModelSet) => new Uni2005EngineRuntime((Uni2005ModelSet)resolvedModelSet, framesPerBatch, volumeThreshold, verboseLogging);
     }
 }

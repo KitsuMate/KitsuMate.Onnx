@@ -1,7 +1,0 @@
-{
-  "name": "KitsuMate.Onnx.Embeddings.IntegrationTests",
-  "references": ["KitsuMate.Onnx", "KitsuMate.Onnx.Backend.OnnxRuntime", "KitsuMate.Onnx.Embeddings"],
-  "optionalUnityReferences": ["TestAssemblies"],
-  "includePlatforms": ["Editor"],
-  "autoReferenced": false
-}

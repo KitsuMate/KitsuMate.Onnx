@@ -17,7 +17,7 @@ namespace KitsuMate.Onnx.Asr.Whisper
         private readonly IOnnxModelSource _encoderSource;
         private readonly IOnnxModelSource _decoderSource;
         private readonly IOnnxModelSource _decoderWithPastSource;
-        private readonly TextAsset _tokenizerJson;
+        private readonly TextFileReference _tokenizerJson;
         
         [Header("Transcription Settings")]
         [SerializeField, Tooltip("Language code (e.g., 'en', 'ja'). Leave empty for auto-detect.")]
@@ -41,7 +41,7 @@ namespace KitsuMate.Onnx.Asr.Whisper
         private readonly OnnxSessionOptions _sessionOptions;
         
         public WhisperEngineRuntime(IOnnxModelSource melSource, IOnnxModelSource encoderSource,
-            IOnnxModelSource decoderSource, IOnnxModelSource decoderWithPastSource, TextAsset tokenizerJson,
+            IOnnxModelSource decoderSource, IOnnxModelSource decoderWithPastSource, TextFileReference tokenizerJson,
             string languageOverride, WhisperTask task, int maxTokens, bool verbose, OnnxSessionOptions sessionOptions = null)
         {
             _melSource = melSource;

@@ -14,8 +14,8 @@ namespace KitsuMate.Onnx
 
         /// <summary>
         /// Copy tensor data from device to CPU.
-        /// Works for CPU-resident tensors. For GPU-resident tensors, must be
-        /// bound as a CPU output during RunOnDevice.
+        /// GPU-backed implementations perform a synchronized readback. Bind frequently
+        /// read outputs to CPU during RunOnDevice to avoid an extra transfer here.
         /// </summary>
         OnnxTensor ToCpu();
     }
