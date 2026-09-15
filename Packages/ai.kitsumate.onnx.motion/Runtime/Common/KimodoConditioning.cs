@@ -22,6 +22,10 @@ namespace KitsuMate.Onnx.Motion
             DefaultFrameCount,
             copy: false);
 
+        public static KimodoConditioning CreateEmpty(int frameCount) => new KimodoConditioning(
+            new float[checked(frameCount * FeatureCount)], new bool[checked(frameCount * FeatureCount)],
+            frameCount, copy: false);
+
         public KimodoConditioning(float[] observedMotion, bool[] motionMask, int frameCount = DefaultFrameCount, bool copy = true)
         {
             if (observedMotion == null) throw new ArgumentNullException(nameof(observedMotion));

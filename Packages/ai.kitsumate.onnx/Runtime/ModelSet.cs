@@ -2,6 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
+using KitsuMate.Onnx.Download;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace KitsuMate.Onnx
 {
@@ -44,11 +47,62 @@ namespace KitsuMate.Onnx
 
     public abstract class ModelSet : ScriptableObject
     {
+        [SerializeField] private ModelDownloadProfile download = new();
+        public ModelDownloadProfile Download => download;
+        public virtual string[] DownloadCompanionRoles => Array.Empty<string>();
+        public virtual IEnumerable<(string Family, string Repository)> RepositorySuggestions =>
+            Array.Empty<(string Family, string Repository)>();
+        public bool UsesInstallation => !string.IsNullOrWhiteSpace(download.repository) && !GetAllModels().Any(source => source != null && source.IsAvailable);
+        public ModelInstallationStore Installation(string root) => new(root, download.installationFolder);
+
+#if UNITY_EDITOR
+        public async Task ApplyInstallationInEditorAsync(DownloadedModel installation, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            string assetPath = UnityEditor.AssetDatabase.GetAssetPath(this);
+            if (string.IsNullOrEmpty(assetPath)) throw new InvalidOperationException("Save the model set before assigning downloaded files.");
+            using var resolved = new ResolvedModelSet(this);
+            resolved.Clone();
+            resolved.CompanionAssetDirectory = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(assetPath),
+                System.IO.Path.GetFileNameWithoutExtension(assetPath) + " Files").Replace('\\', '/');
+            await resolved.Model.BindInstallationAsync(installation, resolved, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            UnityEditor.Undo.RecordObject(this, "Assign downloaded models");
+            resolved.Model.name = name;
+            resolved.Model.hideFlags = hideFlags;
+            UnityEditor.EditorUtility.CopySerialized(resolved.Model, this);
+            UnityEditor.EditorUtility.SetDirty(this);
+            UnityEditor.AssetDatabase.SaveAssetIfDirty(this);
+        }
+#endif
+
+        internal async Task<ResolvedModelSet> ResolveAsync(string root, CancellationToken cancellationToken)
+        {
+            if (UsesInstallation && Application.platform == RuntimePlatform.WebGLPlayer)
+                throw new PlatformNotSupportedException("WebGL requires imported Unity AI Inference build assets. Browser model installations are not supported.");
+            var resolved = new ResolvedModelSet(this);
+            resolved.Clone();
+            if (!UsesInstallation) return resolved;
+            try
+            {
+                DownloadedModel installation = Installation(root).Read()
+                    ?? throw new InvalidOperationException($"{DisplayName} is not installed. Download it from the model set Inspector.");
+                if (resolved.Model is StandardModelSet standard) standard.SetResolvedIdentity(installation.Identity);
+                await resolved.Model.BindInstallationAsync(installation, resolved, cancellationToken);
+                return resolved;
+            }
+            catch { resolved.Dispose(); throw; }
+        }
+
+        protected virtual Task BindInstallationAsync(DownloadedModel installation, ResolvedModelSet resources,
+            CancellationToken cancellationToken) => throw new NotSupportedException($"{GetType().Name} requires imported model sources.");
+
         public abstract string DisplayName { get; }
         public abstract ModelIdentity Identity { get; }
         public abstract ModelCapabilities Capabilities { get; }
         public abstract bool IsComplete { get; }
         public abstract IOnnxModelSource[] GetAllModels();
+        public virtual TextFileReference[] GetAllTextFiles() => Array.Empty<TextFileReference>();
         public abstract ModelValidationResult Validate(ModelValidationContext context);
     }
 
@@ -61,9 +115,12 @@ namespace KitsuMate.Onnx
         [SerializeField] private string contentHash;
         [SerializeField] private ModelCapabilities capabilities;
 
+        [NonSerialized] private ModelIdentity? resolvedIdentity;
+        internal void SetResolvedIdentity(ModelIdentity identity) => resolvedIdentity = identity;
+
         protected virtual string DefaultFamily => GetType().Namespace ?? "onnx";
         protected virtual string DefaultModelId => GetType().Name;
-        public override ModelIdentity Identity => new(string.IsNullOrWhiteSpace(family) ? DefaultFamily : family, string.IsNullOrWhiteSpace(modelId) ? DefaultModelId : modelId, revision, contentHash);
+        public override ModelIdentity Identity => resolvedIdentity ?? new(string.IsNullOrWhiteSpace(family) ? DefaultFamily : family, string.IsNullOrWhiteSpace(modelId) ? DefaultModelId : modelId, revision, contentHash);
         public override ModelCapabilities Capabilities => capabilities;
 
 #if UNITY_EDITOR

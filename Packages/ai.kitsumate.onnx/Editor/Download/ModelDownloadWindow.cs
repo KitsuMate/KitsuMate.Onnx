@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.IO;
 using System.Threading;
 using UnityEditor;
 using KitsuMate.Onnx.Download;
@@ -10,102 +11,359 @@ namespace KitsuMate.Onnx.Editor.Download
 {
     public sealed class ModelDownloadWindow : EditorWindow
     {
-        private ModelDownloadRequest initialRequest;
-        private Action<ModelDownloadResult> completed;
+        private ModelSet modelSet;
+        private Action<DownloadedModel> completed;
         private string repository;
         private string revision;
         private string expectedFamily;
         private string token;
         private bool sentis;
         private DiscoveredRepository discovered;
+        private DownloadedModel cachedInstallation;
         private readonly Dictionary<string, string> selected = new(StringComparer.Ordinal);
+        private string installationFolder;
+        private bool advanced;
+        private bool supportingFiles;
+        private bool storageDetails;
+        private Vector2 scroll;
+        private MessageType messageType = MessageType.Info;
+        private readonly Dictionary<string, string> supplied = new(StringComparer.Ordinal);
+        private IReadOnlyDictionary<string, string> available = new Dictionary<string, string>();
+        private DiscoveredFile[] required = Array.Empty<DiscoveredFile>();
         private string message;
         private float progress;
         private bool busy;
         private CancellationTokenSource cancellation;
 
-        public static ModelDownloadWindow Show(ModelDownloadRequest request,
-            Action<ModelDownloadResult> onCompleted)
+        public static ModelDownloadWindow Show(ModelSet set, Action<DownloadedModel> onCompleted = null, bool useSentis = false)
         {
-            return Show(request, onCompleted, false);
-        }
-
-        public static ModelDownloadWindow ShowForSentis(ModelDownloadRequest request,
-            Action<ModelDownloadResult> onCompleted)
-        {
-            return Show(request, onCompleted, true);
-        }
-
-        private static ModelDownloadWindow Show(ModelDownloadRequest request,
-            Action<ModelDownloadResult> onCompleted, bool useSentis)
-        {
-            if (request == null) throw new ArgumentNullException(nameof(request));
-            var window = GetWindow<ModelDownloadWindow>(true, "Download Models", true);
-            window.minSize = new Vector2(560, 340);
-            window.initialRequest = request;
+            if (set == null) throw new ArgumentNullException(nameof(set));
+            var window = CreateInstance<ModelDownloadWindow>();
+            window.titleContent = new GUIContent("Download Models");
+            window.minSize = new Vector2(560, 380);
+            window.installationFolder = set.Download.installationFolder;
+            window.modelSet = set;
             window.completed = onCompleted;
-            window.repository = request.Repository;
-            window.revision = request.Revision;
-            window.expectedFamily = request.ExpectedFamily;
+            window.repository = set.Download.repository;
+            window.revision = set.Download.revision;
+            window.expectedFamily = set.Download.family;
+            bool useDefault = string.IsNullOrWhiteSpace(window.repository);
+            if (useDefault)
+            {
+                var suggestion = set.RepositorySuggestions.FirstOrDefault();
+                window.repository = suggestion.Repository;
+                window.expectedFamily = suggestion.Family;
+                window.revision = "";
+            }
             window.sentis = useSentis;
+            foreach (var item in set.Download.artifacts) window.selected[item.role] = item.path;
             window.token = TokenStorage.LoadToken("huggingface.co") ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(window.installationFolder)) window.installationFolder = window.repository;
             window.Show();
-            _ = window.ScanAsync();
+            try
+            {
+                var installed = window.Store().Read();
+                if (installed != null && installed.Identity.ModelId == window.repository?.Split('/').Last() &&
+                    (string.IsNullOrEmpty(window.expectedFamily) || installed.Identity.Family == window.expectedFamily) &&
+                    (string.IsNullOrEmpty(installed.Repository) || installed.Repository == window.repository) &&
+                    (string.IsNullOrEmpty(window.revision) || window.revision == installed.Identity.Revision) &&
+                    window.selected.All(choice => installed.Files.Any(file => file.Role == choice.Key && file.Path == choice.Value)))
+                {
+                    window.cachedInstallation = installed;
+                    window.required = installed.Files.ToArray();
+                    window.available = installed.Files.ToDictionary(file => file.Path, file => Path.Combine(installed.DirectoryPath, file.Path));
+                    window.revision = installed.Identity.Revision;
+                    foreach (var file in installed.Files.Where(file => file.Path.EndsWith(".onnx", StringComparison.OrdinalIgnoreCase))) window.selected[file.Role] = file.Path;
+                }
+            }
+            catch (Exception exception) { window.message = exception.Message; }
+            if (!string.IsNullOrWhiteSpace(window.repository)) _ = window.ScanAsync();
             return window;
+        }
+
+        private void SaveSelection()
+        {
+            if (modelSet == null) return;
+            Undo.RecordObject(modelSet, "Configure model download");
+            modelSet.Download.repository = repository;
+            modelSet.Download.revision = revision;
+            modelSet.Download.family = expectedFamily;
+            modelSet.Download.installationFolder = installationFolder;
+            modelSet.Download.artifacts = (discovered != null ? SelectedArtifacts() : selected).Select(pair => new ModelDownloadProfile.ArtifactSelection { role = pair.Key, path = pair.Value }).ToArray();
+            EditorUtility.SetDirty(modelSet);
+            AssetDatabase.SaveAssetIfDirty(modelSet);
         }
 
         private void OnDisable()
         {
             cancellation?.Cancel();
-            cancellation?.Dispose();
-            cancellation = null;
         }
 
         private void OnGUI()
         {
-            EditorGUILayout.LabelField("Model Repository", EditorStyles.boldLabel);
+            if (modelSet == null) { Close(); return; }
+            scroll = EditorGUILayout.BeginScrollView(scroll);
+            EditorGUILayout.LabelField(modelSet.DisplayName, EditorStyles.boldLabel);
             using (new EditorGUI.DisabledScope(busy))
             {
-                EditorGUI.BeginChangeCheck();
-                repository = EditorGUILayout.TextField("Hugging Face", repository);
-                revision = EditorGUILayout.TextField("Revision", revision);
-                token = EditorGUILayout.PasswordField("Access Token", token);
-                if (EditorGUI.EndChangeCheck())
+                string previousRepository = repository;
+                string previousRevision = revision;
+                DrawRepositoryField();
+                advanced = EditorGUILayout.Foldout(advanced, "Repository and authentication", true);
+                if (advanced)
+                {
+                    DrawRevisionField();
+                    token = EditorGUILayout.PasswordField("Access token", token);
+                    EditorGUILayout.LabelField("Refresh the repository after changing the access token.", EditorStyles.miniLabel);
+                }
+                if (previousRepository != repository || previousRevision != revision)
                 {
                     discovered = null;
+                    cachedInstallation = null;
                     selected.Clear();
+                    supplied.Clear();
+                    required = Array.Empty<DiscoveredFile>();
+                    if (previousRepository != repository)
+                    {
+                        installationFolder = repository?.Trim();
+                        expectedFamily = modelSet.RepositorySuggestions.FirstOrDefault(item => item.Repository == repository).Family;
+                    }
+                    if (!string.IsNullOrWhiteSpace(repository)) _ = ScanAsync();
                 }
-
-                EditorGUILayout.Space();
-                if (discovered == null)
-                {
-                    if (GUILayout.Button("Scan Repository")) _ = ScanAsync();
-                }
-                else
+                EditorGUILayout.Space(8);
+                if (discovered != null)
                 {
                     DrawArtifacts();
-                    EditorGUILayout.Space();
-                    if (GUILayout.Button("Download Models")) _ = DownloadAsync();
+                    supportingFiles = EditorGUILayout.Foldout(supportingFiles,
+                        $"Supporting files ({discovered.CommonFiles.Length})", true);
+                    if (supportingFiles)
+                        foreach (var file in discovered.CommonFiles) DrawFile(file);
+                    using (new EditorGUILayout.HorizontalScope())
+                    {
+                        GUILayout.FlexibleSpace();
+                        if (GUILayout.Button("Use files from folder…", EditorStyles.miniButton, GUILayout.Width(165))) SupplyFolder();
+                    }
+                }
+                else if (cachedInstallation != null)
+                {
+                    foreach (var file in cachedInstallation.Files.Where(file => file.Path.EndsWith(".onnx", StringComparison.OrdinalIgnoreCase)))
+                        DrawFile(file);
+                    EditorGUILayout.LabelField("Available offline. Refresh the repository to change variants.", EditorStyles.wordWrappedMiniLabel);
+                }
+                EditorGUILayout.Space(8);
+                if (EditorUserBuildSettings.activeBuildTarget == BuildTarget.WebGL)
+                    EditorGUILayout.HelpBox(sentis
+                        ? "WebGL uses imported Unity AI Inference assets. Model compatibility must still be tested in a player."
+                        : "This raw ONNX setup is not supported on WebGL. Use a Unity AI Inference model set with imported assets. Browser downloads are not supported.",
+                        sentis ? MessageType.Info : MessageType.Warning);
+                storageDetails = EditorGUILayout.Foldout(storageDetails, "Storage details", true);
+                if (storageDetails)
+                {
+                    EditorGUILayout.LabelField("Download root", "Application.persistentDataPath");
+                    EditorGUILayout.SelectableLabel(Destination(), EditorStyles.wordWrappedMiniLabel, GUILayout.Height(34));
+                    using (new EditorGUILayout.HorizontalScope())
+                    {
+                        if (GUILayout.Button("Copy path", EditorStyles.miniButton)) EditorGUIUtility.systemCopyBuffer = Destination();
+                        if (GUILayout.Button("Open in Explorer", EditorStyles.miniButton)) EditorUtility.RevealInFinder(Destination());
+                    }
+                    EditorGUILayout.LabelField("Completed files are kept after cancellation. The interrupted file restarts on retry. Validation uses file size and model metadata, without hashing file contents.", EditorStyles.wordWrappedMiniLabel);
                 }
             }
-
+            if (!string.IsNullOrWhiteSpace(message) && !busy) EditorGUILayout.HelpBox(message, messageType);
+            EditorGUILayout.EndScrollView();
+            EditorGUILayout.Space(6);
             if (busy)
             {
                 Rect rect = EditorGUILayout.GetControlRect(false, EditorGUIUtility.singleLineHeight);
-                EditorGUI.ProgressBar(rect, progress, message ?? "Working...");
+                EditorGUI.ProgressBar(rect, progress, message ?? "Working…");
+                using (new EditorGUI.DisabledScope(cancellation == null || cancellation.IsCancellationRequested))
+                    if (GUILayout.Button("Cancel")) cancellation.Cancel();
             }
-            else if (!string.IsNullOrWhiteSpace(message))
+            else
             {
-                EditorGUILayout.HelpBox(message, MessageType.Info);
+                int missing = required.Count(file => !available.ContainsKey(file.Path));
+                long bytes = required.Where(file => !available.ContainsKey(file.Path)).Sum(file => Math.Max(0, file.Size));
+                if (discovered != null || cachedInstallation != null) EditorGUILayout.LabelField($"{required.Length - missing} of {required.Length} files available · {EditorUtility.FormatBytes(bytes)} to download");
+                using (new EditorGUI.DisabledScope((discovered == null && cachedInstallation == null) || required.Length == 0))
+                    if (GUILayout.Button(missing > 0 ? "Download all missing files" : "Assign downloaded files", GUILayout.Height(26))) _ = DownloadAsync();
             }
+        }
 
-            if (sentis && HasHiddenArtifacts())
-                EditorGUILayout.HelpBox(
-                    "Sentis setup shows only FP32 artifacts. Other ONNX artifacts are available with ONNX Runtime.",
-                    MessageType.None);
-            EditorGUILayout.HelpBox(
-                $"Models are installed under {EditorModelDownloader.ModelRoot()}. Each ONNX role can use a different artifact type.",
-                MessageType.None);
+        private ModelInstallationStore Store() => new(
+            (OnnxSettings.Load() ?? throw new InvalidOperationException("Configure OnnxSettings before setting up models.")).InstallationRoot,
+            installationFolder);
+
+        private void RefreshAvailability()
+        {
+            if (discovered == null) return;
+            required = ModelInstallationStore.RequiredFiles(discovered, SelectedArtifacts());
+            available = Store().AvailableFiles(discovered, required, supplied);
+        }
+
+        private void DrawFile(DiscoveredFile file, string role = null, DiscoveredArtifact[] choices = null)
+        {
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                EditorGUILayout.LabelField(new GUIContent(role == null ? Path.GetFileName(file.Path) : Humanize(role), file.Path), GUILayout.Width(135));
+                if (choices != null)
+                {
+                    int current = Array.FindIndex(choices, choice => choice.Model.Path == selected[role]);
+                    int next = EditorGUILayout.Popup(Math.Max(0, current), choices.Select(choice => new GUIContent(choice.Type.ToUpperInvariant(), choice.Model.Path)).ToArray(), GUILayout.MinWidth(65));
+                    if (next != current)
+                    {
+                        selected[role] = choices[next].Model.Path;
+                        if (role == "decoder") SelectCachedDecoder(choices[next]);
+                        RefreshAvailability();
+                        file = choices[next].Model;
+                    }
+                }
+                else GUILayout.FlexibleSpace();
+                bool exists = available.ContainsKey(file.Path);
+                GUILayout.Label(supplied.ContainsKey(file.Path) ? "Local file" : exists ? "Downloaded" : "Missing", GUILayout.Width(80));
+                using (new EditorGUI.DisabledScope(discovered == null))
+                    if (GUILayout.Button(exists ? "Redownload" : "Download", EditorStyles.miniButton, GUILayout.Width(85))) _ = DownloadFileAsync(file);
+                if (GUILayout.Button("Choose file...", EditorStyles.miniButton, GUILayout.Width(95))) SupplyFile(file);
+                if (supplied.ContainsKey(file.Path) && GUILayout.Button("Reset", EditorStyles.miniButton, GUILayout.Width(45)))
+                { supplied.Remove(file.Path); RefreshAvailability(); Repaint(); }
+            }
+        }
+
+        private async Awaitable DownloadFileAsync(DiscoveredFile file)
+        {
+            if (!Begin("Downloading " + Path.GetFileName(file.Path))) return;
+            try
+            {
+                var reporter = new Progress<float>(value => { progress = value; Repaint(); });
+                await Store().DownloadFileAsync(discovered, file, token, reporter, cancellation.Token);
+                supplied.Remove(file.Path);
+                message = "Downloaded " + Path.GetFileName(file.Path) + ". Assign downloaded files when the selection is complete.";
+            }
+            catch (OperationCanceledException) { message = "Cancelled. The previous file is unchanged."; }
+            catch (Exception exception) { ShowError(exception); }
+            finally { RefreshAvailability(); End(); }
+        }
+
+        private void SupplyFile(DiscoveredFile file)
+        {
+            string path = EditorUtility.OpenFilePanel("Select " + file.Path, "", Path.GetExtension(file.Path).TrimStart('.'));
+            if (string.IsNullOrEmpty(path)) return;
+            if (file.Size <= 0 || new FileInfo(path).Length != file.Size)
+            {
+                message = "The selected file size does not match this repository revision and variant.";
+                messageType = MessageType.Error;
+                return;
+            }
+            supplied[file.Path] = path;
+            // External weights normally sit beside their graph. Reuse matching companions too.
+            foreach (var candidate in required.Where(candidate => Path.GetDirectoryName(candidate.Path) == Path.GetDirectoryName(file.Path)))
+            {
+                string neighbor = Path.Combine(Path.GetDirectoryName(path), Path.GetFileName(candidate.Path));
+                if (candidate.Size > 0 && File.Exists(neighbor) && new FileInfo(neighbor).Length == candidate.Size) supplied[candidate.Path] = neighbor;
+            }
+            message = null;
+            RefreshAvailability();
+            Repaint();
+        }
+
+        private void SupplyFolder()
+        {
+            string folder = EditorUtility.OpenFolderPanel("Select model folder (repository layout)", "", "");
+            if (string.IsNullOrEmpty(folder)) return;
+            int count = 0;
+            foreach (var file in required)
+            {
+                string path = Path.Combine(folder, file.Path);
+                if (file.Size > 0 && File.Exists(path) && new FileInfo(path).Length == file.Size) { supplied[file.Path] = path; count++; }
+            }
+            RefreshAvailability();
+            message = $"Found {count} matching files. Missing files will be downloaded.";
+            messageType = MessageType.Info;
+        }
+
+        private void DrawRepositoryField()
+        {
+            Rect field = EditorGUILayout.GetControlRect();
+            field = EditorGUI.PrefixLabel(field, new GUIContent("Hugging Face"));
+            var refresh = new Rect(field.xMax - 22, field.y, 22, field.height);
+            field.width -= 24;
+            using (new EditorGUI.DisabledScope(string.IsNullOrWhiteSpace(repository)))
+                if (GUI.Button(refresh, new GUIContent("\u21bb", "Refresh repository"), EditorStyles.miniButton)) _ = ScanAsync();
+            var arrow = new Rect(field.xMax - 22, field.y, 22, field.height);
+            field.width -= 22;
+            string next = EditorGUI.DelayedTextField(field, repository ?? string.Empty);
+            if (next != repository)
+            {
+                repository = next;
+                revision = "";
+            }
+            if (!EditorGUI.DropdownButton(arrow, new GUIContent("", "Choose a supported repository or type your own"), FocusType.Keyboard)) return;
+            var menu = new GenericMenu();
+            foreach (var preset in modelSet.RepositorySuggestions)
+            {
+                var choice = preset;
+                menu.AddItem(new GUIContent(choice.Repository.Replace("/", "\u2215")),
+                    string.Equals(repository, choice.Repository, StringComparison.OrdinalIgnoreCase), () =>
+                    {
+                        repository = choice.Repository;
+                        cachedInstallation = null;
+                        expectedFamily = choice.Family;
+                        installationFolder = choice.Repository;
+                        supplied.Clear();
+                        revision = "";
+                        discovered = null;
+                        selected.Clear();
+                        message = null;
+                        GUI.FocusControl(null);
+                        Repaint();
+                        _ = ScanAsync();
+                    });
+            }
+            menu.DropDown(arrow);
+        }
+
+        private void DrawRevisionField()
+        {
+            Rect field = EditorGUILayout.GetControlRect();
+            field = EditorGUI.PrefixLabel(field, new GUIContent("Branch / revision", "Leave empty for the default branch, or enter a branch, tag, or commit."));
+            var arrow = new Rect(field.xMax - 22, field.y, 22, field.height);
+            field.width -= 22;
+            revision = EditorGUI.DelayedTextField(field, revision ?? string.Empty);
+            using (new EditorGUI.DisabledScope(string.IsNullOrWhiteSpace(repository)))
+                if (EditorGUI.DropdownButton(arrow, new GUIContent("", "Choose a repository branch"), FocusType.Keyboard))
+                    _ = ShowBranchesAsync(arrow);
+        }
+
+        private async Awaitable ShowBranchesAsync(Rect position)
+        {
+            if (!Begin("Loading branches...")) return;
+            try
+            {
+                string[] branches = await HuggingFaceModelRepository.GetBranchesAsync(repository, token, cancellation.Token);
+                cancellation.Token.ThrowIfCancellationRequested();
+                var menu = new GenericMenu();
+                void Choose(string value)
+                {
+                    revision = value;
+                    supplied.Clear();
+                    cachedInstallation = null;
+                    discovered = null;
+                    selected.Clear();
+                    message = null;
+                    GUI.FocusControl(null);
+                    Repaint();
+                    EditorApplication.delayCall += () => { if (this != null) _ = ScanAsync(); };
+                }
+                foreach (string branch in branches)
+                {
+                    string value = branch;
+                    menu.AddItem(new GUIContent(value.Replace("/", "\u2215")), revision == value, () => Choose(value));
+                }
+                menu.DropDown(position);
+                message = null;
+            }
+            catch (OperationCanceledException) { message = "Cancelled."; }
+            catch (Exception exception) { message = "Could not load branches: " + exception.Message; }
+            finally { End(); }
         }
 
         private void DrawArtifacts()
@@ -129,19 +387,11 @@ namespace KitsuMate.Onnx.Editor.Download
                     selected[role] = path;
                 }
 
-                int current = Array.FindIndex(choices, choice =>
-                    string.Equals(choice.Model.Path, path, StringComparison.OrdinalIgnoreCase));
-                string[] labels = choices.Select(HuggingFaceModelRepository.ArtifactLabel).ToArray();
-                using (new EditorGUI.DisabledScope(choices.Length == 1))
-                {
-                    int next = EditorGUILayout.Popup(Humanize(role), Math.Max(0, current), labels);
-                    if (next != current)
-                    {
-                        selected[role] = choices[next].Model.Path;
-                        if (string.Equals(role, "decoder", StringComparison.Ordinal))
-                            SelectCachedDecoder(choices[next]);
-                    }
-                }
+                var artifact = choices.First(choice => choice.Model.Path == selected[role]);
+                DrawFile(artifact.Model, role, choices);
+                artifact = choices.First(choice => choice.Model.Path == selected[role]);
+                foreach (var file in artifact.Files.Where(file => file.Path != artifact.Model.Path)) DrawFile(file);
+
             }
         }
 
@@ -151,10 +401,7 @@ namespace KitsuMate.Onnx.Editor.Download
                 yield return role;
             if (ShowCachedDecoder())
                 yield return "decoder-with-past";
-            foreach (string role in discovered.Artifacts.Keys.OrderBy(value => value, StringComparer.Ordinal))
-                if (!discovered.RequiredRoles.Contains(role) &&
-                    !string.Equals(role, "decoder-with-past", StringComparison.Ordinal))
-                    yield return role;
+
         }
 
         private bool ShowCachedDecoder()
@@ -188,32 +435,34 @@ namespace KitsuMate.Onnx.Editor.Download
                 : artifacts;
         }
 
-        private bool HasHiddenArtifacts()
-        {
-            return discovered != null && discovered.Artifacts.Values
-                .SelectMany(artifacts => artifacts)
-                .Any(artifact => !HuggingFaceModelRepository.IsSentisArtifact(artifact.Type));
-        }
-
         private async Awaitable ScanAsync()
         {
             if (!Begin("Scanning repository...")) return;
             try
             {
-                discovered = await HuggingFaceModelRepository.ScanAsync(Request(), token, cancellation.Token);
-                revision = discovered.Revision;
-                selected.Clear();
+                var catalog = await HuggingFaceModelRepository.ScanAsync(Request(), token, cancellation.Token);
+                var roles = modelSet.DownloadCompanionRoles;
+                bool hasTokenizer = catalog.CommonFiles.Any(file => file.Role == "tokenizer") && roles.Contains("tokenizer");
+                discovered = new DiscoveredRepository(catalog.Owner, catalog.Name, catalog.Family, catalog.Revision,
+                    catalog.Artifacts, catalog.CommonFiles.Where(file => roles.Contains(file.Role) &&
+                        !(hasTokenizer && file.Role == "vocabulary")).ToArray(), catalog.RequiredRoles);
                 foreach (string role in discovered.Artifacts.Keys)
                 {
                     DiscoveredArtifact[] choices = Choices(role);
-                    if (choices.Length > 0) selected[role] = choices[0].Model.Path;
+                    if (choices.Length > 0 && (!selected.TryGetValue(role, out string saved) || !choices.Any(choice => choice.Model.Path == saved))) selected[role] = choices[0].Model.Path;
                 }
-                if (selected.TryGetValue("decoder", out string decoderPath))
-                    SelectCachedDecoder(discovered.Artifacts["decoder"].First(choice =>
-                        string.Equals(choice.Model.Path, decoderPath, StringComparison.OrdinalIgnoreCase)));
                 EnsureRequiredChoices();
                 SaveToken();
-                message = $"Found {selected.Count} model role{(selected.Count == 1 ? string.Empty : "s")}.";
+                RefreshAvailability();
+                foreach (var source in modelSet.GetAllModels())
+                {
+                    string path = source?.ResolveModelPath();
+                    if (string.IsNullOrEmpty(path) || !File.Exists(path)) continue;
+                    foreach (var file in required.Where(file => !available.ContainsKey(file.Path) && Path.GetFileName(file.Path) == Path.GetFileName(path)))
+                        if (file.Size > 0 && new FileInfo(path).Length == file.Size) supplied[file.Path] = path;
+                }
+                RefreshAvailability();
+                message = null;
             }
             catch (OperationCanceledException) { message = "Cancelled."; }
             catch (Exception exception) { discovered = null; ShowError(exception); }
@@ -225,25 +474,73 @@ namespace KitsuMate.Onnx.Editor.Download
             if (!Begin("Downloading models...")) return;
             try
             {
+                if (discovered == null && cachedInstallation != null)
+                {
+                    var current = Store().Read() ?? throw new InvalidOperationException("Installation files have changed. Refresh the repository to repair the installation.");
+                    if (supplied.Count > 0) throw new InvalidOperationException("Refresh the repository before applying replacement files.");
+                    await ApplyAsync(current);
+                    return;
+                }
                 EnsureRequiredChoices();
                 var reporter = new Progress<float>(value => { progress = value; Repaint(); });
-                ModelDownloadResult result = sentis
-                    ? await EditorModelDownloader.DownloadForSentisAsync(Request(), SelectedArtifacts(), token, reporter,
-                        cancellation.Token)
-                    : await EditorModelDownloader.DownloadAsync(Request(), SelectedArtifacts(), token, reporter,
-                        cancellation.Token);
-                completed?.Invoke(result);
+                var store = Store();
+                RefreshAvailability();
+                var installed = store.Read();
+                bool matches = installed != null && installed.Identity.Revision == discovered.Revision &&
+                    installed.Identity.Family == discovered.Family && installed.Identity.ModelId == discovered.Name &&
+                    (string.IsNullOrEmpty(installed.Repository) || installed.Repository == discovered.Repository) &&
+                    required.All(file => installed.Files.Any(existing => existing.Path == file.Path && existing.Size == file.Size) &&
+                        available.TryGetValue(file.Path, out string source) && Path.GetFullPath(source) == Path.GetFullPath(Path.Combine(installed.DirectoryPath, file.Path))) && supplied.Count == 0;
+                var fileReporter = new Progress<(string Path, long Bytes, long Total)>(value =>
+                {
+                    message = $"{Path.GetFileName(value.Path)} · {EditorUtility.FormatBytes(value.Bytes)} / {EditorUtility.FormatBytes(value.Total)}";
+                    Repaint();
+                });
+                if (!matches) await store.InstallAsync(discovered, SelectedArtifacts(), reporter, cancellation.Token, token, supplied,
+                    (path, bytes, total) => ((IProgress<(string Path, long Bytes, long Total)>)fileReporter).Report((path, bytes, total)));
+                DownloadedModel result = store.Read() ?? throw new InvalidOperationException("Installation is incomplete.");
+                await ApplyAsync(result);
+                supplied.Clear();
+                RefreshAvailability();
                 SaveToken();
-                message = $"Installed {result.Identity.ModelId}.";
             }
-            catch (OperationCanceledException) { message = "Cancelled."; }
+            catch (OperationCanceledException) { message = "Cancelled. Completed files are kept for the next attempt."; }
             catch (Exception exception) { ShowError(exception); }
-            finally { End(); }
+            finally { try { RefreshAvailability(); } finally { End(); } }
+        }
+
+        private async Awaitable ApplyAsync(DownloadedModel result)
+        {
+            // Applying is explicit and only happens after all required files are available.
+            string before = EditorJsonUtility.ToJson(modelSet);
+            try
+            {
+                revision = result.Identity.Revision;
+                SaveSelection();
+                if (modelSet is StandardModelSet standard) standard.SetDownloadMetadata(result.Identity, Array.Empty<string>());
+                completed?.Invoke(result);
+                await modelSet.ApplyInstallationInEditorAsync(result, cancellation.Token);
+                AssetDatabase.SaveAssetIfDirty(modelSet);
+            }
+            catch
+            {
+                EditorJsonUtility.FromJsonOverwrite(before, modelSet);
+                EditorUtility.SetDirty(modelSet);
+                AssetDatabase.SaveAssetIfDirty(modelSet);
+                throw;
+            }
+            message = "Download complete. File references assigned to the model set.";
+        }
+
+        private string Destination()
+        {
+            try { return Store().DirectoryPath; }
+            catch { return "Configure OnnxSettings to choose the download root."; }
         }
 
         private IReadOnlyDictionary<string, string> SelectedArtifacts()
         {
-            var result = new Dictionary<string, string>(selected, StringComparer.Ordinal);
+            var result = selected.Where(pair => OrderedRoles().Contains(pair.Key)).ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
             if (!ShowCachedDecoder()) result.Remove("decoder-with-past");
             return result;
         }
@@ -270,6 +567,7 @@ namespace KitsuMate.Onnx.Editor.Download
             cancellation?.Dispose();
             cancellation = new CancellationTokenSource();
             busy = true;
+            messageType = MessageType.Info;
             progress = 0f;
             message = status;
             Repaint();
@@ -279,6 +577,8 @@ namespace KitsuMate.Onnx.Editor.Download
         private void End()
         {
             busy = false;
+            cancellation?.Dispose();
+            cancellation = null;
             progress = 0f;
             Repaint();
         }
@@ -292,8 +592,8 @@ namespace KitsuMate.Onnx.Editor.Download
         private void ShowError(Exception exception)
         {
             message = exception.Message;
+            messageType = MessageType.Error;
             Debug.LogException(exception);
-            EditorUtility.DisplayDialog("Model download failed", exception.Message, "OK");
         }
 
         private static string Humanize(string role)

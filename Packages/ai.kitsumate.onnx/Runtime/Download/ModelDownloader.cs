@@ -16,9 +16,10 @@ namespace KitsuMate.Onnx.Download
         public string DirectoryPath { get; }
         public ModelIdentity Identity { get; }
         public IReadOnlyList<DiscoveredFile> Files { get; }
+        public string Repository { get; }
 
-        public DownloadedModel(string directory, ModelIdentity identity, IReadOnlyList<DiscoveredFile> files)
-        { DirectoryPath = Path.GetFullPath(directory); Identity = identity; Files = files; }
+        public DownloadedModel(string directory, ModelIdentity identity, IReadOnlyList<DiscoveredFile> files, string repository = null)
+        { DirectoryPath = Path.GetFullPath(directory); Identity = identity; Files = files; Repository = repository; }
 
         public DiscoveredFile GetFile(string role) => Files.FirstOrDefault(file => file.Role == role)
             ?? throw new InvalidDataException($"Downloaded model is missing '{role}'.");
@@ -27,7 +28,8 @@ namespace KitsuMate.Onnx.Download
         public void ConfigureModel(OnnxModelReference reference, string role)
         {
             var file = GetFile(role);
-            reference.ConfigureDownloadedFile(GetPath(role), file.Sha256, file.Inputs, file.Outputs);
+            string path = GetPath(role);
+            reference.ConfigureFile(path, file.Sha256, file.Inputs, file.Outputs);
         }
     }
 
@@ -36,9 +38,21 @@ namespace KitsuMate.Onnx.Download
     {
         private static readonly HttpClient Client = new() { Timeout = Timeout.InfiniteTimeSpan };
 
+        public static Task DownloadFileAsync(DiscoveredRepository repository, DiscoveredFile file,
+            string destination, string token = null, IProgress<float> progress = null,
+            CancellationToken cancellationToken = default)
+        {
+            string path = ModelDownloadPaths.Child(destination, file.Path);
+            Directory.CreateDirectory(Path.GetDirectoryName(path));
+            var request = new ModelDownloadRequest(repository.Repository, repository.Revision, repository.Family);
+            return DownloadFileAsync(HuggingFaceModelRepository.FileUrl(request, repository.Revision, file.Path),
+                path, file, token, bytes => progress?.Report(file.Size > 0 ? (float)bytes / file.Size : 0), cancellationToken);
+        }
+
         public static async Task<DownloadedModel> DownloadAsync(DiscoveredRepository repository,
             IReadOnlyDictionary<string, string> selection, string destination, string cacheDirectory = null,
-            string token = null, IProgress<float> progress = null, CancellationToken cancellationToken = default)
+            string token = null, IProgress<float> progress = null, CancellationToken cancellationToken = default,
+            Action<string, long, long> fileProgress = null)
         {
             var artifacts = HuggingFaceModelRepository.SelectArtifacts(repository, selection);
             var files = artifacts.SelectMany(artifact => artifact.Files).Concat(repository.CommonFiles)
@@ -52,15 +66,18 @@ namespace KitsuMate.Onnx.Download
                 Directory.CreateDirectory(Path.GetDirectoryName(path));
                 string cache = !string.IsNullOrEmpty(cacheDirectory) && IsHash(file.Sha256)
                     ? ModelDownloadPaths.Child(cacheDirectory, file.Sha256.ToLowerInvariant()) : null;
-                if (!await HasHashAsync(path, file.Sha256, cancellationToken))
+                if (!HasSize(path, file.Size))
                 {
-                    if (cache != null && await HasHashAsync(cache, file.Sha256, cancellationToken))
+                    if (cache != null && HasSize(cache, file.Size))
                         File.Copy(cache, path, true);
                     else
                     {
                         await DownloadFileAsync(HuggingFaceModelRepository.FileUrl(request, repository.Revision, file.Path),
-                            path, file, token, bytes => progress?.Report(total > 0
-                                ? Math.Min(.99f, (float)(completed + bytes) / total) : 0), cancellationToken);
+                            path, file, token, bytes =>
+                            {
+                                fileProgress?.Invoke(file.Path, bytes, file.Size);
+                                progress?.Report(total > 0 ? Math.Min(.99f, (float)(completed + bytes) / total) : 0);
+                            }, cancellationToken).ConfigureAwait(false);
                         if (cache != null)
                         {
                             Directory.CreateDirectory(Path.GetDirectoryName(cache));
@@ -70,7 +87,7 @@ namespace KitsuMate.Onnx.Download
                 }
                 if (file.Path.EndsWith(".onnx", StringComparison.OrdinalIgnoreCase))
                 {
-                    var metadata = await Task.Run(() => OnnxLightweightMetadataReader.Read(path), cancellationToken);
+                    var metadata = await Task.Run(() => OnnxLightweightMetadataReader.Read(path), cancellationToken).ConfigureAwait(false);
                     file.SetMetadata(metadata.Inputs.ToArray(), metadata.Outputs.ToArray());
                 }
                 completed += Math.Max(0, file.Size);
@@ -82,7 +99,7 @@ namespace KitsuMate.Onnx.Download
             var identity = new ModelIdentity(repository.Family, repository.Name, repository.Revision,
                 Hex(hash.ComputeHash(Encoding.UTF8.GetBytes(content))));
             progress?.Report(1);
-            return new DownloadedModel(destination, identity, files);
+            return new DownloadedModel(destination, identity, files, repository.Repository);
         }
 
         private static async Task DownloadFileAsync(string url, string path, DiscoveredFile file, string token,
@@ -93,47 +110,41 @@ namespace KitsuMate.Onnx.Download
             {
                 using var request = new HttpRequestMessage(HttpMethod.Get, url);
                 if (!string.IsNullOrWhiteSpace(token)) request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-                using var response = await Client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+                // Streaming must not resume on Unity's Editor synchronization context per chunk.
+                using var response = await Client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+                using var cancelResponse = ct.Register(response.Dispose);
                 response.EnsureSuccessStatusCode();
-                using var source = await response.Content.ReadAsStreamAsync();
-                using var hash = SHA256.Create();
+                using var source = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
                 long bytes = 0;
+                var progressTimer = System.Diagnostics.Stopwatch.StartNew();
                 using (var output = new FileStream(partial, FileMode.Create, FileAccess.Write, FileShare.None, 65536, true))
                 {
                     var buffer = new byte[65536];
                     int count;
-                    while ((count = await source.ReadAsync(buffer, 0, buffer.Length, ct)) != 0)
+                    while ((count = await source.ReadAsync(buffer, 0, buffer.Length, ct).ConfigureAwait(false)) != 0)
                     {
-                        await output.WriteAsync(buffer, 0, count, ct);
-                        hash.TransformBlock(buffer, 0, count, buffer, 0);
+                        await output.WriteAsync(buffer, 0, count, ct).ConfigureAwait(false);
                         bytes += count;
-                        progress(bytes);
+                        if (bytes == count || progressTimer.ElapsedMilliseconds >= 100 || bytes == file.Size)
+                        {
+                            progress(bytes);
+                            progressTimer.Restart();
+                        }
                     }
-                    hash.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
                 }
                 ct.ThrowIfCancellationRequested();
-                string actual = Hex(hash.Hash);
-                if (file.Size > 0 && bytes != file.Size || !string.IsNullOrEmpty(file.Sha256) &&
-                    !string.Equals(actual, file.Sha256, StringComparison.OrdinalIgnoreCase))
-                    throw new InvalidDataException($"Download verification failed for '{file.Path}'.");
-                file.Sha256 = actual;
+                if (file.Size > 0 && bytes != file.Size)
+                    throw new InvalidDataException($"Download size does not match for '{file.Path}'.");
                 if (File.Exists(path)) File.Delete(path);
                 File.Move(partial, path);
             }
+            catch (Exception) when (ct.IsCancellationRequested) { throw new OperationCanceledException(ct); }
             finally { if (File.Exists(partial)) File.Delete(partial); }
         }
 
-        private static async Task<bool> HasHashAsync(string path, string expected, CancellationToken ct)
-        {
-            if (!IsHash(expected) || !File.Exists(path)) return false;
-            return await Task.Run(() =>
-            {
-                ct.ThrowIfCancellationRequested();
-                using var stream = File.OpenRead(path);
-                using var hash = SHA256.Create();
-                return string.Equals(Hex(hash.ComputeHash(stream)), expected, StringComparison.OrdinalIgnoreCase);
-            }, ct);
-        }
+        // Repository hashes identify cache entries; file contents are not hashed locally.
+        internal static bool HasSize(string path, long expected) =>
+            expected > 0 && File.Exists(path) && new FileInfo(path).Length == expected;
         private static bool IsHash(string value) => value?.Length == 64 && value.All(Uri.IsHexDigit);
         private static string Hex(byte[] bytes) => BitConverter.ToString(bytes).Replace("-", "").ToLowerInvariant();
     }

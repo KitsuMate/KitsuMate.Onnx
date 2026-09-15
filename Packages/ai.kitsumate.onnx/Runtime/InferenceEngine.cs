@@ -47,30 +47,34 @@ namespace KitsuMate.Onnx
             if (!backend.IsAvailable) throw new InvalidOperationException($"Backend '{backend.DisplayName}' is unavailable.");
             if (ModelSet == null) throw new InvalidOperationException($"{GetType().Name} has no model set assigned.");
             OnnxSettings settings = OnnxSettings.Load();
-            OnnxRuntimeEnvironment environment = OnnxSettings.CaptureEnvironment(settings);
-            foreach (IOnnxModelSource source in ModelSet.GetAllModels())
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                if (source is OnnxModelReference reference)
-                    await reference.PrepareForRuntimeAsync(environment, cancellationToken);
-            }
-            ModelValidationResult validation = ModelSet.Validate(new ModelValidationContext(backend));
-            if (!validation.IsValid) throw new ModelValidationException(validation);
-            InferenceEngineRuntime<TRequest, TResult> runtime = CreateRuntime();
-            if (runtime == null) throw new InvalidOperationException($"{GetType().Name} returned no runtime.");
+            ResolvedModelSet resolved = await ModelSet.ResolveAsync(settings != null ? settings.InstallationRoot : null, cancellationToken);
+            InferenceEngineRuntime<TRequest, TResult> runtime = null;
             try
             {
-                await runtime.LoadAsync(backend, ModelSet.Identity, cancellationToken).ConfigureAwait(false);
+                foreach (IOnnxModelSource source in resolved.Model.GetAllModels())
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (source is OnnxModelReference reference)
+                        await reference.PrepareForRuntimeAsync(cancellationToken);
+                }
+                ModelValidationResult validation = resolved.Model.Validate(new ModelValidationContext(backend));
+                if (!validation.IsValid) throw new ModelValidationException(validation);
+                runtime = CreateRuntime(resolved.Model)
+                    ?? throw new InvalidOperationException($"{GetType().Name} returned no runtime.");
+                runtime.ResolvedModels = resolved;
+                await runtime.LoadAsync(backend, resolved.Model.Identity, cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
                 return runtime;
             }
             catch
             {
-                runtime.Dispose();
+                if (runtime != null) runtime.Dispose();
+                else resolved.Dispose();
                 throw;
             }
         }
 
-        protected abstract InferenceEngineRuntime<TRequest, TResult> CreateRuntime();
+        protected abstract InferenceEngineRuntime<TRequest, TResult> CreateRuntime(ModelSet resolvedModelSet);
     }
 
     public abstract class InferenceEngineRuntimeBase : IDisposable
@@ -91,6 +95,7 @@ namespace KitsuMate.Onnx
 
     public abstract class InferenceEngineRuntime<TRequest, TResult> : InferenceEngineRuntimeBase
     {
+        internal ResolvedModelSet ResolvedModels { get; set; }
         private readonly object lifecycleLock = new();
         private readonly SemaphoreSlim runGate;
         private readonly CancellationTokenSource lifetime = new();
@@ -230,6 +235,8 @@ namespace KitsuMate.Onnx
                 runGate?.Dispose();
                 lifetime.Dispose();
                 backend = null; // caller-owned; never dispose it
+                ResolvedModels?.Dispose();
+                ResolvedModels = null;
             }
         }
 

@@ -11,19 +11,23 @@ namespace KitsuMate.Onnx.Editor
     [InitializeOnLoad]
     static class InferenceEngineDomainReloadHandler
     {
+        internal static event System.Action PreviewClosing;
         static InferenceEngineDomainReloadHandler()
         {
             AssemblyReloadEvents.beforeAssemblyReload += OnBeforeAssemblyReload;
             EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
+            EditorApplication.quitting += OnBeforeAssemblyReload;
         }
 
         private static void OnBeforeAssemblyReload()
         {
+            PreviewClosing?.Invoke();
             DisposeAllEngines("domain reload");
         }
 
         private static void OnPlayModeStateChanged(PlayModeStateChange state)
         {
+            if (state == PlayModeStateChange.ExitingEditMode) PreviewClosing?.Invoke();
             if (state == PlayModeStateChange.ExitingPlayMode)
                 DisposeAllEngines("exiting play mode");
         }

@@ -11,7 +11,7 @@ Unity Package Manager monorepo for KitsuMate ONNX contracts, feature packages, a
 
 The default ONNX Runtime package includes its managed binding, native libraries, licenses, and Unity import settings in ordinary Git. Git dependencies, local submodules, and released `.tgz` archives use the same checksum-pinned files; no consumer downloader or Git LFS setup is required. Model weights and integration-test models are not included.
 
-The default backend selects DirectML on Windows x64, WebGPU on Linux x64, CoreML on Apple-silicon macOS, and NNAPI on Android ARM64/ARMv7, with CPU fallback.
+The default backend selects WebGPU on Windows x64, WebGPU on Linux x64, CoreML on Apple-silicon macOS, and NNAPI on Android ARM64/ARMv7, with CPU fallback.
 
 `ExampleProject~/` is a development and verification Unity project, not the package root.
 

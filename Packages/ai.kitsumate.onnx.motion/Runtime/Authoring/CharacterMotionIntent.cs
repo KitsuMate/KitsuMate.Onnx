@@ -29,14 +29,13 @@ namespace KitsuMate.Onnx.Motion
             return result;
         }
 
-        public KimodoGenerationRequest CreateRequest(KimodoConstraintSet constraints) => new KimodoGenerationRequest(
+        public KimodoGenerationRequest CreateRequest(int frameCount = 60) => new KimodoGenerationRequest(
             Seed,
             DenoisingSteps < 2 ? 25 : DenoisingSteps,
             TextGuidance,
             ConstraintGuidance,
             FirstHeadingRadians,
-            KimodoConditioning.DefaultFrameCount,
-            constraints);
+            frameCount);
     }
 
     public interface ICharacterMotionIntent

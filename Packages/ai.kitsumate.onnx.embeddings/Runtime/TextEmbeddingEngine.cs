@@ -19,7 +19,7 @@ namespace KitsuMate.Onnx.Embeddings
         public TextEmbeddingModelSet TypedModelSet => modelSet;
         public override ModelSet ModelSet => modelSet;
         public override int EmbeddingDimension => modelSet != null ? modelSet.EmbeddingDimension : 0;
-        protected override InferenceEngineRuntime<EmbeddingRequest, EmbeddingResult> CreateRuntime() => new TextEmbeddingEngineRuntime(modelSet, sessionOptions);
+        protected override InferenceEngineRuntime<EmbeddingRequest, EmbeddingResult> CreateRuntime(ModelSet resolvedModelSet) => new TextEmbeddingEngineRuntime((TextEmbeddingModelSet)resolvedModelSet, sessionOptions);
     }
 
     public sealed class TextEmbeddingEngineRuntime : EmbeddingEngineRuntime
@@ -37,12 +37,13 @@ namespace KitsuMate.Onnx.Embeddings
             // Capture Unity asset data on the main thread; parse large tokenizers off-thread.
             string directory = modelSet.TokenizerDirectory;
             byte[] tokenizerBytes = modelSet.TokenizerModel != null ? modelSet.TokenizerModel.bytes : null;
+            byte[] tokenizerConfigBytes = modelSet.TokenizerConfig?.bytes;
             byte[] vocabularyBytes = modelSet.Vocabulary != null ? modelSet.Vocabulary.bytes : null;
             return Task.Run(() =>
             {
                 tokenizer = !string.IsNullOrEmpty(directory) ? Tokenizer.FromLocal(directory)
                     : tokenizerBytes != null && System.Text.Encoding.UTF8.GetString(tokenizerBytes).TrimStart().StartsWith("{")
-                        ? Tokenizer.FromTokenizerJson(tokenizerBytes)
+                        ? Tokenizer.FromTokenizerJson(tokenizerBytes, null, tokenizerConfigBytes)
                         : tokenizerBytes != null ? Tokenizer.CreateBpe(vocabularyBytes, tokenizerBytes)
                         : Tokenizer.CreateWordPiece(vocabularyBytes);
                 cancellationToken.ThrowIfCancellationRequested();

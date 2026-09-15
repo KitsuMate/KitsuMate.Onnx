@@ -46,8 +46,8 @@ def main() -> int:
     claimed_runtime_destinations: dict[str, str] = {}
     for package_name, lock_name in RUNTIME_LOCKS.items():
         runtime_lock = read_json(repository_root / "Dependencies" / lock_name)
-        if runtime_lock.get("version") != "1.25.1":
-            fail(f"{lock_name} must pin ONNX Runtime 1.25.1")
+        if runtime_lock.get("version") != "1.30.0":
+            fail(f"{lock_name} must pin ONNX Runtime 1.30.0")
         runtime_files = [file for package in runtime_lock.get("packages", []) for file in package.get("files", [])]
         runtime_destinations = [file.get("destination") for file in runtime_files]
         if len(runtime_destinations) != len(set(runtime_destinations)):

@@ -12,6 +12,41 @@ namespace KitsuMate.Onnx.Motion.Tests
     public sealed class CharacterMotionAuthoringTests
     {
         [Test]
+        public void BakeFreshness_PropagatesThroughPreviousMotionsAndRejectsCycles()
+        {
+            var root = new GameObject("BakeFreshness");
+            var clip = new AnimationClip();
+            var intent = ScriptableObject.CreateInstance<CharacterMotionIntent>();
+            try
+            {
+                CharacterMotion Add(string name)
+                {
+                    var child = new GameObject(name);
+                    child.transform.SetParent(root.transform);
+                    var motion = child.AddComponent<CharacterMotion>();
+                    motion.SetParts(new[] { new CharacterMotionPart(intent) });
+                    return motion;
+                }
+                var first = Add("First"); var second = Add("Second"); var third = Add("Third");
+                second.ConfigurePrevious(first); third.ConfigurePrevious(second);
+                first.SetBakedClip(clip, "test", "test");
+                second.SetBakedClip(clip, "test", "test");
+                third.SetBakedClip(clip, "test", "test");
+                Assert.IsTrue(third.IsBakedClipCurrent);
+                first.SetParts(new[] { new CharacterMotionPart(intent, durationSeconds: 3f) });
+                Assert.IsFalse(third.IsBakedClipCurrent);
+                first.ConfigurePrevious(third);
+                Assert.IsFalse(third.IsBakedClipCurrent);
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(root);
+                UnityEngine.Object.DestroyImmediate(clip);
+                UnityEngine.Object.DestroyImmediate(intent);
+            }
+        }
+
+        [Test]
         public void MotionEditor_AddPoseUsesRequestedFrameAndSelectsExistingPose()
         {
             var root = new GameObject("MotionAuthoring");
@@ -235,7 +270,7 @@ namespace KitsuMate.Onnx.Motion.Tests
         }
 
         [Test]
-        public void Planner_ExpandsRepetitionsAndCalculatesOverlappingTimeline()
+        public void Planner_RepetitionsPreserveRequestedDuration()
         {
             CharacterMotionIntent walk = ScriptableObject.CreateInstance<CharacterMotionIntent>();
             CharacterMotionIntent sit = ScriptableObject.CreateInstance<CharacterMotionIntent>();
@@ -247,16 +282,13 @@ namespace KitsuMate.Onnx.Motion.Tests
                     new CharacterMotionPart(sit),
                 };
 
-                CharacterMotionGenerationPlan plan = CharacterMotionPlanner.Build(parts, 5, 7, hasPreviousMotion: true);
+                CharacterMotionGenerationPlan plan = CharacterMotionPlanner.Build(parts);
 
                 Assert.AreEqual(3, plan.Runs.Length);
-                Assert.AreEqual(170, plan.OutputFrameCount);
+                Assert.AreEqual(180, plan.OutputFrameCount);
                 Assert.AreEqual(0, plan.Runs[0].OutputStartFrame);
-                Assert.AreEqual(55, plan.Runs[1].OutputStartFrame);
-                Assert.AreEqual(110, plan.Runs[2].OutputStartFrame);
-                Assert.AreEqual(7, plan.Runs[0].LeadingOverlapFrames);
-                Assert.AreEqual(5, plan.Runs[1].LeadingOverlapFrames);
-                Assert.AreEqual(5, plan.Runs[2].LeadingOverlapFrames);
+                Assert.AreEqual(60, plan.Runs[1].OutputStartFrame);
+                Assert.AreEqual(120, plan.Runs[2].OutputStartFrame);
                 Assert.AreSame(walk, plan.Runs[0].Intent);
                 Assert.AreSame(walk, plan.Runs[1].Intent);
                 Assert.AreSame(sit, plan.Runs[2].Intent);
@@ -269,7 +301,7 @@ namespace KitsuMate.Onnx.Motion.Tests
         }
 
         [Test]
-        public void Motion_SinglePartKeepsExistingSixtyFrameContract()
+        public void Motion_DefaultDurationIsIndependentOfEntryHistory()
         {
             var gameObject = new GameObject("SinglePartMotion");
             var previousObject = new GameObject("PreviousMotion");
@@ -281,15 +313,12 @@ namespace KitsuMate.Onnx.Motion.Tests
                 motion.SetParts(new[] { new CharacterMotionPart(intent) });
 
                 Assert.AreSame(intent, motion.Intent);
-                Assert.AreEqual(1, motion.Timeline.RunCount);
+                Assert.AreEqual(1, motion.Timeline.SegmentCount);
                 Assert.AreEqual(60, motion.Timeline.FrameCount);
-                Assert.AreEqual(60, motion.Timeline.EffectiveChainedFrameCount);
 
                 motion.ConfigurePrevious(previous, 5);
                 Assert.AreEqual(60, motion.Timeline.FrameCount,
-                    "Entry overlap stays in the standalone clip.");
-                Assert.AreEqual(55, motion.Timeline.EffectiveChainedFrameCount,
-                    "Chained playback overlaps the configured entry frames.");
+                    "Entry history does not change output duration.");
             }
             finally
             {
@@ -487,7 +516,7 @@ namespace KitsuMate.Onnx.Motion.Tests
                 intent = ScriptableObject.CreateInstance<CharacterMotionIntent>();
                 SetPrompt(intent, "A person holds a constrained pose.");
                 var motionSerialized = new SerializedObject(motion);
-                motionSerialized.FindProperty("intent").objectReferenceValue = intent;
+                motion.SetParts(new[] { new CharacterMotionPart(intent) });
                 motionSerialized.FindProperty("targetAnimator").objectReferenceValue = animator;
                 motionSerialized.FindProperty("actionOrigin").objectReferenceValue = motionObject.transform;
                 motionSerialized.ApplyModifiedPropertiesWithoutUndo();
@@ -584,7 +613,9 @@ namespace KitsuMate.Onnx.Motion.Tests
                     frame, CharacterMotionConstraintType.LeftHand, true);
                 Transform target = frame.GetEffector(CharacterMotionConstraintType.LeftHand);
                 Assert.NotNull(target);
-                Vector3 requestedPosition = target.position + skeleton.transform.forward * 0.05f;
+                Transform upperArm = skeleton.GuideAnimator.GetBoneTransform(HumanBodyBones.LeftUpperArm);
+                Vector3 requestedPosition = Vector3.MoveTowards(target.position, upperArm.position, 0.03f) +
+                    skeleton.transform.forward * 0.02f;
                 target.position = requestedPosition;
                 CharacterMotionIkChangeTracker.SyncNow(frame, CharacterMotionConstraintType.LeftHand);
 
@@ -603,7 +634,7 @@ namespace KitsuMate.Onnx.Motion.Tests
         [Test]
         public void EffectorRepair_RecoversNamedControlAndConsolidatesGeneratedDuplicates()
         {
-            const string packageFixture = "Packages/ai.kitsumate.onnx.motion/Tests/PlayMode/Resources/XBot.fbx";
+            const string packageFixture = "Packages/ai.kitsumate.onnx.motion.tests/Tests/PlayMode/Resources/XBot.fbx";
             const string projectFixture = "Assets/Bundles/Nyx/Prefabs/Nyx.prefab";
             GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(packageFixture) ??
                                 AssetDatabase.LoadAssetAtPath<GameObject>(projectFixture);
@@ -666,7 +697,7 @@ namespace KitsuMate.Onnx.Motion.Tests
         [Test]
         public void ResetAndLoadPose_UseKeyframeTransformAsTheOnlyRoot()
         {
-            const string prefabPath = "Packages/ai.kitsumate.onnx.motion/Tests/PlayMode/Resources/XBot.fbx";
+            const string prefabPath = "Packages/ai.kitsumate.onnx.motion.tests/Tests/PlayMode/Resources/XBot.fbx";
             GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
             if (prefab == null) Assert.Ignore($"Humanoid fixture not found at {prefabPath}.");
             GameObject character = null, motionObject = null;
@@ -794,7 +825,7 @@ namespace KitsuMate.Onnx.Motion.Tests
         [Test]
         public void ClipBaker_HumanoidClipUsesMusclesAndSurvivesRebake()
         {
-            const string prefabPath = "Packages/ai.kitsumate.onnx.motion/Tests/PlayMode/Resources/XBot.fbx";
+            const string prefabPath = "Packages/ai.kitsumate.onnx.motion.tests/Tests/PlayMode/Resources/XBot.fbx";
             GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
             if (prefab == null) Assert.Ignore($"Humanoid fixture not found at {prefabPath}.");
             GameObject character = null, motionObject = null;

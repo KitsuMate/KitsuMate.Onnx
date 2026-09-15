@@ -3,7 +3,8 @@ namespace KitsuMate.Onnx.Motion.Kimodo
     internal static class KimodoTensorContract
     {
         public const int Batch = 3;
-        public const int Frames = 60;
+        public const int MinFrames = 2;
+        public const int MaxFrames = 300;
         public const int MotionDimension = 369;
         public const int TextTokens = 50;
         public const int TextDimension = 4096;

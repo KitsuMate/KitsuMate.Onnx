@@ -110,7 +110,6 @@ def main() -> int:
     parser.add_argument("--cache", type=Path, required=True)
     parser.add_argument("--destination", type=Path, required=True)
     parser.add_argument("--platform", choices=("Windows", "Linux", "macOS", "Android", "Managed"))
-    parser.add_argument("--source-build", type=Path, help="Directory containing the pinned source-built Windows DLLs")
     args = parser.parse_args()
 
     lock = json.loads(args.lock.read_text(encoding="utf-8"))
@@ -122,6 +121,12 @@ def main() -> int:
         files = [path for path in staged.destination.rglob("*") if path.is_file() or path.is_symlink()]
         expected = {path.relative_to(staged.destination) for path in files}
         destination.mkdir(parents=True, exist_ok=True)
+        # Detect loaded native DLLs before replacing any part of the matched runtime.
+        for source in files:
+            target = contained_target(destination, source.relative_to(staged.destination).as_posix())
+            if target.is_file() and not target.is_symlink() and sha256(source) != sha256(target):
+                with target.open("r+b"):
+                    pass
         for source in files:
             target = contained_target(destination, source.relative_to(staged.destination).as_posix())
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -158,18 +163,6 @@ def provision_payload(lock: dict, args) -> None:
     for package in lock["packages"]:
         files = [file for selected_package, file in selected_files if selected_package is package]
         if not files:
-            continue
-        if "sourceBuild" in package and "url" not in package:
-            if args.source_build is None:
-                raise ValueError(f"{package['id']} requires --source-build pointing to the reviewed build output")
-            for file in files:
-                source = contained_target(args.source_build, file["source"])
-                if sha256(source) != file["sha256"]:
-                    raise ValueError(f"Checksum mismatch for source-built {file['source']}")
-                target = contained_target(args.destination, file["destination"])
-                target.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copyfile(source, target)
-                print(f"copied {file['destination']}")
             continue
         archive_format = package.get("format", "zip")
         extension = "tar.gz" if archive_format == "tar.gz" else "zip"

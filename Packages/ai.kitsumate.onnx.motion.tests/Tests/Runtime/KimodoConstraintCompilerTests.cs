@@ -14,7 +14,7 @@ namespace KitsuMate.Onnx.Motion.Tests
         public void Capabilities_DescribeConstrainedSomaModel()
         {
             KimodoModelCapabilities capabilities = KimodoConstraintCompiler.SomaRpV11Capabilities;
-            Assert.AreEqual(60, capabilities.FrameCount);
+            Assert.AreEqual(300, capabilities.MaxFrameCount);
             Assert.AreEqual(369, capabilities.MotionFeatureCount);
             Assert.AreEqual(30, capabilities.InternalJointCount);
             Assert.IsTrue(capabilities.SupportsSeparatedGuidance);

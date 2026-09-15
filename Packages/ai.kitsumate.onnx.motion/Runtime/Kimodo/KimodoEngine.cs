@@ -15,7 +15,7 @@ namespace KitsuMate.Onnx.Motion.Kimodo
         public override ModelIdentity RequiredEmbeddingModelIdentity => modelSet != null
             ? modelSet.RequiredEmbeddingModelIdentity
             : default;
-        protected override InferenceEngineRuntime<CharacterMotionRequest, CharacterMotionResult> CreateRuntime() => new KimodoEngineRuntime(modelSet, diagnostics);
+        protected override InferenceEngineRuntime<CharacterMotionRequest, CharacterMotionResult> CreateRuntime(ModelSet resolvedModelSet) => new KimodoEngineRuntime((KimodoModelSet)resolvedModelSet, diagnostics);
     }
 
     public sealed class KimodoEngineRuntime : CharacterMotionEngineRuntime
@@ -28,18 +28,15 @@ namespace KitsuMate.Onnx.Motion.Kimodo
         {
             return Task.Run(() =>
             {
-                generator = new KimodoMotionGenerator(modelSet.MotionModel, Backend, diagnostics);
+                generator = new KimodoMotionGenerator(modelSet.MotionModel, Backend);
                 generator.Initialize(cancellationToken);
             }, cancellationToken);
         }
         protected override Task<CharacterMotionResult> OnRunAsync(CharacterMotionRequest request, CancellationToken cancellationToken)
         {
-            if (request?.Embedding == null) throw new ArgumentException("Motion request requires an embedding.", nameof(request));
             return Task.Run(() =>
             {
-                KimodoGenerationRequest generation = request.Generation ?? new KimodoGenerationRequest();
-                KimodoConditioning conditioning = new KimodoConstraintCompiler().Compile(request.Constraints ?? KimodoConstraintSet.Empty);
-                KimodoHumanoidMotion motion = generator.Generate(request.Embedding, conditioning, generation, cancellationToken);
+                KimodoHumanoidMotion motion = KimodoMotionSequence.Generate(request, generator.Generate, cancellationToken, diagnostics);
                 return new CharacterMotionResult(motion, modelSet.Identity);
             }, cancellationToken);
         }
