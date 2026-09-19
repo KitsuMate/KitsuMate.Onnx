@@ -31,7 +31,7 @@ namespace KitsuMate.Onnx.Embeddings.Sentis.Tests
             {
                 typeof(SentisEmbeddingModelSet)
                     .GetField("tokenizerModel", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
-                    .SetValue(modelSet, tokenizer);
+                    .SetValue(modelSet, (TextFileReference)tokenizer);
 
                 ModelValidationResult validation = modelSet.Validate(new ModelValidationContext(null));
                 Assert.That(validation.Diagnostics, Has.Some.Matches<ModelDiagnostic>(x => x.Code == "missing_vocabulary"));

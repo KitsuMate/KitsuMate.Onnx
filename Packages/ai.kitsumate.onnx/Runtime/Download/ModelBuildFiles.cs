@@ -90,12 +90,18 @@ namespace KitsuMate.Onnx.Download
             return Path.GetDirectoryName(path).Replace('\\', '/') + "/" + Path.GetFileNameWithoutExtension(path) + " Files";
         }
 
+        // Some filesystems (notably ext4 under the Editor's embedded Mono runtime) round
+        // last-write times to whole seconds, so an exact round-trip comparison can miss
+        // by a fraction of a second even when the copy is up to date.
+        private static readonly TimeSpan TimestampTolerance = TimeSpan.FromSeconds(2);
+
         public static bool Matches(string source, string destination)
         {
             var original = new FileInfo(source);
             var copy = new FileInfo(destination);
-            return original.Exists && copy.Exists && original.Length == copy.Length &&
-                original.LastWriteTimeUtc == copy.LastWriteTimeUtc;
+            if (!original.Exists || !copy.Exists || original.Length != copy.Length) return false;
+            TimeSpan delta = original.LastWriteTimeUtc - copy.LastWriteTimeUtc;
+            return delta < TimestampTolerance && delta > -TimestampTolerance;
         }
 
         public static bool Copy(string source, string destination)

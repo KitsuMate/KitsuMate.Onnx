@@ -172,7 +172,8 @@ namespace KitsuMate.Onnx.Tts.Tests
                 "KitsuMateOnnxFixtures", "text-embedding", "all-minilm"));
             string fixtureGraph = Path.Combine(fixture, "model_q4f16.onnx");
             byte[] graph = File.ReadAllBytes(fixtureGraph);
-            string externalData = OnnxLightweightMetadataReader.Read(fixtureGraph).ExternalData.Single().Location;
+            string externalData = OnnxLightweightMetadataReader.Read(fixtureGraph).ExternalData
+                .Select(entry => entry.Location).Distinct().Single();
             byte[] weights = File.ReadAllBytes(Path.Combine(fixture, externalData));
             string root = Path.Combine(Path.GetTempPath(), "chatterbox-layout-" + Guid.NewGuid().ToString("N"));
             var store = new ModelInstallationStore(root, "model");

@@ -19,7 +19,7 @@ namespace KitsuMate.Onnx.Tests
             reference.ConfigureFile(path, "", null, null);
             Assert.That(reference.Root, Is.EqualTo(OnnxModelReference.FileRoot.PersistentData));
             Assert.That(reference.FilePath, Is.EqualTo("KitsuMateModels/owner/model/graph.onnx"));
-            Assert.That(JsonUtility.ToJson(reference), Does.Not.Contain(Path.GetPathRoot(path).Replace("\\", "\\\\")));
+            Assert.That(JsonUtility.ToJson(reference), Does.Not.Contain(Application.persistentDataPath));
             var restored = JsonUtility.FromJson<OnnxModelReference>(JsonUtility.ToJson(reference));
             Assert.That(restored.Root, Is.EqualTo(reference.Root));
             Assert.That(restored.FilePath, Is.EqualTo(reference.FilePath));

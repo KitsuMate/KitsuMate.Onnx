@@ -161,19 +161,31 @@ namespace KitsuMate.Onnx.Tests
                 backend.SetProviderOrder(provider);
                 // A dynamic shape feeds a scalar into GPU arithmetic, exercising host transfers.
                 byte[] model = Convert.FromBase64String("CAk6zAEKEQoBeBIFc2hhcGUiBVNoYXBlCioKBXNoYXBlCgVpbmRleBIFYmF0Y2giBkdhdGhlcioLCgRheGlzGACgAQIKIAoFYmF0Y2gSBm9mZnNldCIEQ2FzdCoJCgJ0bxgBoAECChMKAXgKBm9mZnNldBIBeSIDQWRkEhJkeW5hbWljX2hvc3RfaW5wdXQqDBAHOgEAQgVpbmRleFoYCgF4EhMKEQgBEg0KBxIFYmF0Y2gKAggCYhgKAXkSEwoRCAESDQoHEgViYXRjaAoCCAJCBAoAEBE=");
-                using IOnnxSession session = backend.CreateSession(model, new OnnxSessionOptions());
-                using var input = OnnxTensor.FromArray(new[] { 1f, 2f, 3f, 4f }, new[] { 2, 2 });
-                var inputs = new System.Collections.Generic.Dictionary<string, OnnxTensor> { ["x"] = input };
-                for (int run = 0; run < 2; run++)
+                IOnnxSession session;
+                try { session = backend.CreateSession(model, new OnnxSessionOptions()); }
+                catch (OnnxProviderUnavailableException ex) when (IsMissingHardwareAdapter(ex))
                 {
-                    var outputs = session.Run(inputs);
-                    try { Assert.That(outputs["y"].AsFloatArray(), Is.EqualTo(new[] { 3f, 4f, 5f, 6f })); }
-                    finally { foreach (OnnxTensor output in outputs.Values) output.Dispose(); }
+                    Assert.Ignore($"No {provider} adapter is available in this environment.");
+                    return;
                 }
-                Assert.That(session.Diagnostics.InitializedPrimaryProvider, Is.EqualTo(provider));
+                using (session)
+                {
+                    using var input = OnnxTensor.FromArray(new[] { 1f, 2f, 3f, 4f }, new[] { 2, 2 });
+                    var inputs = new System.Collections.Generic.Dictionary<string, OnnxTensor> { ["x"] = input };
+                    for (int run = 0; run < 2; run++)
+                    {
+                        var outputs = session.Run(inputs);
+                        try { Assert.That(outputs["y"].AsFloatArray(), Is.EqualTo(new[] { 3f, 4f, 5f, 6f })); }
+                        finally { foreach (OnnxTensor output in outputs.Values) output.Dispose(); }
+                    }
+                    Assert.That(session.Diagnostics.InitializedPrimaryProvider, Is.EqualTo(provider));
+                }
             }
             finally { UnityEngine.Object.DestroyImmediate(backend); }
         }
+
+        private static bool IsMissingHardwareAdapter(OnnxProviderUnavailableException ex) =>
+            ex.ToString().IndexOf("adapter", StringComparison.OrdinalIgnoreCase) >= 0;
 
         [TestCase("Gelu", -0.15865525f, 0.84134475f)]
         [TestCase("Elu", -0.63212056f, 1f)]
@@ -190,31 +202,40 @@ namespace KitsuMate.Onnx.Tests
             try
             {
                 backend.SetProviderOrder(OnnxExecutionProvider.WebGpu);
-                using IOnnxSession session = backend.CreateSession(Convert.FromBase64String(model), new OnnxSessionOptions());
-                using var input = OnnxTensor.FromArray(new[] { -1f, 0f, 1f }, new[] { 1, 1, 3 });
-                var outputs = session.Run(new System.Collections.Generic.Dictionary<string, OnnxTensor> { ["x"] = input });
-                try { Assert.That(outputs["y"].AsFloatArray(), Is.EqualTo(new[] { negative, 0f, positive }).Within(0.00001f)); }
-                finally { foreach (OnnxTensor output in outputs.Values) output.Dispose(); }
-                var deviceSession = (IOnnxDeviceSession)session;
-                var deviceOutputs = deviceSession.RunOnDevice(new[] { new OnnxNamedValue("x", input) },
-                    Array.Empty<IDeviceTensor>(), Array.Empty<string>());
-                try
+                IOnnxSession session;
+                try { session = backend.CreateSession(Convert.FromBase64String(model), new OnnxSessionOptions()); }
+                catch (OnnxProviderUnavailableException ex) when (IsMissingHardwareAdapter(ex))
                 {
-                    // This output is genuinely GPU-resident, so ToCpu must perform
-                    // a transfer rather than exposing a GPU address as a managed span.
-                    using OnnxTensor output = deviceOutputs[0].ToCpu();
-                    Assert.That(output.AsFloatArray(), Is.EqualTo(new[] { negative, 0f, positive }).Within(0.00001f));
+                    Assert.Ignore("No WebGpu adapter is available in this environment.");
+                    return;
                 }
-                finally { foreach (IDeviceTensor output in deviceOutputs) output.Dispose(); }
-                deviceOutputs = deviceSession.RunOnDevice(new[] { new OnnxNamedValue("x", input) },
-                    Array.Empty<IDeviceTensor>(), new[] { "y" });
-                try
+                using (session)
                 {
-                    using OnnxTensor output = deviceOutputs[0].ToCpu();
-                    Assert.That(output.AsFloatArray(), Is.EqualTo(new[] { negative, 0f, positive }).Within(0.00001f));
+                    using var input = OnnxTensor.FromArray(new[] { -1f, 0f, 1f }, new[] { 1, 1, 3 });
+                    var outputs = session.Run(new System.Collections.Generic.Dictionary<string, OnnxTensor> { ["x"] = input });
+                    try { Assert.That(outputs["y"].AsFloatArray(), Is.EqualTo(new[] { negative, 0f, positive }).Within(0.00001f)); }
+                    finally { foreach (OnnxTensor output in outputs.Values) output.Dispose(); }
+                    var deviceSession = (IOnnxDeviceSession)session;
+                    var deviceOutputs = deviceSession.RunOnDevice(new[] { new OnnxNamedValue("x", input) },
+                        Array.Empty<IDeviceTensor>(), Array.Empty<string>());
+                    try
+                    {
+                        // This output is genuinely GPU-resident, so ToCpu must perform
+                        // a transfer rather than exposing a GPU address as a managed span.
+                        using OnnxTensor output = deviceOutputs[0].ToCpu();
+                        Assert.That(output.AsFloatArray(), Is.EqualTo(new[] { negative, 0f, positive }).Within(0.00001f));
+                    }
+                    finally { foreach (IDeviceTensor output in deviceOutputs) output.Dispose(); }
+                    deviceOutputs = deviceSession.RunOnDevice(new[] { new OnnxNamedValue("x", input) },
+                        Array.Empty<IDeviceTensor>(), new[] { "y" });
+                    try
+                    {
+                        using OnnxTensor output = deviceOutputs[0].ToCpu();
+                        Assert.That(output.AsFloatArray(), Is.EqualTo(new[] { negative, 0f, positive }).Within(0.00001f));
+                    }
+                    finally { foreach (IDeviceTensor output in deviceOutputs) output.Dispose(); }
+                    Assert.That(session.Diagnostics.InitializedPrimaryProvider, Is.EqualTo(OnnxExecutionProvider.WebGpu));
                 }
-                finally { foreach (IDeviceTensor output in deviceOutputs) output.Dispose(); }
-                Assert.That(session.Diagnostics.InitializedPrimaryProvider, Is.EqualTo(OnnxExecutionProvider.WebGpu));
             }
             finally { UnityEngine.Object.DestroyImmediate(backend); }
         }
