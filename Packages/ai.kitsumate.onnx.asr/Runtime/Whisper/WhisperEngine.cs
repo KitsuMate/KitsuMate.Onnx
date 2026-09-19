@@ -13,8 +13,11 @@ namespace KitsuMate.Onnx.Asr.Whisper
         [SerializeField] private OnnxSessionOptions sessionOptions;
         public override ModelSet ModelSet => modelSet;
         public void Configure(WhisperModelSet models, OnnxSessionOptions options = null) { modelSet = models; sessionOptions = options; }
-        protected override InferenceEngineRuntime<AsrRequest, TranscriptionResult> CreateRuntime() =>
-            new WhisperEngineRuntime(modelSet.MelProcessor, modelSet.Encoder, modelSet.Decoder,
-                modelSet.DecoderWithPast, modelSet.TokenizerJson, languageOverride, task, maxTokens, verboseLogging, sessionOptions);
+        protected override InferenceEngineRuntime<AsrRequest, TranscriptionResult> CreateRuntime(ModelSet resolvedModelSet)
+        {
+            var resolved = (WhisperModelSet)resolvedModelSet;
+            return new WhisperEngineRuntime(resolved.MelProcessor, resolved.Encoder, resolved.Decoder,
+                resolved.DecoderWithPast, resolved.TokenizerJson, languageOverride, task, maxTokens, verboseLogging, sessionOptions);
+        }
     }
 }

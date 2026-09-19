@@ -42,11 +42,6 @@ namespace KitsuMate.Onnx.Editor
                 var fileInfo = new FileInfo(ctx.assetPath);
                 string absoluteAssetPath = ResolveAbsoluteAssetPath(ctx.assetPath);
                 string modelDirectory = Path.GetDirectoryName(absoluteAssetPath) ?? string.Empty;
-                if (IsFileBackedStoragePath(absoluteAssetPath))
-                {
-                    ImportFileBackedModel(ctx, modelAsset, absoluteAssetPath, fileInfo);
-                    return;
-                }
 
                 modelData = ScriptableObject.CreateInstance<OnnxModelData>();
                 
@@ -187,33 +182,6 @@ namespace KitsuMate.Onnx.Editor
             return Path.GetFullPath(Path.Combine(projectRoot, assetPath));
         }
 
-        private static bool IsFileBackedStoragePath(string absoluteAssetPath)
-        {
-            OnnxSettings settings = OnnxSettings.Load();
-            string configuredRoot = settings != null ? settings.ModelStorageRoot : "Assets/StreamingAssets/KitsuMateModels";
-            string absoluteRoot = Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), configuredRoot));
-            string prefix = absoluteRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
-            return absoluteAssetPath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
-        }
-
-        private static void ImportFileBackedModel(AssetImportContext ctx, OnnxModelAsset modelAsset,
-            string absoluteAssetPath, FileInfo fileInfo)
-        {
-            bool inspected = TryExtractMetadata(absoluteAssetPath, out MetadataResult metadata, out string error);
-            string fallbackName = Path.GetFileNameWithoutExtension(ctx.assetPath);
-            string modelName = !string.IsNullOrWhiteSpace(metadata?.GraphName) ? metadata.GraphName : fallbackName;
-            modelAsset.Populate(modelName, metadata?.GraphName, metadata?.Domain, metadata?.Description,
-                metadata?.Producer, metadata?.OpsetVersion ?? 0, fileInfo.Exists ? fileInfo.Length : 0,
-                DateTime.UtcNow, ctx.assetPath, metadata?.Inputs, metadata?.Outputs, metadata?.CustomMetadata,
-                null, metadataState: inspected ? OnnxModelAsset.MetadataInspectionState.Succeeded : OnnxModelAsset.MetadataInspectionState.Failed,
-                metadataError: error, externalDataMerged: false);
-            modelAsset.name = modelName;
-            ctx.AddObjectToAsset("OnnxModelAsset", modelAsset, LoadOnnxIcon());
-            ctx.SetMainObject(modelAsset);
-            if (!inspected && !string.IsNullOrWhiteSpace(error))
-                ctx.LogImportWarning($"File-backed model metadata could not be inspected: {error}");
-        }
-        
         private static bool CheckAndRegisterExternalData(AssetImportContext ctx, string absoluteModelPath)
         {
             if (string.IsNullOrEmpty(absoluteModelPath))

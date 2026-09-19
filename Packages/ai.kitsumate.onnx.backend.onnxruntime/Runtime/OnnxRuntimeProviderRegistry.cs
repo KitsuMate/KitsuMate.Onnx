@@ -108,8 +108,6 @@ namespace KitsuMate.Onnx
         internal static void ValidateWindowsRuntime(string path)
         {
             if (!File.Exists(path)) throw new DllNotFoundException($"Missing packaged ONNX Runtime: {path}");
-            string directMl = Path.Combine(Path.GetDirectoryName(path), "DirectML.dll");
-            if (!File.Exists(directMl)) throw new DllNotFoundException($"Missing packaged DirectML dependency: {directMl}");
             Version managed = typeof(OrtEnv).Assembly.GetName().Version;
             var native = System.Diagnostics.FileVersionInfo.GetVersionInfo(path);
             if (native.FileMajorPart != managed.Major || native.FileMinorPart != managed.Minor || native.FileBuildPart != managed.Build)
@@ -122,7 +120,6 @@ namespace KitsuMate.Onnx
         static OnnxRuntimeProviderRegistry()
         {
             Register(new CpuProviderModule());
-            Register(new DirectMlProviderModule());
             Register(new WebGpuProviderModule());
             Register(new CoreMlProviderModule());
             Register(new NnapiProviderModule());
@@ -352,37 +349,6 @@ namespace KitsuMate.Onnx
         public void Append(SessionOptions options, int deviceId) => options.AppendExecutionProvider_CPU(0);
     }
 
-    internal sealed class DirectMlProviderModule : IOnnxRuntimeProviderModule
-    {
-        public OnnxExecutionProvider Provider => OnnxExecutionProvider.DirectMl;
-        public string RuntimeProviderName => "DmlExecutionProvider";
-        public int AutomaticPriority => 300;
-        public bool IsEnabled => true;
-        public bool Supports(RuntimePlatform platform) =>
-            platform is RuntimePlatform.WindowsEditor or RuntimePlatform.WindowsPlayer;
-        public void EnsureRegistered() { }
-        public IReadOnlyList<OnnxExecutionDeviceInfo> GetDevices()
-        {
-            OrtEpDevice[] devices = GetOrtDevices();
-            return Array.AsReadOnly(devices.Select((device, index) =>
-            {
-                return OnnxRuntimePluginProviderModule.ToDeviceInfo(Provider, device, index);
-            }).ToArray());
-        }
-        public void Append(SessionOptions options, int deviceId)
-        {
-            OrtEnv env = OnnxRuntimeProviderRegistry.GetEnvironment();
-            OrtEpDevice[] devices = GetOrtDevices();
-            if ((uint)deviceId >= (uint)devices.Length)
-                throw new OnnxProviderUnavailableException(Provider,
-                    $"Invalid device id {deviceId}; '{RuntimeProviderName}' exposed {devices.Length} device(s).");
-            options.AppendExecutionProvider(env, new[] { devices[deviceId] }, new Dictionary<string, string>());
-        }
-        private OrtEpDevice[] GetOrtDevices() => OnnxRuntimeProviderRegistry.GetEnvironment().GetEpDevices()
-            .Where(device => string.Equals(device.EpName, RuntimeProviderName, StringComparison.OrdinalIgnoreCase))
-            .ToArray();
-    }
-
     internal sealed class WebGpuProviderModule : OnnxRuntimePluginProviderModule
     {
         public override OnnxExecutionProvider Provider => OnnxExecutionProvider.WebGpu;
@@ -390,9 +356,15 @@ namespace KitsuMate.Onnx
         public override int AutomaticPriority => 300;
         public override bool IsEnabled => true;
         public override bool Supports(RuntimePlatform platform) =>
-            platform is RuntimePlatform.LinuxEditor or RuntimePlatform.LinuxPlayer;
+            platform is RuntimePlatform.WindowsEditor or RuntimePlatform.WindowsPlayer
+                or RuntimePlatform.LinuxEditor or RuntimePlatform.LinuxPlayer;
         protected override string RegistrationName => "kitsumate_webgpu";
-        protected override IReadOnlyList<string> LibraryNames => new[] { "libonnxruntime_providers_webgpu.so" };
+        protected override IReadOnlyList<string> LibraryNames => Application.platform is RuntimePlatform.WindowsEditor or RuntimePlatform.WindowsPlayer
+            ? new[] { "onnxruntime_providers_webgpu.dll" }
+            : new[] { "libonnxruntime_providers_webgpu.so" };
+        protected override IReadOnlyList<string> DependencyLibraryNames => Application.platform is RuntimePlatform.WindowsEditor or RuntimePlatform.WindowsPlayer
+            ? new[] { "dxil.dll", "dxcompiler.dll" }
+            : Array.Empty<string>();
     }
 
     internal sealed class CoreMlProviderModule : IOnnxRuntimeProviderModule

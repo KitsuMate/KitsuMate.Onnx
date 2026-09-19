@@ -38,8 +38,8 @@ namespace KitsuMate.Onnx.Motion.Tests
         [Test]
         public void Decoder_ProducesFiniteNormalizedHumanoidRotations()
         {
-            var normalized = new float[KimodoTensorContract.Frames * KimodoTensorContract.MotionDimension];
-            var motion = KimodoMotionDecoder.Decode(normalized, KimodoTensorContract.Frames, null);
+            var normalized = new float[KimodoConditioning.DefaultFrameCount * KimodoTensorContract.MotionDimension];
+            var motion = KimodoMotionDecoder.Decode(normalized, KimodoConditioning.DefaultFrameCount, null);
 
             Assert.AreEqual(60, motion.FrameCount);
             Assert.AreEqual(30f, motion.FramesPerSecond);

@@ -1,30 +1,26 @@
-# ONNX Runtime native builds
+# ONNX Runtime provisioning
 
-The default Windows DirectML core and NVIDIA CUDA plug-in are built from the
-exact ONNX Runtime v1.25.1 commit `8a77e459420f58fb946fd9067285cfa719f10bdd`.
-CUDA builds require CUDA 12.9 and cuDNN 9. Release artifacts are promoted only
-after PE/ELF dependency inspection and their output hashes are added to the
-corresponding artifact lock.
+The default backend ships ONNX Runtime 1.30.0 for Windows, Linux, macOS, and Android,
+with matching managed bindings. Windows and Linux use the WebGPU 0.3.0 plugin.
+Provider packages have independent version numbers from the core runtime.
 
-The `Build ONNX Runtime DirectML artifact` workflow produces a maintainer archive
-and SHA-256 list. Review the output, update `Dependencies/onnxruntime.lock.json`,
-and commit the default backend DLLs and Unity-generated importer metadata together.
-Consumers use those tracked files directly; there is no separate native release
-or runtime downloader in the default installation path.
+`Dependencies/onnxruntime.lock.json` pins official NuGet artifacts and each installed
+file's SHA-256. The complete default payload and Unity-generated importer metadata
+are tracked as ordinary Git files, so local, Git UPM, and release archive consumers
+use the same files without an application-specific download or copy step.
 
-`update-onnxruntime.py` is a maintainer tool. It stages and verifies all selected
-files before changing the installed payload. Failed downloads or checksum checks
-leave the existing files intact. For source-built Windows DLLs, pass the reviewed
-build output directory:
+Run from this repository to provision a reviewed lock:
 
 ```powershell
-python Tools/native/update-onnxruntime.py --lock Dependencies/onnxruntime.lock.json --cache .cache/onnxruntime --destination Packages/ai.kitsumate.onnx.backend.onnxruntime/Runtime/Plugins --platform Windows --source-build <build-output>
+python Tools/native/update-onnxruntime.py --lock Dependencies/onnxruntime.lock.json --cache .cache/onnxruntime --destination Packages/ai.kitsumate.onnx.backend.onnxruntime/Runtime/Plugins
 ```
 
-For a full default-runtime update, omit `--platform`. Preserve all platform DLLs,
-libraries, licenses, and checksums in the same change. Run
-`Tools/ci/validate-package-layout.py` before committing. Do not use Git LFS for
-this payload; ordinary Git files keep UPM Git installation self-contained.
+The updater stages and verifies downloads before replacing installed files. Close
+Unity before replacing loaded native DLLs. After an update, open Unity and run
+`OnnxRuntimePluginSetup.ConfigureWindowsImporters()` and `ConfigureAndroidImporters()`
+when adding native files; commit the generated metadata with the payload. Run
+`Tools/ci/validate-package-layout.py` to verify package contents and checksums.
 
-TensorRT-RTX is not built here. The NVIDIA package consumes checksum-pinned
-standalone EP ABI v0.3.0/cu12 release artifacts.
+The optional NVIDIA package uses the same updater with `onnxruntime-nvidia.lock.json`.
+Its ORT providers match the core version; CUDA, cuDNN and TensorRT-RTX use their own
+version numbers. Release CI provisions that package before assembling its archive.

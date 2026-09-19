@@ -10,11 +10,23 @@ namespace KitsuMate.Onnx.Motion
     {
         [SerializeField] private CharacterMotionIntent intent;
         [SerializeField, Min(1)] private int repetitions = 1;
+        [SerializeField, Min(2f / 30f)] private float durationSeconds = 2f;
         [SerializeField] private bool overrideGenerationSettings;
         [SerializeField] private CharacterMotionGenerationSettings generationSettings;
 
         public CharacterMotionIntent Intent => intent;
         public int Repetitions => Mathf.Max(1, repetitions);
+        public float DurationSeconds => durationSeconds;
+        public int FrameCount
+        {
+            get
+            {
+                double frames = Math.Round((double)durationSeconds * 30, MidpointRounding.AwayFromZero);
+                if (double.IsNaN(frames) || frames < 2 || frames > int.MaxValue)
+                    throw new ArgumentOutOfRangeException(nameof(durationSeconds), "Duration must be finite and contain at least two frames.");
+                return checked((int)frames);
+            }
+        }
         public bool OverridesGenerationSettings => overrideGenerationSettings;
         public CharacterMotionGenerationSettings Settings => overrideGenerationSettings
             ? generationSettings.WithDefaults()
@@ -22,10 +34,11 @@ namespace KitsuMate.Onnx.Motion
 
         public CharacterMotionPart() => generationSettings = CharacterMotionGenerationSettings.Default;
 
-        public CharacterMotionPart(CharacterMotionIntent value, int repeatCount = 1)
+        public CharacterMotionPart(CharacterMotionIntent value, int repeatCount = 1, float durationSeconds = 2f)
         {
             intent = value;
             repetitions = Mathf.Max(1, repeatCount);
+            this.durationSeconds = durationSeconds;
             generationSettings = CharacterMotionGenerationSettings.Default;
         }
 
@@ -45,15 +58,13 @@ namespace KitsuMate.Onnx.Motion
     /// <summary>Calculated duration information for the complete authored motion.</summary>
     public readonly struct CharacterMotionTimeline
     {
-        public int RunCount { get; }
+        public int SegmentCount { get; }
         public int FrameCount { get; }
-        public int EffectiveChainedFrameCount { get; }
 
-        internal CharacterMotionTimeline(int runCount, int frameCount, int effectiveChainedFrameCount)
+        internal CharacterMotionTimeline(int segmentCount, int frameCount)
         {
-            RunCount = runCount;
+            SegmentCount = segmentCount;
             FrameCount = frameCount;
-            EffectiveChainedFrameCount = effectiveChainedFrameCount;
         }
     }
 
@@ -62,17 +73,17 @@ namespace KitsuMate.Onnx.Motion
         public int PartIndex { get; }
         public int RepetitionIndex { get; }
         public int OutputStartFrame { get; }
-        public int LeadingOverlapFrames { get; }
+        public int FrameCount { get; }
         public CharacterMotionIntent Intent { get; }
         public CharacterMotionGenerationSettings Settings { get; }
 
         public CharacterMotionGenerationPart(int partIndex, int repetitionIndex, int outputStartFrame,
-            int leadingOverlapFrames, CharacterMotionIntent intent, CharacterMotionGenerationSettings settings)
+            int frameCount, CharacterMotionIntent intent, CharacterMotionGenerationSettings settings)
         {
             PartIndex = partIndex;
             RepetitionIndex = repetitionIndex;
             OutputStartFrame = outputStartFrame;
-            LeadingOverlapFrames = leadingOverlapFrames;
+            FrameCount = frameCount;
             Intent = intent;
             Settings = settings;
         }
@@ -92,16 +103,8 @@ namespace KitsuMate.Onnx.Motion
 
     internal static class CharacterMotionPlanner
     {
-        public static CharacterMotionGenerationPlan Build(IReadOnlyList<CharacterMotionPart> parts,
-            int internalOverlapFrames, int entryOverlapFrames, bool hasPreviousMotion)
+        public static CharacterMotionGenerationPlan Build(IReadOnlyList<CharacterMotionPart> parts)
         {
-            int framesPerRun = KimodoConditioning.DefaultFrameCount;
-            if ((uint)internalOverlapFrames >= framesPerRun)
-                throw new ArgumentOutOfRangeException(nameof(internalOverlapFrames),
-                    $"Internal overlap must be between 0 and {framesPerRun - 1} frames.");
-            if ((uint)entryOverlapFrames >= framesPerRun)
-                throw new ArgumentOutOfRangeException(nameof(entryOverlapFrames),
-                    $"Entry overlap must be between 0 and {framesPerRun - 1} frames.");
 
             var runs = new List<CharacterMotionGenerationPart>();
             int outputFrameCount = 0;
@@ -113,18 +116,27 @@ namespace KitsuMate.Onnx.Motion
                     if (part == null) continue;
                     for (int repetition = 0; repetition < part.Repetitions; repetition++)
                     {
-                        int leadingOverlap = runs.Count == 0
-                            ? hasPreviousMotion ? entryOverlapFrames : 0
-                            : internalOverlapFrames;
-                        int outputStart = runs.Count == 0 ? 0 : outputFrameCount - internalOverlapFrames;
-                        runs.Add(new CharacterMotionGenerationPart(partIndex, repetition, outputStart,
-                            leadingOverlap, part.Intent, part.Settings));
-                        outputFrameCount = outputStart + framesPerRun;
+                        runs.Add(new CharacterMotionGenerationPart(partIndex, repetition, outputFrameCount,
+                            part.FrameCount, part.Intent, part.Settings));
+                        outputFrameCount = checked(outputFrameCount + part.FrameCount);
                     }
                 }
             }
 
             return new CharacterMotionGenerationPlan(runs.ToArray(), outputFrameCount);
+        }
+
+        internal static void ValidateOverlap(int frames)
+        {
+            if (frames < 1 || frames > 19)
+                throw new ArgumentOutOfRangeException(nameof(frames), "History must contain 1 to 19 frames.");
+        }
+
+        internal static int NextWindowFrames(int remaining, int history)
+        {
+            int capacity = Kimodo.KimodoTensorContract.MaxFrames - history;
+            int windows = 1 + (remaining - 1) / capacity;
+            return (int)(((long)remaining + windows - 1) / windows);
         }
     }
 }

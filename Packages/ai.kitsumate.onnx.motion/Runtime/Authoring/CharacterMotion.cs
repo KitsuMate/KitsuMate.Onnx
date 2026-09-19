@@ -19,14 +19,15 @@ namespace KitsuMate.Onnx.Motion
     {
         [SerializeField] private List<CharacterMotionPart> parts = new List<CharacterMotionPart>();
         [SerializeField] private CharacterMotion previousMotion;
-        [SerializeField, Range(0, KimodoConditioning.DefaultFrameCount - 1)] private int entryOverlapFrames = 5;
-        [SerializeField, Range(0, KimodoConditioning.DefaultFrameCount - 1)] private int internalOverlapFrames = 5;
+        [SerializeField, Range(1, 19)] private int entryOverlapFrames = 5;
+        [SerializeField, Range(1, 19)] private int internalOverlapFrames = 5;
         [SerializeField] private Animator targetAnimator;
         [SerializeField] private Transform actionOrigin;
         [SerializeField] private bool overrideGenerationSettings;
         [SerializeField] private CharacterMotionGenerationSettings generationSettings;
         [SerializeField] private CharacterMotionClipFormat clipFormat = CharacterMotionClipFormat.Humanoid;
         [SerializeField] private AnimationClip bakedClip;
+        [SerializeField, HideInInspector] private float[] bakedHistory;
         [Header("Inference")]
         [SerializeField] private CharacterMotionEngine motionEngine;
 
@@ -53,10 +54,30 @@ namespace KitsuMate.Onnx.Motion
             ? motionEngine.RequiredEmbeddingModelIdentity
             : default;
         public string AvatarSignature => ComputeAvatarSignature(targetAnimator);
-        public bool IsBakedClipCurrent => bakedClip != null &&
+        public bool IsBakedClipCurrent
+        {
+            get
+            {
+                var visited = new HashSet<CharacterMotion>();
+                try
+                {
+                    for (CharacterMotion current = this; current != null; current = current.previousMotion)
+                        if (!visited.Add(current) || !current.IsOwnBakeCurrent) return false;
+                    return true;
+                }
+                catch (Exception error) when (error is ArgumentException || error is OverflowException)
+                {
+                    return false;
+                }
+            }
+        }
+        private bool IsOwnBakeCurrent => bakedClip != null &&
             string.Equals(bakedAvatarSignature, AvatarSignature, StringComparison.Ordinal) &&
             string.Equals(bakedIntentHash, ComputeIntentHash(), StringComparison.Ordinal) &&
-            string.Equals(bakedConstraintHash, ComputeConstraintHash(), StringComparison.Ordinal);
+            string.Equals(bakedConstraintHash, ComputeConstraintHash(), StringComparison.Ordinal) &&
+            (motionEngine == null || motionEngine.ModelSet != null &&
+                string.Equals(bakedModelIdentity, motionEngine.ModelSet.Identity.ToString(), StringComparison.Ordinal) &&
+                string.Equals(bakedEncoderIdentity, RequiredEmbeddingModelIdentity.ToString(), StringComparison.Ordinal));
         public string BakedDependencyHash => Hash128.Compute(
             (bakedAvatarSignature ?? string.Empty) + "|" +
             (bakedIntentHash ?? string.Empty) + "|" +
@@ -69,8 +90,7 @@ namespace KitsuMate.Onnx.Motion
             get
             {
                 CharacterMotionGenerationPlan plan = BuildGenerationPlan();
-                int effective = plan.OutputFrameCount - (previousMotion != null ? entryOverlapFrames : 0);
-                return new CharacterMotionTimeline(plan.Runs.Length, plan.OutputFrameCount, Mathf.Max(0, effective));
+                return new CharacterMotionTimeline(plan.Runs.Length, plan.OutputFrameCount);
             }
         }
 
@@ -84,11 +104,10 @@ namespace KitsuMate.Onnx.Motion
         /// <summary>Assigns the motion engine configuration, including its default backend.</summary>
         public void ConfigureInference(CharacterMotionEngine engine) => motionEngine = engine;
 
-        /// <summary>Configures the optional preceding motion used to condition and blend the entry overlap.</summary>
+        /// <summary>Configures the preceding motion used to condition the entry history.</summary>
         public void ConfigurePrevious(CharacterMotion previous, int overlapFrames = 5)
         {
-            if ((uint)overlapFrames >= KimodoConditioning.DefaultFrameCount)
-                throw new ArgumentOutOfRangeException(nameof(overlapFrames));
+            CharacterMotionPlanner.ValidateOverlap(overlapFrames);
             previousMotion = previous;
             entryOverlapFrames = overlapFrames;
         }
@@ -115,15 +134,23 @@ namespace KitsuMate.Onnx.Motion
         public CharacterMotionValidationResult ValidateMotion(bool requireIntent = true)
         {
             var result = new CharacterMotionValidationResult();
-            CharacterMotionGenerationPlan plan = BuildGenerationPlan();
+            CharacterMotionGenerationPlan plan;
+            try
+            {
+                CharacterMotionPlanner.ValidateOverlap(entryOverlapFrames);
+                CharacterMotionPlanner.ValidateOverlap(internalOverlapFrames);
+                plan = BuildGenerationPlan();
+            }
+            catch (Exception error) when (error is ArgumentException || error is OverflowException)
+            {
+                result.Error("invalid_duration", error.Message);
+                return result;
+            }
             if (requireIntent && plan.Runs.Length == 0) result.Error("missing_intent", "Add at least one Character Motion intent.");
             for (int i = 0; i < plan.Runs.Length; i++)
                 if (plan.Runs[i].Intent == null)
                     result.Error("missing_intent", $"Motion part {plan.Runs[i].PartIndex + 1} has no intent assigned.");
             ValidatePreviousMotion(result);
-            if (plan.Runs.Length > 1)
-                result.Error("multi_part_generation_pending",
-                    "Multi-intent and repeated-intent authoring is configured, but multi-run generation is not implemented yet.");
             if (targetAnimator == null) result.Error("missing_animator", "Assign a target Humanoid Animator.");
             else if (targetAnimator.avatar == null || !targetAnimator.avatar.isHuman)
                 result.Error("non_humanoid_animator", "The target Animator must use a valid Humanoid Avatar.");
@@ -182,32 +209,63 @@ namespace KitsuMate.Onnx.Motion
             for (int i = 0; i < frames.Length; i++) AppendConstraints(frames[i], constraints);
             var set = new KimodoConstraintSet(constraints.ToArray());
             // Run the authoritative feature compiler now so overlaps/conflicts fail before inference.
-            _ = new KimodoConstraintCompiler().Compile(set);
+            _ = new KimodoConstraintCompiler().Compile(set, Timeline.FrameCount == 0 ? 60 : Timeline.FrameCount);
             return set;
         }
 
-        public KimodoGenerationRequest BuildGenerationRequest(ICharacterMotionIntent runtimeIntent = null)
+        public CharacterMotionRequest BuildEngineRequest(KimodoTextEmbedding embedding = null, ICharacterMotionIntent runtimeIntent = null)
         {
-            ICharacterMotionIntent resolved = ResolveIntent(runtimeIntent);
-            CharacterMotionGenerationSettings settings = overrideGenerationSettings
-                ? generationSettings.WithDefaults()
-                : GetPrimarySettings(resolved);
-            return settings.CreateRequest(BuildConstraintSet());
-        }
-
-        public CharacterMotionRequest BuildEngineRequest(KimodoTextEmbedding embedding, ICharacterMotionIntent runtimeIntent = null)
-        {
-            ICharacterMotionIntent resolved = ResolveIntent(runtimeIntent);
-            CharacterMotionGenerationSettings settings = overrideGenerationSettings
-                ? generationSettings.WithDefaults()
-                : GetPrimarySettings(resolved);
-            KimodoConstraintSet constraints = BuildConstraintSet();
+            CharacterMotionGenerationPlan plan = BuildGenerationPlan();
+            var segments = new List<CharacterMotionSegment>();
+            if (runtimeIntent != null)
+            {
+                if (plan.Runs.Length > 1) throw new InvalidOperationException("A runtime intent override requires one motion part.");
+                CharacterMotionGenerationSettings settings = overrideGenerationSettings
+                    ? generationSettings.WithDefaults() : runtimeIntent.Settings;
+                if (embedding == null && !runtimeIntent.TryGetEmbedding(RequiredEmbeddingModelIdentity, out embedding))
+                    throw new InvalidOperationException("Runtime intent has no compatible embedding.");
+                segments.Add(new CharacterMotionSegment(embedding, settings.CreateRequest(
+                    plan.Runs.Length == 0 ? 60 : plan.Runs[0].FrameCount)));
+            }
+            else
+            {
+                foreach (var run in plan.Runs)
+                {
+                    if (run.Intent == null) throw new InvalidOperationException("Assign an intent to every motion part.");
+                    KimodoTextEmbedding resolved = plan.Runs.Length == 1 ? embedding : null;
+                    if (resolved == null && !run.Intent.TryGetEmbedding(RequiredEmbeddingModelIdentity, out resolved))
+                        throw new InvalidOperationException($"Intent '{run.Intent.name}' has no compatible baked embedding.");
+                    var settings = overrideGenerationSettings ? generationSettings.WithDefaults() : run.Settings;
+                    segments.Add(new CharacterMotionSegment(resolved, settings.CreateRequest(run.FrameCount)));
+                }
+            }
             return new CharacterMotionRequest
             {
-                Embedding = embedding,
-                Constraints = constraints,
-                Generation = settings.CreateRequest(constraints)
+                Segments = segments.ToArray(), Constraints = BuildConstraintSet(),
+                HistoryFrames = internalOverlapFrames, EntryHistoryFrames = entryOverlapFrames,
+                PreviousMotion = PreviousSourceMotion()
             };
+        }
+
+        private KimodoHumanoidMotion PreviousSourceMotion()
+        {
+            if (previousMotion == null) return null;
+            if (previousMotion.bakedHistory == null || previousMotion.bakedHistory.Length == 0)
+                throw new InvalidOperationException("Rebake Previous Motion to provide canonical continuation data.");
+            Vector3 position = CharacterMotionSpace.WorldToCanonical(previousMotion.ActionOrigin.position, ActionOrigin);
+            Quaternion rotation = CharacterMotionSpace.WorldToCanonical(previousMotion.ActionOrigin.rotation, ActionOrigin);
+            float[] history = KimodoMotionProcessing.TransformHistory(previousMotion.bakedHistory, position, rotation);
+            var result = KimodoMotionDecoder.Decode(history, history.Length / 369, null);
+            result.SetSourceMotion(history);
+            return result;
+        }
+
+        internal void SetBakedHistory(KimodoHumanoidMotion motion)
+        {
+            if (motion?.SourceMotion == null) { bakedHistory = null; return; }
+            int length = Math.Min(19, motion.FrameCount) * 369;
+            bakedHistory = new float[length];
+            Array.Copy(motion.SourceMotion, motion.SourceMotion.Length - length, bakedHistory, 0, length);
         }
 
         public string ComputeConstraintHash()
@@ -216,6 +274,8 @@ namespace KitsuMate.Onnx.Motion
             builder.Append(AvatarSignature).Append('|').Append((int)clipFormat).Append('|')
                 .Append(entryOverlapFrames).Append('|').Append(internalOverlapFrames).Append('|')
                 .Append(previousMotion != null ? previousMotion.BakedDependencyHash : string.Empty).Append('|');
+            AppendTransform(builder, ActionOrigin);
+            if (previousMotion != null) AppendTransform(builder, previousMotion.ActionOrigin);
             foreach (CharacterMotionKeyframe frame in GetKeyframes())
             {
                 builder.Append(frame.Frame).Append(':').Append((int)frame.Constraints).Append(':');
@@ -238,7 +298,7 @@ namespace KitsuMate.Onnx.Motion
                     ? generationSettings.WithDefaults()
                     : run.Settings;
                 builder.Append(run.PartIndex).Append(':').Append(run.RepetitionIndex).Append(':')
-                    .Append(run.Intent != null ? run.Intent.Prompt : string.Empty).Append('|')
+                    .Append(run.FrameCount).Append(':').Append(run.Intent != null ? run.Intent.Prompt : string.Empty).Append('|')
                     .Append(s.Seed).Append('|').Append(s.DenoisingSteps).Append('|')
                     .Append(s.TextGuidance.ToString("R", CultureInfo.InvariantCulture)).Append('|')
                     .Append(s.ConstraintGuidance.ToString("R", CultureInfo.InvariantCulture)).Append('|')
@@ -250,6 +310,7 @@ namespace KitsuMate.Onnx.Motion
         public void SetBakedClip(AnimationClip clip, string encoderIdentity, string modelIdentity)
         {
             bakedClip = clip;
+            if (clip == null) bakedHistory = null;
             bakedAvatarSignature = AvatarSignature;
             bakedIntentHash = ComputeIntentHash();
             bakedConstraintHash = ComputeConstraintHash();
@@ -401,18 +462,7 @@ namespace KitsuMate.Onnx.Motion
 
         internal CharacterMotionGenerationPlan BuildGenerationPlan()
         {
-            return CharacterMotionPlanner.Build(parts, internalOverlapFrames, entryOverlapFrames,
-                previousMotion != null);
-        }
-
-        private CharacterMotionGenerationSettings GetPrimarySettings(ICharacterMotionIntent resolved)
-        {
-            if (parts != null && parts.Count > 0 && parts[0] != null && runtimeIntentMatches(resolved, parts[0].Intent))
-                return parts[0].Settings;
-            return resolved.Settings;
-
-            static bool runtimeIntentMatches(ICharacterMotionIntent value, CharacterMotionIntent serialized) =>
-                serialized != null && ReferenceEquals(value, serialized);
+            return CharacterMotionPlanner.Build(parts);
         }
 
         private void ValidatePreviousMotion(CharacterMotionValidationResult result)
@@ -423,7 +473,7 @@ namespace KitsuMate.Onnx.Motion
                 result.Error("previous_motion_self_reference", "Previous Motion cannot reference this CharacterMotion.");
                 return;
             }
-            if (previousMotion.BakedClip == null)
+            if (previousMotion.BakedClip == null || previousMotion.bakedHistory == null || previousMotion.bakedHistory.Length == 0)
                 result.Error("missing_previous_motion_data", "Previous Motion has no baked animation data.");
             else if (!previousMotion.IsBakedClipCurrent)
                 result.Error("stale_previous_motion", "Previous Motion must be rebaked before it can condition this motion.");
@@ -441,8 +491,8 @@ namespace KitsuMate.Onnx.Motion
 
         private void OnValidate()
         {
-            entryOverlapFrames = Mathf.Clamp(entryOverlapFrames, 0, KimodoConditioning.DefaultFrameCount - 1);
-            internalOverlapFrames = Mathf.Clamp(internalOverlapFrames, 0, KimodoConditioning.DefaultFrameCount - 1);
+            entryOverlapFrames = Mathf.Clamp(entryOverlapFrames, 1, 19);
+            internalOverlapFrames = Mathf.Clamp(internalOverlapFrames, 1, 19);
         }
     }
 }

@@ -148,9 +148,9 @@
     },
     {
       "id": "kimodo-model",
-      "url": "https://huggingface.co/KitsuMate/Kimodo-SOMA-RP-v1.1-ONNX/resolve/0c68c5599781a1a17cd61b1e0ed13f0a0029da90/onnx/model_fp16_b3_t60.onnx",
-      "sha256": "c0623823df3b4692d6781a24d7ed72e2348096ccab09161f67f1733c01aa4850",
-      "destination": "ExampleProject/KitsuMateOnnxFixtures/kimodo/model_fp16_b3_t60.onnx"
+      "url": "https://huggingface.co/KitsuMate/Kimodo-SOMA-RP-v1.1-ONNX/resolve/a942b8895f66e74c1a899ac6902a91ac6db55031/onnx/model_fp16.onnx",
+      "sha256": "c4a4aee64a6e7a2d1551d6382d7cd89e35f3d5e0e50b6c62728bc5563b839497",
+      "destination": "ExampleProject/KitsuMateOnnxFixtures/kimodo/model_fp16.onnx"
     },
     {
       "id": "chatterbox-nano-speech",

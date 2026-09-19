@@ -13,7 +13,7 @@ namespace KitsuMate.Onnx.Motion.Kimodo
         private const float ConflictTolerance = 1e-5f;
 
         public static KimodoModelCapabilities SomaRpV11Capabilities { get; } = new KimodoModelCapabilities(
-            KimodoTensorContract.Frames,
+            KimodoTensorContract.MaxFrames,
             KimodoTensorContract.FramesPerSecond,
             KimodoTensorContract.MotionDimension,
             KimodoTensorContract.JointCount,
@@ -30,10 +30,9 @@ namespace KitsuMate.Onnx.Motion.Kimodo
         public KimodoConditioning Compile(KimodoConstraintSet constraints, int frameCount = KimodoConditioning.DefaultFrameCount)
         {
             constraints ??= KimodoConstraintSet.Empty;
-            if (frameCount != KimodoTensorContract.Frames)
-                throw new NotSupportedException($"Kimodo SOMA RP v1.1 requires {KimodoTensorContract.Frames} frames.");
+            if (frameCount < 2) throw new ArgumentOutOfRangeException(nameof(frameCount));
 
-            int length = frameCount * KimodoTensorContract.MotionDimension;
+            int length = checked(frameCount * KimodoTensorContract.MotionDimension);
             var raw = new float[length];
             var mask = new bool[length];
             var explicitRootPositions = new bool[frameCount];

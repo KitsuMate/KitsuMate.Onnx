@@ -109,17 +109,19 @@ namespace KitsuMate.Onnx.Tts.OmniVoice
         private long[] EncodeReference(float[] wave24k)
         {
             float[] wave16k = Resample(wave24k, OmniVoiceConstants.SampleRate, OmniVoiceConstants.SemanticSampleRate);
-            OnnxTensor acousticInput = PrecisionTensor(wave24k, new[] { 1, 1, wave24k.Length });
-            OnnxTensor semanticInput = PrecisionTensor(wave16k, new[] { 1, wave16k.Length });
+            OnnxTensor acousticInput = PrecisionTensor(modelSet.AcousticEncoder, "waveform_24k", wave24k, new[] { 1, 1, wave24k.Length });
+            OnnxTensor semanticInput = PrecisionTensor(modelSet.SemanticEncoder, "waveform_16k", wave16k, new[] { 1, wave16k.Length });
             IReadOnlyDictionary<string, OnnxTensor> acousticOutputs = null, semanticOutputs = null, quantizerOutputs = null;
             try
             {
                 acousticOutputs = acoustic.Run(new Dictionary<string, OnnxTensor> { ["waveform_24k"] = acousticInput });
                 semanticOutputs = semantic.Run(new Dictionary<string, OnnxTensor> { ["waveform_16k"] = semanticInput });
+                using var acousticFeatures = PrecisionTensor(modelSet.QuantizerEncoder, "acoustic_features", ToFloatCopy(acousticOutputs["acoustic_features"]), acousticOutputs["acoustic_features"].Shape);
+                using var semanticFeatures = PrecisionTensor(modelSet.QuantizerEncoder, "semantic_features", ToFloatCopy(semanticOutputs["semantic_features"]), semanticOutputs["semantic_features"].Shape);
                 quantizerOutputs = quantizer.Run(new Dictionary<string, OnnxTensor>
                 {
-                    ["acoustic_features"] = acousticOutputs["acoustic_features"],
-                    ["semantic_features"] = semanticOutputs["semantic_features"]
+                    ["acoustic_features"] = acousticFeatures,
+                    ["semantic_features"] = semanticFeatures
                 });
                 return (long[])quantizerOutputs["codes"].AsLongArray().Clone();
             }
@@ -247,7 +249,8 @@ namespace KitsuMate.Onnx.Tts.OmniVoice
             finally { Dispose(outputs); }
         }
 
-        private OnnxTensor PrecisionTensor(float[] values, int[] shape) => modelSet.CodecPrecision == OmniVoiceTensorPrecision.Float16
+        private static OnnxTensor PrecisionTensor(IOnnxModelSource model, string inputName, float[] values, int[] shape) =>
+            model.Inputs.Any(input => input.Name == inputName && (input.ElementType == "System.Half" || input.ElementType == "Float16" || input.ElementType == "float16"))
             ? OnnxTensor.FromArray(values.Select(FloatToHalf).ToArray(), shape)
             : OnnxTensor.FromArray(values, shape);
 

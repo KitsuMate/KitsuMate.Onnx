@@ -1,23 +1,20 @@
 # KitsuMate ONNX Runtime Backend
 
-The default backend uses ONNX Runtime 1.25.1 and selects acceleration automatically:
+The default backend uses ONNX Runtime 1.30.0 and selects acceleration automatically:
 
-- Windows x64: DirectML, then CPU.
+- Windows x64: WebGPU, then CPU.
 - Linux x64: WebGPU over Vulkan, then CPU.
 - Apple-silicon macOS: CoreML, then CPU.
 - Android ARM64/ARMv7: NNAPI, then CPU.
 
-New backend assets use `Automatic`. An Editor migration detects assets serialized
-before selection mode existed, writes the zero-valued `Explicit` mode, and preserves
-their provider order. Calling `SetProviderOrder` also selects Explicit mode.
+New backend assets use `Automatic`. Calling `SetProviderOrder` selects Explicit mode.
 
-Device selection is provider-relative: DirectML device 1 and CUDA device 0 can refer
+Device selection is provider-relative: WebGPU device 1 and CUDA device 0 can refer
 to the same physical GPU. New assets use automatic device selection, which snapshots
 Unity's active render-device vendor/device IDs on the main thread and matches them
-against each provider's `OrtEpDevice` list. Existing assets migrate to Explicit and
-retain `_gpuDeviceId`. If no exact match exists, one exposed accelerator is selected;
+against each provider's `OrtEpDevice` list. If no exact match exists, one exposed accelerator is selected;
 with several unmatched accelerators, provider index 0 is used deterministically and
-reported in diagnostics. DirectML is attached through the ORT V2 device API.
+reported in diagnostics. WebGPU is attached through the ORT V2 device API.
 
 Install `ai.kitsumate.onnx.backend.onnxruntime.nvidia` and activate a profile with
 `KITSUMATE_ORT_NVIDIA` to prepend TensorRT-RTX and CUDA on Windows/Linux x64.
@@ -50,7 +47,7 @@ the logically separated payload groups into dedicated packages without changing 
 registry or backend asset API.
 
 Automatic sessions also fall through to the next eligible provider when an operational
-EP failure occurs during `Run`, `RunAsync`, or `RunOnDevice` (for example a DirectML
+EP failure occurs during `Run`, `RunAsync`, or `RunOnDevice` (for example a WebGPU
 driver/operator execution failure). Invalid model graphs, invalid arguments, contract
 errors, cancellation, and disposal remain strict errors. Device tensors from a retired
 provider generation are staged through CPU before the retry. Explicit provider mode

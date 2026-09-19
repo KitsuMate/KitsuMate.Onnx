@@ -1,3 +1,7 @@
+using KitsuMate.Onnx.Download;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Linq;
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -5,14 +9,41 @@ using UnityEngine;
 namespace KitsuMate.Onnx.Tts.OmniVoice
 {
     public enum OmniVoiceBackboneTopology { Split, Merged }
-    public enum OmniVoiceTensorPrecision { Float32, Float16 }
 
     [CreateAssetMenu(fileName = "OmniVoiceModelSet", menuName = "KitsuMate/ONNX/TTS/OmniVoice Model Set")]
     public sealed class OmniVoiceModelSet : StandardModelSet
     {
+        public override string[] DownloadCompanionRoles => new[] { "tokenizer" };
+
+        public override TextFileReference[] GetAllTextFiles() => new[] { tokenizer };
+
+        public override System.Collections.Generic.IEnumerable<(string Family, string Repository)> RepositorySuggestions
+        {
+            get
+            {
+                yield return ("omnivoice", "KitsuMate/omnivoice-onnx");
+            }
+        }
+
+        protected override Task BindInstallationAsync(DownloadedModel installation, ResolvedModelSet resources, CancellationToken cancellationToken)
+        {
+            topology = installation.Files.Any(file => file.Role == "merged-backbone") ? OmniVoiceBackboneTopology.Merged : OmniVoiceBackboneTopology.Split;
+            if (topology == OmniVoiceBackboneTopology.Merged) installation.ConfigureModel(mergedBackbone, "merged-backbone");
+            else
+            {
+                installation.ConfigureModel(audioEmbeddingsEncoder, "audio-embeddings");
+                installation.ConfigureModel(languageDecoder, "language-decoder");
+                installation.ConfigureModel(audioHeadsDecoder, "audio-heads");
+            }
+            installation.ConfigureModel(acousticEncoder, "acoustic-encoder");
+            installation.ConfigureModel(semanticEncoder, "semantic-encoder");
+            installation.ConfigureModel(quantizerEncoder, "quantizer-encoder");
+            installation.ConfigureModel(higgsDecoder, "higgs-decoder");
+            tokenizer = resources.ReadText(installation, "tokenizer");
+            return Task.CompletedTask;
+        }
+
         [SerializeField] private OmniVoiceBackboneTopology topology = OmniVoiceBackboneTopology.Merged;
-        [SerializeField] private OmniVoiceTensorPrecision codecPrecision = OmniVoiceTensorPrecision.Float32;
-        [SerializeField] private string profile = "CPU compact INT4";
         [SerializeField] private OnnxModelReference mergedBackbone = new();
         [SerializeField] private OnnxModelReference audioEmbeddingsEncoder = new();
         [SerializeField] private OnnxModelReference languageDecoder = new();
@@ -21,11 +52,9 @@ namespace KitsuMate.Onnx.Tts.OmniVoice
         [SerializeField] private OnnxModelReference semanticEncoder = new();
         [SerializeField] private OnnxModelReference quantizerEncoder = new();
         [SerializeField] private OnnxModelReference higgsDecoder = new();
-        [SerializeField] private TextAsset tokenizer;
+        [SerializeField] private TextFileReference tokenizer = new();
 
         public OmniVoiceBackboneTopology Topology => topology;
-        public OmniVoiceTensorPrecision CodecPrecision => codecPrecision;
-        public string Profile => profile;
         public OnnxModelReference MergedBackbone => mergedBackbone;
         public OnnxModelReference AudioEmbeddingsEncoder => audioEmbeddingsEncoder;
         public OnnxModelReference LanguageDecoder => languageDecoder;
@@ -34,15 +63,15 @@ namespace KitsuMate.Onnx.Tts.OmniVoice
         public OnnxModelReference SemanticEncoder => semanticEncoder;
         public OnnxModelReference QuantizerEncoder => quantizerEncoder;
         public OnnxModelReference HiggsDecoder => higgsDecoder;
-        public TextAsset Tokenizer => tokenizer;
-        public override string DisplayName => string.IsNullOrWhiteSpace(name) ? $"OmniVoice ({profile})" : name;
+        public TextFileReference Tokenizer => tokenizer?.IsAvailable == true ? tokenizer : null;
+        public override string DisplayName => string.IsNullOrWhiteSpace(name) ? "OmniVoice" : name;
 
         private bool BackboneComplete => topology == OmniVoiceBackboneTopology.Merged
             ? mergedBackbone.IsAvailable
             : audioEmbeddingsEncoder.IsAvailable && languageDecoder.IsAvailable && audioHeadsDecoder.IsAvailable;
 
         public override bool IsComplete => BackboneComplete && acousticEncoder.IsAvailable && semanticEncoder.IsAvailable &&
-            quantizerEncoder.IsAvailable && higgsDecoder.IsAvailable && tokenizer != null;
+            quantizerEncoder.IsAvailable && higgsDecoder.IsAvailable && tokenizer?.IsAvailable == true;
 
         public override IOnnxModelSource[] GetAllModels()
         {
@@ -61,17 +90,16 @@ namespace KitsuMate.Onnx.Tts.OmniVoice
             if (!semanticEncoder.IsAvailable) result.Error("missing_semantic_encoder", "Semantic encoder is unavailable.");
             if (!quantizerEncoder.IsAvailable) result.Error("missing_quantizer_encoder", "Quantizer encoder is unavailable.");
             if (!higgsDecoder.IsAvailable) result.Error("missing_higgs_decoder", "Higgs decoder is unavailable.");
-            if (tokenizer == null) result.Error("missing_tokenizer", "Tokenizer is not assigned.");
+            if (tokenizer?.IsAvailable != true) result.Error("missing_tokenizer", "Tokenizer is not assigned.");
             foreach (IOnnxModelSource model in GetAllModels()) RequireSchema(model, result);
             return ValidateCommon(context, result);
         }
 
 #if UNITY_EDITOR
-        public void Configure(OmniVoiceBackboneTopology selectedTopology, OmniVoiceTensorPrecision selectedCodecPrecision,
-            string selectedProfile, TextAsset selectedTokenizer)
+        public void Configure(OmniVoiceBackboneTopology selectedTopology, TextFileReference selectedTokenizer)
         {
-            topology = selectedTopology; codecPrecision = selectedCodecPrecision;
-            profile = selectedProfile ?? string.Empty; tokenizer = selectedTokenizer;
+            topology = selectedTopology;
+            tokenizer = selectedTokenizer;
             UnityEditor.EditorUtility.SetDirty(this);
         }
 #endif

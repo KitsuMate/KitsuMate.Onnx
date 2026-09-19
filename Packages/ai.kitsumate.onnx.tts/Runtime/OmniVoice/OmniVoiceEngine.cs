@@ -14,7 +14,7 @@ namespace KitsuMate.Onnx.Tts.OmniVoice
         public override bool IsMultilingual => true;
         public override string[] SupportedLanguages => System.Array.Empty<string>();
         public OmniVoiceGenerationConfig Generation => generation;
-        protected override InferenceEngineRuntime<TtsRequest, TtsResult> CreateRuntime() =>
-            new OmniVoiceEngineRuntime(modelSet, generation, verboseLogging);
+        protected override InferenceEngineRuntime<TtsRequest, TtsResult> CreateRuntime(ModelSet resolvedModelSet) =>
+            new OmniVoiceEngineRuntime((OmniVoiceModelSet)resolvedModelSet, generation, verboseLogging);
     }
 }

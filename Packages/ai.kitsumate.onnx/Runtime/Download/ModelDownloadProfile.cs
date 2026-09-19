@@ -4,13 +4,14 @@ using System.Linq;
 
 namespace KitsuMate.Onnx.Download
 {
-    /// <summary>Application-supplied defaults; no repository is selected by the library.</summary>
+    /// <summary>Saved download selection for one model set.</summary>
     [Serializable]
     public sealed class ModelDownloadProfile
     {
         public string displayName;
+        public string installationFolder;
         public string repository;
-        public string revision = "main";
+        public string revision = "";
         public string family;
         public ArtifactSelection[] artifacts = Array.Empty<ArtifactSelection>();
 

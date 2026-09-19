@@ -1,3 +1,6 @@
+using KitsuMate.Onnx.Download;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Linq;
 using System.Collections.Generic;
 using UnityEngine;
@@ -12,6 +15,30 @@ namespace KitsuMate.Onnx.Asr.Whisper
     [CreateAssetMenu(fileName = "WhisperModelSet", menuName = "KitsuMate/ONNX/ASR/Whisper Model Set")]
     public class WhisperModelSet : StandardModelSet
     {
+        public override string[] DownloadCompanionRoles => new[] { "tokenizer" };
+
+        public override TextFileReference[] GetAllTextFiles() => new[] { _tokenizerJson };
+
+        public override System.Collections.Generic.IEnumerable<(string Family, string Repository)> RepositorySuggestions => SupportedRepositories;
+        public static System.Collections.Generic.IEnumerable<(string Family, string Repository)> SupportedRepositories
+        {
+            get
+            {
+                yield return ("whisper", "KitsuMate/whisper-base-onnx");
+            }
+        }
+
+        protected override Task BindInstallationAsync(DownloadedModel installation, ResolvedModelSet resources, CancellationToken cancellationToken)
+        {
+            installation.ConfigureModel(_melProcessorSource, "mel");
+            installation.ConfigureModel(_encoderSource, "encoder");
+            installation.ConfigureModel(_decoderSource, "decoder");
+            _decoderWithPastSource.Clear();
+            if (installation.Files.Any(file => file.Role == "decoder-with-past")) installation.ConfigureModel(_decoderWithPastSource, "decoder-with-past");
+            _tokenizerJson = resources.ReadText(installation, "tokenizer");
+            return Task.CompletedTask;
+        }
+
         [SerializeField] private OnnxModelReference _melProcessorSource = new();
         [SerializeField] private OnnxModelReference _encoderSource = new();
         [SerializeField] private OnnxModelReference _decoderSource = new();
@@ -19,7 +46,7 @@ namespace KitsuMate.Onnx.Asr.Whisper
 
         [Header("Tokenizer")]
         [SerializeField, Tooltip("Tokenizer JSON file with the full Whisper tokenization pipeline")]
-        private TextAsset _tokenizerJson;
+        private TextFileReference _tokenizerJson = new();
         
         
         /// <summary>Mel spectrogram processor model.</summary>
@@ -35,7 +62,7 @@ namespace KitsuMate.Onnx.Asr.Whisper
         public OnnxModelReference DecoderWithPast => _decoderWithPastSource;
         
         /// <summary>Tokenizer JSON file.</summary>
-        public TextAsset TokenizerJson => _tokenizerJson;
+        public TextFileReference TokenizerJson => _tokenizerJson?.IsAvailable == true ? _tokenizerJson : null;
         
         public override string DisplayName => string.IsNullOrWhiteSpace(name) ? "Whisper" : name;
         
@@ -43,7 +70,7 @@ namespace KitsuMate.Onnx.Asr.Whisper
             _melProcessorSource.IsAvailable &&
             _encoderSource.IsAvailable &&
             _decoderSource.IsAvailable &&
-            _tokenizerJson != null;
+            _tokenizerJson?.IsAvailable == true;
         
         public override IOnnxModelSource[] GetAllModels()
         {
@@ -58,7 +85,7 @@ namespace KitsuMate.Onnx.Asr.Whisper
             if (!_melProcessorSource.IsAvailable) result.Error("missing_mel", "Mel processor model is not available.");
             if (!_encoderSource.IsAvailable) result.Error("missing_encoder", "Encoder model is not available.");
             if (!_decoderSource.IsAvailable) result.Error("missing_decoder", "Decoder model is not available.");
-            if (_tokenizerJson == null) result.Error("missing_tokenizer", "Tokenizer JSON file is not assigned.");
+            if (_tokenizerJson?.IsAvailable != true) result.Error("missing_tokenizer", "Tokenizer JSON file is not assigned.");
             RequireInput(_melProcessorSource, "audio", result);
             if (_encoderSource.HasInspectedMetadata &&
                 !_encoderSource.Inputs.Any(input => input.Name == "mel" || input.Name == "input_features"))
@@ -76,7 +103,7 @@ namespace KitsuMate.Onnx.Asr.Whisper
             return ValidateCommon(context, result);
         }
         
-        public void SetTokenizer(TextAsset tokenizerJson)
+        public void SetTokenizer(TextFileReference tokenizerJson)
         {
             _tokenizerJson = tokenizerJson;
 #if UNITY_EDITOR
@@ -89,7 +116,7 @@ namespace KitsuMate.Onnx.Asr.Whisper
         /// Sets the models programmatically. Editor-only.
         /// </summary>
         public void SetModels(OnnxModelAsset melProcessor, OnnxModelAsset encoder, OnnxModelAsset decoder,
-            OnnxModelAsset decoderWithPast, TextAsset tokenizerJson)
+            OnnxModelAsset decoderWithPast, TextFileReference tokenizerJson)
         {
             _melProcessorSource.ConfigureAsset(melProcessor);
             _encoderSource.ConfigureAsset(encoder);

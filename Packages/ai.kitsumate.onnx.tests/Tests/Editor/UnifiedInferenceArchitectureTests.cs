@@ -76,40 +76,9 @@ namespace KitsuMate.Onnx.Tests
             Assert.Throws<ObjectDisposedException>(() => tensor.AsFloatArray());
         }
 
-        [Test]
-        public void AndroidStager_RejectsTraversalAndInvalidHash()
-        {
-            var stager = new AndroidModelStager(new CountingFetcher(new byte[] { 1 }));
-            var environment = new OnnxRuntimeEnvironment("models", "source", Path.GetTempPath());
-            Assert.ThrowsAsync<OnnxModelPreparationException>(() => stager.StageAsync("../model.onnx", new string('0', 64), environment, default));
-            Assert.ThrowsAsync<OnnxModelPreparationException>(() => stager.StageAsync("model.onnx", "", environment, default));
-        }
 
-        [Test]
-        public async Task AndroidStager_IsSingleFlightAndChecksumFirst()
-        {
-            byte[] content = { 1, 2, 3, 4 };
-            string hash;
-            using (SHA256 algorithm = SHA256.Create())
-                hash = string.Concat(algorithm.ComputeHash(content).Select(value => value.ToString("x2")));
-            string root = Path.Combine(Path.GetTempPath(), "kitsumate-stager-" + Guid.NewGuid().ToString("N"));
-            var fetcher = new CountingFetcher(content);
-            var stager = new AndroidModelStager(fetcher);
-            var environment = new OnnxRuntimeEnvironment("models", "source", root);
-            try
-            {
-                Task<string> first = stager.StageAsync("nested/model.onnx", hash, environment, default);
-                Task<string> second = stager.StageAsync("nested/model.onnx", hash, environment, default);
-                string[] paths = await Task.WhenAll(first, second);
-                Assert.AreEqual(paths[0], paths[1]);
-                Assert.AreEqual(1, fetcher.FetchCount);
-                CollectionAssert.AreEqual(content, File.ReadAllBytes(paths[0]));
-            }
-            finally
-            {
-                if (Directory.Exists(root)) Directory.Delete(root, true);
-            }
-        }
+
+
 
         [Test]
         public async Task Runtime_UnloadIsSharedAndWaitsForActiveInference()
@@ -137,7 +106,7 @@ namespace KitsuMate.Onnx.Tests
         {
             public FakeModelSet Model;
             public override ModelSet ModelSet => Model;
-            protected override InferenceEngineRuntime<int, int> CreateRuntime() => new FakeRuntime();
+            protected override InferenceEngineRuntime<int, int> CreateRuntime(ModelSet resolvedModelSet) => new FakeRuntime();
         }
         private sealed class FakeRuntime : InferenceEngineRuntime<int, int>
         {
@@ -170,19 +139,7 @@ namespace KitsuMate.Onnx.Tests
             }
         }
 
-        private sealed class CountingFetcher : IOnnxModelContentFetcher
-        {
-            private readonly byte[] content;
-            public CountingFetcher(byte[] content) => this.content = content;
-            public int FetchCount { get; private set; }
-            public async Task FetchAsync(string sourceUri, string destinationPath, CancellationToken cancellationToken)
-            {
-                FetchCount++;
-                await Task.Yield();
-                cancellationToken.ThrowIfCancellationRequested();
-                File.WriteAllBytes(destinationPath, content);
-            }
-        }
+
         private sealed class FakeModelSet : StandardModelSet
         {
             public override string DisplayName => "Fake"; public override bool IsComplete => true; public override IOnnxModelSource[] GetAllModels() => Array.Empty<IOnnxModelSource>();

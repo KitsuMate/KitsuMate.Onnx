@@ -105,5 +105,40 @@ namespace KitsuMate.Onnx.Motion.Kimodo
             0.311850756f, 0.683860242f, 0.741527021f, 0.280519158f, 0.743044853f, 0.44438073f, 0.397440076f, 0.444429368f,
             0.397260696f,
         };
+
+        internal static readonly int[] Parents = { -1, 0, 1, 2, 3, 4, 5, 6, 6, 6, 3, 10, 11, 12, 13, 13, 3, 16, 17, 18, 19, 19, 0, 22, 23, 24, 0, 26, 27, 28 };
+        internal static readonly UnityEngine.Vector3[] RestOffsets =
+        {
+            new UnityEngine.Vector3(0f, 0f, 0f),
+            new UnityEngine.Vector3(-0.00013727f, 0.0500376256f, -0.00053726669f),
+            new UnityEngine.Vector3(-1.86574103e-09f, 0.0712530139f, -0.000298248546f),
+            new UnityEngine.Vector3(-5.75188398e-09f, 0.0755006305f, -0.00815970992f),
+            new UnityEngine.Vector3(-0.00181676517f, 0.263112953f, -0.00553348292f),
+            new UnityEngine.Vector3(-2.85102231e-08f, 0.0770939664f, 0.0230258546f),
+            new UnityEngine.Vector3(-4.5975437e-08f, 0.0612891595f, 0.0195370861f),
+            new UnityEngine.Vector3(2.63687901e-05f, 0.0047559225f, 0.0309494062f),
+            new UnityEngine.Vector3(0.0320638079f, 0.0538020513f, 0.0758688308f),
+            new UnityEngine.Vector3(-0.0322244017f, 0.05361869f, 0.0755823359f),
+            new UnityEngine.Vector3(0.0162165175f, 0.232371641f, 0.0511341324f),
+            new UnityEngine.Vector3(0.149198457f, 2.19397873e-08f, -0.0550232576f),
+            new UnityEngine.Vector3(0.287393078f, 2.50268389e-09f, -2.58787737e-05f),
+            new UnityEngine.Vector3(0.270939812f, -7.06625108e-09f, 2.60897248e-05f),
+            new UnityEngine.Vector3(0.122686267f, -0.0322017573f, 0.0483306876f),
+            new UnityEngine.Vector3(0.190119595f, -0.00312878387f, -0.000339570373f),
+            new UnityEngine.Vector3(-0.0138011824f, 0.231803086f, 0.0521415786f),
+            new UnityEngine.Vector3(-0.150371962f, 1.17387901e-07f, -0.0554560437f),
+            new UnityEngine.Vector3(-0.287366393f, 1.87628082e-08f, -2.59709359e-05f),
+            new UnityEngine.Vector3(-0.271336198f, -1.16767401e-09f, 2.61269368e-05f),
+            new UnityEngine.Vector3(-0.122642483f, -0.0321145448f, 0.0480403904f),
+            new UnityEngine.Vector3(-0.190005945f, -0.00306615542f, -0.0003157343f),
+            new UnityEngine.Vector3(0.10043214f, -0.0843452671f, 0.0259565473f),
+            new UnityEngine.Vector3(-9.99999999e-09f, -0.432217537f, -0.00802912805f),
+            new UnityEngine.Vector3(9.99999999e-09f, -0.421550959f, -0.0348152298f),
+            new UnityEngine.Vector3(0f, -0.0505947206f, 0.132315294f),
+            new UnityEngine.Vector3(-0.10047278f, -0.0829525995f, 0.0262031695f),
+            new UnityEngine.Vector3(9.99999999e-09f, -0.433622059f, -0.00805555828f),
+            new UnityEngine.Vector3(2e-08f, -0.421173943f, -0.0347839785f),
+            new UnityEngine.Vector3(-3.42907669e-09f, -0.0507960932f, 0.132841956f),
+        };
     }
 }

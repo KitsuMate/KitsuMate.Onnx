@@ -14,7 +14,7 @@ The Character Motion authoring layer turns scene-space Humanoid targets into the
 
 1. Create a `CharacterMotionIntent` from **Create > KitsuMate > Motion > Character Motion Intent** and enter the prompt.
 2. Add `CharacterMotion` to an empty scene GameObject.
-3. Assign the intent, target Humanoid Animator, and action origin.
+3. Add intent-backed parts with duration in seconds and repetitions. Assign the target Humanoid Animator and action origin.
 4. Choose a frame in the motion inspector and select **Add Pose**. Existing frames change the action to **Select Pose**.
 5. Select the keyframe and enable root, full-pose, or hand/foot constraints. The shared `MotionSkeleton` and targets are created automatically. Poles are created only for the deterministic Full Pose preview.
 6. Rotate bones or manipulate hand/foot IK in the Scene view. Use Unity's Move tool for targets and poles and the Rotate tool for target orientation. Pose changes are captured automatically, including edits made through the ordinary Transform inspector or tools.
@@ -37,7 +37,7 @@ Pose snapshots include the target avatar signature and actual captured proportio
 
 ## Runtime use
 
-`CharacterMotion.BuildConstraintSet()` and `BuildGenerationRequest()` are runtime-safe and work when `MotionSkeleton` and editor-only pole controls are absent. Runtime code can resolve `ICharacterMotionIntent`, invoke the existing Kimodo pipeline, and consume `KimodoHumanoidMotion`. This package intentionally does not choose how that result is scheduled or played.
+`CharacterMotion.BuildConstraintSet()` and `BuildEngineRequest()` are runtime-safe and work when `MotionSkeleton` and editor-only pole controls are absent. Runtime code can resolve `ICharacterMotionIntent`, invoke the existing Kimodo pipeline, and consume `KimodoHumanoidMotion`. This package intentionally does not choose how that result is scheduled or played.
 
 Runtime generation never creates project assets. Only Editor baking writes an `AnimationClip`, using avatar-specific transform paths and `AnimationUtility.SetEditorCurve`.
 
@@ -46,3 +46,9 @@ Runtime generation never creates project assets. Only Editor baking writes an `A
 Editor baking uses the `CharacterMotionEngine`, `EmbeddingEngine`, and caller-owned backend assets assigned in the authoring inspectors. Model variants are installed and selected through model-set assets; filesystem paths and Library marker files are not supported.
 
 Generated clips are created under `Assets/Generated/CharacterMotion` and updated in place when rebaked.
+
+## Timing and previous motion
+
+Part durations round to the nearest frame at 30 FPS and must contain at least two frames. Repetitions add complete durations. History frames condition the next inference window without reducing the output timeline. Keyframe indices refer to the complete concatenated timeline.
+
+Assign a previous motion to continue its baked canonical tail. Both motions need the same avatar and current bakes; the tail is transformed between their action origins. Changing duration, origins, constraints, source motion, or model identity invalidates dependent bakes. Re-bake clips made before canonical history was stored.

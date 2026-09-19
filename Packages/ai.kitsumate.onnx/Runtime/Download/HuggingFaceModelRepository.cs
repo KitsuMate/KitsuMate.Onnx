@@ -14,6 +14,23 @@ namespace KitsuMate.Onnx.Download
     public static class HuggingFaceModelRepository
     {
         private static readonly HttpClient Client = new();
+        public static async Task<string[]> GetBranchesAsync(string repository, string token = null,
+            CancellationToken cancellationToken = default)
+        {
+            string[] parts = RepositoryParts(repository);
+            using var request = new HttpRequestMessage(HttpMethod.Get,
+                $"https://huggingface.co/api/models/{Uri.EscapeDataString(parts[0])}/{Uri.EscapeDataString(parts[1])}/refs");
+            AddToken(request, token);
+            using var response = await Client.SendAsync(request, cancellationToken);
+            response.EnsureSuccessStatusCode();
+            var refs = JsonUtility.FromJson<RepositoryRefs>(await response.Content.ReadAsStringAsync());
+            return (refs?.branches ?? Array.Empty<RepositoryBranch>()).Select(branch => branch.name)
+                .Where(name => !string.IsNullOrWhiteSpace(name)).OrderBy(name => name, StringComparer.Ordinal).ToArray();
+        }
+
+        [Serializable] private sealed class RepositoryRefs { public RepositoryBranch[] branches; }
+        [Serializable] private sealed class RepositoryBranch { public string name; }
+
         public static async Task<(string Revision, IReadOnlyDictionary<string, IReadOnlyList<string>> Artifacts)> GetArtifactsAsync(
             ModelDownloadRequest request, string token = null, CancellationToken cancellationToken = default)
         {
@@ -27,7 +44,8 @@ namespace KitsuMate.Onnx.Download
             if (request == null) throw new ArgumentNullException(nameof(request));
             string[] repository = RepositoryParts(request.Repository);
             string url =
-                $"https://huggingface.co/api/models/{Uri.EscapeDataString(repository[0])}/{Uri.EscapeDataString(repository[1])}/revision/{Uri.EscapeDataString(request.Revision)}?blobs=true";
+                $"https://huggingface.co/api/models/{Uri.EscapeDataString(repository[0])}/{Uri.EscapeDataString(repository[1])}" +
+                (string.IsNullOrEmpty(request.Revision) ? "" : $"/revision/{Uri.EscapeDataString(request.Revision)}") + "?blobs=true";
             using var message = new HttpRequestMessage(HttpMethod.Get, url);
             AddToken(message, token);
             using HttpResponseMessage response = await Client.SendAsync(message, cancellationToken);
@@ -40,6 +58,8 @@ namespace KitsuMate.Onnx.Download
                 .Where(file => file != null && !string.IsNullOrWhiteSpace(file.rfilename))
                 .ToDictionary(file => file.rfilename.Replace('\\', '/'), StringComparer.OrdinalIgnoreCase);
             bool omniVoice = IsOmniVoice(request);
+            bool neuTts = string.Equals(request.ExpectedFamily, "neutts", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(request.Repository, "KitsuMate/neutts-2e-onnx", StringComparison.OrdinalIgnoreCase);
             HfSibling[] onnxFiles = byPath.Values
                 .Where(file => (omniVoice || file.rfilename.StartsWith("onnx/", StringComparison.OrdinalIgnoreCase)) &&
                     file.rfilename.EndsWith(".onnx", StringComparison.OrdinalIgnoreCase))
@@ -50,7 +70,23 @@ namespace KitsuMate.Onnx.Download
 
             Dictionary<string, DiscoveredArtifact[]> artifacts;
             string[] requiredRoles;
-            if (omniVoice)
+            if (neuTts)
+            {
+                var choices = new Dictionary<string, List<DiscoveredArtifact>>(StringComparer.Ordinal);
+                foreach (var model in onnxFiles)
+                {
+                    string stem = FileStem(model);
+                    string role = stem.StartsWith("backbone_", StringComparison.Ordinal) ? "backbone" : stem == "codec_decoder" ? "codec-decoder" : null;
+                    if (role == null) continue;
+                    await AddArtifactAsync(choices, request, info.sha, byPath, model, role,
+                        role == "backbone" ? "backbone" : "codec_decoder", false, token, cancellationToken);
+                }
+                artifacts = Finish(choices);
+                requiredRoles = new[] { "backbone", "codec-decoder" };
+                if (!byPath.ContainsKey("neutts.json") || !byPath.ContainsKey("tokenizer.json"))
+                    throw new InvalidDataException("NeuTTS requires tokenizer.json and neutts.json speaker metadata.");
+            }
+            else if (omniVoice)
             {
                 artifacts = await DiscoverOmniVoiceAsync(request, info.sha, byPath, onnxFiles, token,
                     cancellationToken);
@@ -87,7 +123,7 @@ namespace KitsuMate.Onnx.Download
             DiscoveredFile[] common = await DiscoverCommonFilesAsync(request, info.sha, byPath, token,
                 cancellationToken);
             return new DiscoveredRepository(repository[0], repository[1],
-                omniVoice ? "omnivoice" : string.IsNullOrWhiteSpace(request.ExpectedFamily) ? "onnx" : request.ExpectedFamily,
+                neuTts ? "neutts" : omniVoice ? "omnivoice" : string.IsNullOrWhiteSpace(request.ExpectedFamily) ? "onnx" : request.ExpectedFamily,
                 info.sha, artifacts, common, requiredRoles);
         }
 
@@ -104,7 +140,7 @@ namespace KitsuMate.Onnx.Download
             string type = string.Equals(artifact.Type, "default", StringComparison.OrdinalIgnoreCase)
                 ? "Default"
                 : artifact.Type;
-            return $"{type} - {Path.GetFileName(artifact.Model.Path)}";
+            return $"{type} - {artifact.Model.Path}";
         }
 
         public static bool IsSentisArtifact(string type)
@@ -183,7 +219,7 @@ namespace KitsuMate.Onnx.Download
             ModelDownloadRequest request, string revision, Dictionary<string, HfSibling> byPath,
             HfSibling[] models, string token, CancellationToken cancellationToken)
         {
-            IEnumerable<HfSibling> selected = SelectOmniVoiceProfile(request, models);
+            IEnumerable<HfSibling> selected = models;
             var result = new Dictionary<string, List<DiscoveredArtifact>>(StringComparer.Ordinal);
             var roles = new[]
             {
@@ -209,30 +245,6 @@ namespace KitsuMate.Onnx.Download
             }
             return Finish(result);
         }
-
-        private static IEnumerable<HfSibling> SelectOmniVoiceProfile(ModelDownloadRequest request,
-            IEnumerable<HfSibling> models)
-        {
-            string family = request.ExpectedFamily ?? string.Empty;
-            if (family.EndsWith("-cpu", StringComparison.OrdinalIgnoreCase))
-                return models.Where(file => PathContains(file.rfilename, "cpu-merged-int4") ||
-                    PathContains(file.rfilename, "codec-fp32"));
-            if (family.EndsWith("-portable", StringComparison.OrdinalIgnoreCase))
-                return models.Where(file => PathContains(file.rfilename, "portable-merged-fp32") ||
-                    PathContains(file.rfilename, "codec-fp32"));
-
-            bool community = request.Repository.IndexOf("onnx-community/OmniVoice-Onnx",
-                StringComparison.OrdinalIgnoreCase) >= 0;
-            if (community)
-                return models.Where(file => file.rfilename.StartsWith("int4/", StringComparison.OrdinalIgnoreCase) ||
-                    file.rfilename.StartsWith("audio_tokenizer/", StringComparison.OrdinalIgnoreCase) &&
-                    !file.rfilename.StartsWith("audio_tokenizer/fp16/", StringComparison.OrdinalIgnoreCase));
-            return models;
-        }
-
-        private static bool PathContains(string path, string directory) =>
-            path.Replace('\\', '/').Split('/').Any(part =>
-                part.Equals(directory, StringComparison.OrdinalIgnoreCase));
 
         private static async Task<Dictionary<string, DiscoveredArtifact[]>> DiscoverModelsAsync(
             ModelDownloadRequest request, string revision, Dictionary<string, HfSibling> byPath,
@@ -296,6 +308,10 @@ namespace KitsuMate.Onnx.Download
             foreach (var item in new[]
             {
                 (Path: "tokenizer.json", Role: "tokenizer"),
+                (Path: "neutts.json", Role: "neutts-metadata"),
+                (Path: "LICENSE", Role: "model-license"),
+                (Path: "CODEC_LICENSE", Role: "codec-license"),
+                (Path: "ATTRIBUTION.md", Role: "attribution"),
                 (Path: "tokenizer.model", Role: "tokenizer-model"),
                 (Path: "GEMMA_TERMS.txt", Role: "license"),
                 (Path: "GEMMA_USE_POLICY.txt", Role: "use-policy"),
@@ -313,7 +329,8 @@ namespace KitsuMate.Onnx.Download
                 (Path: "merges.txt", Role: "merges"),
                 (Path: "default_voice.wav", Role: "voice"),
                 (Path: "cangjie.json", Role: "cangjie"),
-                (Path: "cangjie_mapping.json", Role: "cangjie")
+                (Path: "cangjie_mapping.json", Role: "cangjie"),
+                (Path: "Cangjie5_TC.json", Role: "cangjie")
             })
             {
                 if (!byPath.TryGetValue(item.Path, out HfSibling sibling)) continue;
@@ -388,7 +405,7 @@ namespace KitsuMate.Onnx.Download
         }
 
         private static bool IsOmniVoice(ModelDownloadRequest request) =>
-            request.ExpectedFamily.StartsWith("omnivoice", StringComparison.OrdinalIgnoreCase);
+            string.Equals(request.ExpectedFamily, "omnivoice", StringComparison.OrdinalIgnoreCase);
 
         private static string FileStem(HfSibling file)
         {

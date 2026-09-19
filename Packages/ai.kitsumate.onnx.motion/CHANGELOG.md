@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Replaced fixed 60-frame artifacts with FP16/FP32 exports with dynamic temporal axes.
+- Added duration per part, bounded conditioned continuation, prompt sequences, complete-timeline constraints, cancellation and frame progress.
+- Retained canonical baked history and included origins and model identity in bake freshness checks.
+- Added managed canonical constraint correction and planted-foot cleanup before continuation.
+
 - Made explicit root position and heading authoritative over pose-derived context at the same frame, preventing valid root-plus-IK/full-pose combinations from reporting feature conflicts.
 - Reused the compiled constraint set when building an engine request instead of validating and compiling it twice.
 - Replaced the raw keyframe inspector with constraint toggles, automatic guide/pose maintenance, Reset Pose, and frame-based animation sampling.

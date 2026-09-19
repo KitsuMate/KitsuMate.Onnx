@@ -15,7 +15,7 @@ namespace KitsuMate.Onnx.Embeddings
         [SerializeField] private Llm2VecModelSet modelSet;
         public override ModelSet ModelSet => modelSet;
         public override int EmbeddingDimension => modelSet != null ? modelSet.EmbeddingDimension : 0;
-        protected override InferenceEngineRuntime<EmbeddingRequest, EmbeddingResult> CreateRuntime() => new Llm2VecEmbeddingEngineRuntime(modelSet);
+        protected override InferenceEngineRuntime<EmbeddingRequest, EmbeddingResult> CreateRuntime(ModelSet resolvedModelSet) => new Llm2VecEmbeddingEngineRuntime((Llm2VecModelSet)resolvedModelSet);
     }
 
     public sealed class Llm2VecEmbeddingEngineRuntime : EmbeddingEngineRuntime

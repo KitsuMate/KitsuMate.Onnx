@@ -48,13 +48,12 @@ namespace KitsuMate.Onnx.Motion.Editor
             EditorGUILayout.PropertyField(actionOrigin);
             EditorGUILayout.PropertyField(previousMotion);
             if (previousMotion.objectReferenceValue != null)
-                EditorGUILayout.PropertyField(entryOverlapFrames, new GUIContent("Entry Overlap Frames"));
+                EditorGUILayout.PropertyField(entryOverlapFrames, new GUIContent("Entry History Frames"));
 
             EditorGUILayout.Space();
             EditorGUILayout.LabelField("Intent Timeline", EditorStyles.boldLabel);
             EditorGUILayout.PropertyField(parts, true);
-            if (ExpandedRunCount(parts) > 1)
-                EditorGUILayout.PropertyField(internalOverlapFrames, new GUIContent("Internal Overlap Frames"));
+            EditorGUILayout.PropertyField(internalOverlapFrames, new GUIContent("Continuation History Frames"));
 
             EditorGUILayout.Space();
             EditorGUILayout.LabelField("Generation", EditorStyles.boldLabel);
@@ -71,11 +70,8 @@ namespace KitsuMate.Onnx.Motion.Editor
             {
                 CharacterMotionTimeline timeline = motion.Timeline;
                 EditorGUILayout.HelpBox(
-                    $"Inference runs: {timeline.RunCount}\nClip frames: {timeline.FrameCount} " +
-                    $"({timeline.FrameCount / 30f:F2} s at 30 FPS)" +
-                    (motion.PreviousMotion != null
-                        ? $"\nEffective chained frames: {timeline.EffectiveChainedFrameCount}"
-                        : string.Empty), MessageType.Info);
+                    $"Segments: {timeline.SegmentCount}\nClip frames: {timeline.FrameCount} " +
+                    $"({timeline.FrameCount / 30f:F2} s at 30 FPS)", MessageType.Info);
             }
             catch (Exception exception)
             {
@@ -168,7 +164,7 @@ namespace KitsuMate.Onnx.Motion.Editor
                 diagnostics.Add($"Motion engine '{motion.MotionEngine.name}' has no model set assigned.");
                 return false;
             }
-            if (!motion.MotionEngine.ModelSet.IsComplete)
+            if (!motion.MotionEngine.ModelSet.UsesInstallation && !motion.MotionEngine.ModelSet.IsComplete)
             {
                 diagnostics.Add($"Motion model set '{motion.MotionEngine.ModelSet.name}' is incomplete.");
                 return false;
@@ -178,7 +174,9 @@ namespace KitsuMate.Onnx.Motion.Editor
                 diagnostics.Add($"Motion engine '{motion.MotionEngine.name}' has no backend assigned.");
                 return false;
             }
-            ModelValidationResult result = motion.MotionEngine.ModelSet.Validate(new ModelValidationContext(motion.MotionEngine.Backend));
+            ModelValidationResult result = motion.MotionEngine.ModelSet.UsesInstallation
+                ? new ModelValidationResult()
+                : motion.MotionEngine.ModelSet.Validate(new ModelValidationContext(motion.MotionEngine.Backend));
             foreach (ModelDiagnostic value in result.Diagnostics.Where(value => value.Severity == ModelDiagnosticSeverity.Error))
                 diagnostics.Add(value.Message);
             if (!result.IsValid) return false;
@@ -199,18 +197,6 @@ namespace KitsuMate.Onnx.Motion.Editor
             return motion.Parts.Where(value => value != null).Select(value => value.Intent)
                 .FirstOrDefault(intent => intent != null &&
                     !intent.TryGetEmbedding(motion.RequiredEmbeddingModelIdentity, out _));
-        }
-
-        private static int ExpandedRunCount(SerializedProperty values)
-        {
-            int result = 0;
-            for (int i = 0; i < values.arraySize; i++)
-            {
-                SerializedProperty part = values.GetArrayElementAtIndex(i);
-                SerializedProperty repetitions = part.FindPropertyRelative("repetitions");
-                result += Mathf.Max(1, repetitions != null ? repetitions.intValue : 1);
-            }
-            return result;
         }
 
         internal static CharacterMotionKeyframe AddKeyframe(CharacterMotion motion, int frame)

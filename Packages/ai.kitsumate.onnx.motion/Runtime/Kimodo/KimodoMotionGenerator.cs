@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Threading;
 using KitsuMate.Onnx;
 using UnityEngine;
@@ -8,74 +7,23 @@ using UnityEngine;
 namespace KitsuMate.Onnx.Motion.Kimodo
 {
     /// <summary>
-    /// First Kimodo v1 implementation. It consumes a pre-generated LLM2Vec embedding,
-    /// runs the fixed batch-3 FP16 denoiser, applies separated CFG/DDIM on the host,
-    /// and decodes a Unity Humanoid-compatible result.
+    /// Consumes a pre-generated LLM2Vec embedding,
+    /// runs the variable-length batch-3 denoiser, applies separated CFG/DDIM on the host,
+    /// and returns normalized canonical motion features.
     /// </summary>
     internal sealed class KimodoMotionGenerator : IDisposable
     {
         private readonly IOnnxModelSource _model;
         private readonly OnnxBackend _backend;
-        private readonly bool _enableDiagnostics;
         private readonly object _lifecycleLock = new();
         private IOnnxSession _session;
         private int _running;
         private bool _disposed;
 
-        public bool IsInitialized => _session != null && !_disposed;
-        public KimodoModelCapabilities Capabilities => KimodoConstraintCompiler.SomaRpV11Capabilities;
-
-        internal KimodoMotionGenerator(IOnnxModelSource model, OnnxBackend backend, bool enableDiagnostics = false)
+        internal KimodoMotionGenerator(IOnnxModelSource model, OnnxBackend backend)
         {
             _model = model ?? throw new ArgumentNullException(nameof(model));
             _backend = backend ?? throw new ArgumentNullException(nameof(backend));
-            _enableDiagnostics = enableDiagnostics;
-        }
-
-        public async Awaitable InitializeAsync(CancellationToken cancellationToken = default)
-        {
-            await Awaitable.BackgroundThreadAsync();
-            try
-            {
-                Initialize(cancellationToken);
-            }
-            finally
-            {
-                await Awaitable.MainThreadAsync();
-            }
-        }
-
-        public async Awaitable<KimodoHumanoidMotion> GenerateAsync(
-            KimodoTextEmbedding embedding,
-            KimodoGenerationRequest request,
-            CancellationToken cancellationToken = default)
-        {
-            await Awaitable.BackgroundThreadAsync();
-            try
-            {
-                return Generate(embedding, request, cancellationToken);
-            }
-            finally
-            {
-                await Awaitable.MainThreadAsync();
-            }
-        }
-
-        public async Awaitable<KimodoHumanoidMotion> GenerateAsync(
-            KimodoTextEmbedding embedding,
-            KimodoConditioning conditioning,
-            KimodoGenerationRequest request,
-            CancellationToken cancellationToken = default)
-        {
-            await Awaitable.BackgroundThreadAsync();
-            try
-            {
-                return Generate(embedding, conditioning, request, cancellationToken);
-            }
-            finally
-            {
-                await Awaitable.MainThreadAsync();
-            }
         }
 
         public void Initialize(CancellationToken cancellationToken = default)
@@ -99,18 +47,7 @@ namespace KitsuMate.Onnx.Motion.Kimodo
             }
         }
 
-        public KimodoHumanoidMotion Generate(
-            KimodoTextEmbedding embedding,
-            KimodoGenerationRequest request,
-            CancellationToken cancellationToken = default)
-        {
-            request ??= new KimodoGenerationRequest();
-            if (request.Constraints.HasConstraints)
-                throw new InvalidOperationException("Compile semantic constraints and use the conditioning overload.");
-            return Generate(embedding, KimodoConditioning.Empty, request, cancellationToken);
-        }
-
-        public KimodoHumanoidMotion Generate(
+        public float[] Generate(
             KimodoTextEmbedding embedding,
             KimodoConditioning conditioning,
             KimodoGenerationRequest request,
@@ -121,8 +58,8 @@ namespace KitsuMate.Onnx.Motion.Kimodo
             if (embedding == null) throw new ArgumentNullException(nameof(embedding));
             if (conditioning == null) throw new ArgumentNullException(nameof(conditioning));
             request ??= new KimodoGenerationRequest();
-            if (request.FrameCount != KimodoTensorContract.Frames)
-                throw new NotSupportedException($"This model requires exactly {KimodoTensorContract.Frames} frames.");
+            if (request.FrameCount < KimodoTensorContract.MinFrames || request.FrameCount > KimodoTensorContract.MaxFrames)
+                throw new ArgumentOutOfRangeException(nameof(request), "A Kimodo window must contain 2 to 300 frames, including history.");
             if (conditioning.FrameCount != request.FrameCount)
                 throw new ArgumentException("Conditioning frame count must match the generation request.", nameof(conditioning));
             if (Interlocked.CompareExchange(ref _running, 1, 0) != 0)
@@ -138,13 +75,13 @@ namespace KitsuMate.Onnx.Motion.Kimodo
             }
         }
 
-        private KimodoHumanoidMotion GenerateCore(
+        private float[] GenerateCore(
             KimodoTextEmbedding embedding,
             KimodoConditioning conditioning,
             KimodoGenerationRequest request,
             CancellationToken cancellationToken)
         {
-            int motionLength = KimodoTensorContract.Frames * KimodoTensorContract.MotionDimension;
+            int motionLength = request.FrameCount * KimodoTensorContract.MotionDimension;
             int batchMotionLength = KimodoTensorContract.Batch * motionLength;
             var current = request.InitialNoiseOverride != null
                 ? ValidateAndCopyInitialNoise(request.InitialNoiseOverride, motionLength)
@@ -152,7 +89,7 @@ namespace KitsuMate.Onnx.Motion.Kimodo
             var next = new float[motionLength];
             var predicted = new float[motionLength];
             var batchMotion = new float[batchMotionLength];
-            var motionValid = new bool[KimodoTensorContract.Batch * KimodoTensorContract.Frames];
+            var motionValid = new bool[KimodoTensorContract.Batch * request.FrameCount];
             Array.Fill(motionValid, true);
             var text = new float[KimodoTensorContract.Batch * KimodoTensorContract.TextTokens * KimodoTensorContract.TextDimension];
             var timesteps = new long[KimodoTensorContract.Batch];
@@ -165,15 +102,14 @@ namespace KitsuMate.Onnx.Motion.Kimodo
             var inputs = new Dictionary<string, OnnxTensor>(7)
             {
                 [KimodoTensorContract.Motion] = null,
-                [KimodoTensorContract.MotionValid] = OnnxTensor.FromArray(motionValid, new[] { 3, 60 }),
+                [KimodoTensorContract.MotionValid] = OnnxTensor.FromArray(motionValid, new[] { 3, request.FrameCount }),
                 [KimodoTensorContract.TextEmbedding] = OnnxTensor.FromArray(text, new[] { 3, 50, 4096 }),
                 [KimodoTensorContract.Timestep] = null,
                 [KimodoTensorContract.FirstHeading] = OnnxTensor.FromArray(headings, new[] { 3 }),
-                [KimodoTensorContract.ConstraintMask] = OnnxTensor.FromArray(constraintMask, new[] { 3, 60, 369 }),
-                [KimodoTensorContract.ObservedMotion] = OnnxTensor.FromArray(observedMotion, new[] { 3, 60, 369 }),
+                [KimodoTensorContract.ConstraintMask] = OnnxTensor.FromArray(constraintMask, new[] { 3, request.FrameCount, 369 }),
+                [KimodoTensorContract.ObservedMotion] = OnnxTensor.FromArray(observedMotion, new[] { 3, request.FrameCount, 369 }),
             };
 
-            var inferenceWatch = Stopwatch.StartNew();
             for (int samplingIndex = request.DenoisingSteps - 1; samplingIndex >= 0; samplingIndex--)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -182,7 +118,7 @@ namespace KitsuMate.Onnx.Motion.Kimodo
                 Array.Copy(current, 0, batchMotion, motionLength * 2, motionLength);
                 long mappedTimestep = schedule.GetModelTimestep(samplingIndex);
                 timesteps[0] = timesteps[1] = timesteps[2] = mappedTimestep;
-                inputs[KimodoTensorContract.Motion] = OnnxTensor.FromArray(batchMotion, new[] { 3, 60, 369 });
+                inputs[KimodoTensorContract.Motion] = OnnxTensor.FromArray(batchMotion, new[] { 3, request.FrameCount, 369 });
                 inputs[KimodoTensorContract.Timestep] = OnnxTensor.FromArray(timesteps, new[] { 3 });
 
 #pragma warning disable CS0618
@@ -207,7 +143,6 @@ namespace KitsuMate.Onnx.Motion.Kimodo
                 schedule.Step(current, predicted, samplingIndex, next);
                 (current, next) = (next, current);
             }
-            inferenceWatch.Stop();
 
             for (int i = 0; i < current.Length; i++)
             {
@@ -215,26 +150,7 @@ namespace KitsuMate.Onnx.Motion.Kimodo
                     throw new InvalidOperationException($"Kimodo produced a non-finite motion value at index {i}.");
             }
 
-            var decodeWatch = Stopwatch.StartNew();
-            var retainedMotion = _enableDiagnostics ? (float[])current.Clone() : null;
-            var decoded = KimodoMotionDecoder.Decode(current, KimodoTensorContract.Frames, diagnostics: null);
-            decodeWatch.Stop();
-            if (!_enableDiagnostics) return decoded;
-
-            var diagnostics = new KimodoGenerationDiagnostics(
-                inferenceWatch.ElapsedMilliseconds,
-                decodeWatch.ElapsedMilliseconds,
-                retainedMotion);
-            return new KimodoHumanoidMotion(
-                decoded.FrameCount,
-                decoded.FramesPerSecond,
-                decoded.BoneRotationDeltas,
-                decoded.RootPositions,
-                decoded.RootRotations,
-                decoded.BoneAvailability,
-                diagnostics,
-                decoded.SmoothedRootPositions,
-                decoded.BoneGlobalRotationDeltas);
+            return current;
         }
 
         private static float[] CreateGaussianNoise(int length, int seed)
