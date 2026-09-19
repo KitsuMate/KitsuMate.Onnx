@@ -10,15 +10,19 @@ namespace KitsuMate.Onnx.Download
     {
         public string displayName;
         public string installationFolder;
+        public string installationOwnerGuid;
         public string repository;
         public string revision = "";
         public string family;
         public ArtifactSelection[] artifacts = Array.Empty<ArtifactSelection>();
+        public ModelGraphRole[] graphRoles = Array.Empty<ModelGraphRole>();
+        public string[] requiredCompanionRoles = Array.Empty<string>();
 
         [Serializable]
         public sealed class ArtifactSelection { public string role; public string path; }
 
-        public ModelDownloadRequest CreateRequest() => new(repository, revision, family);
+        public ModelDownloadRequest CreateRequest() => new(repository, revision, family,
+            graphRoles != null && graphRoles.Length > 0 ? graphRoles : null, requiredCompanionRoles);
         public IReadOnlyDictionary<string, string> CreateSelection() => artifacts.ToDictionary(item => item.role, item => item.path);
     }
 }

@@ -5,6 +5,7 @@ using System.Text;
 using KitsuMate.Tokenizers;
 using Newtonsoft.Json.Linq;
 using NUnit.Framework;
+using UnityEditor.PackageManager;
 using UnityEngine;
 using KitsuMate.Onnx.Tts.Chatterbox;
 
@@ -16,9 +17,8 @@ namespace KitsuMate.Onnx.Tts.Tests
     /// </summary>
     public class ChatterboxTokenizerTests
     {
-        // Paths relative to project root
-        private const string TokenizerJsonPath = "KitsuMateOnnxFixtures/chatterbox/tokenizer.json";
-        private const string GroundTruthPath = "Packages/ai.kitsumate.onnx.tts.tests/Tests/Runtime/tokenizer_ground_truth.json";
+        private const string TokenizerJsonPath = "Tests/Fixtures/Chatterbox/tokenizer.json";
+        private const string GroundTruthPath = "Tests/Runtime/tokenizer_ground_truth.json";
 
         private Tokenizer _tokenizer;
         private JObject _groundTruth;
@@ -26,11 +26,13 @@ namespace KitsuMate.Onnx.Tts.Tests
         [OneTimeSetUp]
         public void LoadTokenizer()
         {
-            var tokenizerPath = Path.GetFullPath(TokenizerJsonPath);
+            string packagePath = PackageInfo.FindForAssembly(typeof(ChatterboxTokenizerTests).Assembly)?.resolvedPath;
+            Assert.That(packagePath, Is.Not.Null, "Could not locate the TTS test package.");
+            var tokenizerPath = Path.Combine(packagePath, TokenizerJsonPath);
             Assert.That(File.Exists(tokenizerPath), Is.True,
                 $"Required Chatterbox tokenizer fixture is missing: {tokenizerPath}");
 
-            var groundTruthPath = Path.GetFullPath(GroundTruthPath);
+            var groundTruthPath = Path.Combine(packagePath, GroundTruthPath);
             Assert.That(File.Exists(groundTruthPath), Is.True,
                 $"Required Chatterbox tokenizer ground truth is missing: {groundTruthPath}");
 
@@ -262,7 +264,8 @@ namespace KitsuMate.Onnx.Tts.Tests
 
         private long[] Encode(string text)
         {
-            var encoded = _tokenizer.Encode(text, addSpecialTokens: true);
+            // The runtime converts spaces to the tokenizer's explicit space token.
+            var encoded = _tokenizer.Encode(text.Replace(" ", "[SPACE]"), addSpecialTokens: true);
             return encoded.Ids.Select(static id => (long)id).ToArray();
         }
     }

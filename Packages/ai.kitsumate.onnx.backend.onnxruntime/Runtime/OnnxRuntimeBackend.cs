@@ -62,6 +62,7 @@ namespace KitsuMate.Onnx
 
         private static readonly object NativeDependencyPathLock = new();
         private static bool _nativeDependencyPathConfigured;
+        private static string _lastAvailabilityError;
 
         public override string BackendId => "onnxruntime";
         [SerializeField, Tooltip("Automatic selects the registered platform default and CPU fallback. Explicit preserves the serialized provider order.")]
@@ -161,8 +162,17 @@ namespace KitsuMate.Onnx
                     _ = OnnxRuntimeProviderRegistry.GetEnvironment();
                     return true;
                 }
-                catch (Exception)
+                catch (Exception exception)
                 {
+                    Exception root = exception.GetBaseException();
+                    string reason = $"{exception.GetType().Name}: {exception.Message}";
+                    if (root != exception)
+                        reason += $" ({root.GetType().Name}: {root.Message})";
+                    if (_lastAvailabilityError != reason)
+                    {
+                        _lastAvailabilityError = reason;
+                        Debug.LogWarning($"ONNX Runtime is unavailable: {reason}");
+                    }
                     return false;
                 }
             }
@@ -1014,7 +1024,7 @@ namespace KitsuMate.Onnx
         {
             lock (_trackedDeviceTensors) _trackedDeviceTensors.Remove(tensor);
         }
-        
+
         public void Dispose()
         {
             if (Interlocked.Exchange(ref _disposed, 1) != 0) return;

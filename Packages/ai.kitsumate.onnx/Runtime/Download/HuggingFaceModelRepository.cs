@@ -51,12 +51,28 @@ namespace KitsuMate.Onnx.Download
             using HttpResponseMessage response = await Client.SendAsync(message, cancellationToken);
             response.EnsureSuccessStatusCode();
             HfModelInfo info = JsonUtility.FromJson<HfModelInfo>(await response.Content.ReadAsStringAsync());
+            return await ScanSnapshotAsync(request, info, token, cancellationToken);
+        }
+
+        internal static async Task<DiscoveredRepository> ScanSnapshotAsync(ModelDownloadRequest request,
+            HfModelInfo info, string token = null, CancellationToken cancellationToken = default)
+        {
+            if (request == null) throw new ArgumentNullException(nameof(request));
+            string[] repository = RepositoryParts(request.Repository);
             if (info == null || string.IsNullOrWhiteSpace(info.sha))
                 throw new InvalidDataException($"Could not resolve '{request.Repository}@{request.Revision}'.");
 
-            var byPath = (info.siblings ?? Array.Empty<HfSibling>())
+            var filesByPath = (info.siblings ?? Array.Empty<HfSibling>())
                 .Where(file => file != null && !string.IsNullOrWhiteSpace(file.rfilename))
-                .ToDictionary(file => file.rfilename.Replace('\\', '/'), StringComparer.OrdinalIgnoreCase);
+                .ToArray();
+            var byPath = new Dictionary<string, HfSibling>(StringComparer.OrdinalIgnoreCase);
+            foreach (var file in filesByPath)
+            {
+                string path = SafeRelativePath(file.rfilename);
+                if (byPath.ContainsKey(path))
+                    throw new InvalidDataException($"Repository contains colliding file paths: '{path}'.");
+                byPath.Add(path, file);
+            }
             bool omniVoice = IsOmniVoice(request);
             bool neuTts = string.Equals(request.ExpectedFamily, "neutts", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(request.Repository, "KitsuMate/neutts-2e-onnx", StringComparison.OrdinalIgnoreCase);
@@ -70,7 +86,13 @@ namespace KitsuMate.Onnx.Download
 
             Dictionary<string, DiscoveredArtifact[]> artifacts;
             string[] requiredRoles;
-            if (neuTts)
+            if (request.GraphRoles != null && request.GraphRoles.Count > 0)
+            {
+                artifacts = await DiscoverFixedGraphsAsync(request, info.sha, byPath, onnxFiles, token,
+                    cancellationToken);
+                requiredRoles = request.GraphRoles.Select(role => role.role).ToArray();
+            }
+            else if (neuTts)
             {
                 var choices = new Dictionary<string, List<DiscoveredArtifact>>(StringComparer.Ordinal);
                 foreach (var model in onnxFiles)
@@ -115,13 +137,18 @@ namespace KitsuMate.Onnx.Download
                 requiredRoles = artifacts.Keys.ToArray();
             }
 
-            if (requiredRoles.Any(role => !artifacts.TryGetValue(role, out DiscoveredArtifact[] choices) ||
-                    choices.Length == 0))
+            string[] missingRoles = requiredRoles.Where(role =>
+                !artifacts.TryGetValue(role, out DiscoveredArtifact[] choices) || choices.Length == 0).ToArray();
+            if (missingRoles.Length > 0)
                 throw new InvalidDataException(
-                    $"Repository '{request.Repository}' does not use a complete recognized ONNX layout.");
+                    $"Repository '{request.Repository}' is missing the required ONNX graph roles: {string.Join(", ", missingRoles)}.");
 
             DiscoveredFile[] common = await DiscoverCommonFilesAsync(request, info.sha, byPath, token,
                 cancellationToken);
+            string[] missingCompanions = (request.RequiredCompanionRoles ?? Array.Empty<string>())
+                .Where(role => !common.Any(file => file.Role == role)).ToArray();
+            if (missingCompanions.Length > 0)
+                throw new InvalidDataException($"Repository '{request.Repository}' is missing required companion files: {string.Join(", ", missingCompanions)}.");
             return new DiscoveredRepository(repository[0], repository[1],
                 neuTts ? "neutts" : omniVoice ? "omnivoice" : string.IsNullOrWhiteSpace(request.ExpectedFamily) ? "onnx" : request.ExpectedFamily,
                 info.sha, artifacts, common, requiredRoles);
@@ -192,28 +219,41 @@ namespace KitsuMate.Onnx.Download
             return Finish(result);
         }
 
-        private static async Task<Dictionary<string, DiscoveredArtifact[]>> DiscoverChatterboxAsync(
+        private static async Task<Dictionary<string, DiscoveredArtifact[]>> DiscoverFixedGraphsAsync(
             ModelDownloadRequest request, string revision, Dictionary<string, HfSibling> byPath,
             HfSibling[] models, string token, CancellationToken cancellationToken)
         {
             var result = new Dictionary<string, List<DiscoveredArtifact>>(StringComparer.Ordinal);
-            var roles = new[]
-            {
-                (Stem: "speech_encoder", Role: "speech-encoder"),
-                (Stem: "embed_tokens", Role: "embed-tokens"),
-                (Stem: "language_model", Role: "language-model"),
-                (Stem: "conditional_decoder", Role: "conditional-decoder")
-            };
+            var roles = request.GraphRoles;
+            if (roles.Any(item => item == null || string.IsNullOrWhiteSpace(item.role) ||
+                    string.IsNullOrWhiteSpace(item.fileStem)) ||
+                roles.Select(item => item.role).Distinct(StringComparer.Ordinal).Count() != roles.Count)
+                throw new ArgumentException("The model graph contract has invalid or duplicate roles.");
             foreach (HfSibling model in models)
             {
+                string stem = FileStem(model);
                 var match = roles.FirstOrDefault(candidate =>
-                    FileStem(model).StartsWith(candidate.Stem, StringComparison.OrdinalIgnoreCase));
-                if (match.Stem == null) continue;
-                await AddArtifactAsync(result, request, revision, byPath, model, match.Role, match.Stem, false,
+                    stem.Equals(candidate.fileStem, StringComparison.OrdinalIgnoreCase) ||
+                    stem.StartsWith(candidate.fileStem + "_", StringComparison.OrdinalIgnoreCase) ||
+                    stem.StartsWith(candidate.fileStem + ".", StringComparison.OrdinalIgnoreCase));
+                if (match == null) continue;
+                await AddArtifactAsync(result, request, revision, byPath, model, match.role, match.fileStem, false,
                     token, cancellationToken);
             }
             return Finish(result);
         }
+
+        private static Task<Dictionary<string, DiscoveredArtifact[]>> DiscoverChatterboxAsync(
+            ModelDownloadRequest request, string revision, Dictionary<string, HfSibling> byPath,
+            HfSibling[] models, string token, CancellationToken cancellationToken) =>
+            DiscoverFixedGraphsAsync(new ModelDownloadRequest(request.Repository, request.Revision,
+                request.ExpectedFamily, new[]
+                {
+                    new ModelGraphRole("speech-encoder", "speech_encoder"),
+                    new ModelGraphRole("embed-tokens", "embed_tokens"),
+                    new ModelGraphRole("language-model", "language_model"),
+                    new ModelGraphRole("conditional-decoder", "conditional_decoder")
+                }), revision, byPath, models, token, cancellationToken);
 
         private static async Task<Dictionary<string, DiscoveredArtifact[]>> DiscoverOmniVoiceAsync(
             ModelDownloadRequest request, string revision, Dictionary<string, HfSibling> byPath,

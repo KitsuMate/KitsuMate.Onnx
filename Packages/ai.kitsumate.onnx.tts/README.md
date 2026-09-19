@@ -4,6 +4,62 @@ Provider-neutral ONNX text-to-speech for Unity. Chatterbox remains supported, an
 available as a separate `TtsEngine` with automatic voices, instructed voice design, and voice
 cloning.
 
+## Chatterbox Multilingual V3
+
+V3 requires an export of `t3_mtl23ls_v3.safetensors` with its matching text vocabulary
+and real voice-encoder conditioning. Renaming an older multilingual ONNX model is
+not sufficient. The V3 embedding graph includes a `text_conditioning` input; the
+runtime uses it to recognize this graph interface and enable classifier-free guidance.
+
+`ChatterboxGenerationConfig` controls temperature, top-p, min-p, guidance and the
+sampling seed. V3 defaults are 0.8, 0.95, 0.05, 0.5 and 42 respectively. Guidance
+uses conditional and unconditional batches. Setting guidance to zero uses one batch;
+its quality and speed must be measured for the intended language and voice before
+selecting it as a default. A zero temperature selects greedy decoding. The split
+decoder also uses this seed for its initial flow noise.
+
+Chatterbox downloads require a tokenizer but may omit a bundled default voice.
+Supply `TtsRequest.VoiceReference` or assign a default voice on the model set;
+requests without either fail before inference.
+
+V3 preserves text case and uses NFKD normalization. The converted tokenizer supplies
+the embedding graph's control tokens; the runtime inserts `[SPACE]` before encoding.
+The bundled tokenizer includes the Whitespace pre-tokenizer correction, tested against
+Python tokenizers reference IDs. Russian automatic stress insertion and upstream's
+Chinese word segmentation are not implemented; Chinese Cangjie character conversion is available.
+Use a prepared, clean reference recording; the exported default voice is prepared by
+the upstream six-second VAD and fade procedure, then normalized below +/-1 for Unity
+PCM import. Runtime reference preprocessing does
+not currently reproduce that VAD procedure. Generated audio has no Perth watermark.
+
+The local conversion is pinned to model revision
+`5bb1f6ee58e50c3b8d408bc82a6d3740c2db6e18` and V3 demo revision
+`b21d9d062b4eda102f21975333276919935d2060`, using `s3gen.pt` for the decoder.
+Conversion and benchmark tools belong in the ignored `.agent-tools/chatterbox-v3`
+directory. Apply the pinned onnxslim 0.1.68 pass after decoder export; the selected
+portable decoder has about 41,000 nodes instead of 71,000. The existing ONNX Runtime
+backend is sufficient; this integration does not require a new native runtime fork.
+
+The validated local configuration uses FP32 weights, guidance 0.5 and WebGPU with
+CPU initialization fallback. Four short/long English and Polish samples passed
+exact-word transcription checks in Unity on an RTX 3070 Laptop GPU with ONNX Runtime
+1.30.0. Total load time was about 199 seconds. Subsequent Polish short, English long
+and Polish long requests took 7.2, 15.3 and 20.7 seconds respectively. These results
+do not establish parity for every language, voice or GPU, or real-time synthesis.
+Dynamic INT8 failed to stop on a long Polish passage. INT4 introduced small word
+regressions, so neither is selected. A saved CPU ORT decoder failed WebGPU buffer
+placement; use portable ONNX for this configuration.
+
+Full FP16 computation is not a validated V3 profile on native WebGPU 0.3.0.
+Tests found both language-model precision regressions and incorrect FP16
+ConvTranspose coordinates in waveform decoding. Keeping the decoder's five
+transposed convolutions in FP32 fixes the isolated kernel checks while retaining
+FP16 stored weights; it does not resolve the separate language-model regressions.
+FP16 weight storage with FP32 arithmetic roughly halves model disk size but did
+not improve synthesis speed in the local comparison. Keep FP32 as the default.
+Graph conversion and standalone Python WebGPU regression tools remain in the
+owning repository's ignored `.agent-tools/chatterbox-v3` directory.
+
 ## NeuTTS-2E
 
 `NeuTtsEngine` supports English emotional synthesis with `emily`, `paul`, `sophie`, and `steven`.

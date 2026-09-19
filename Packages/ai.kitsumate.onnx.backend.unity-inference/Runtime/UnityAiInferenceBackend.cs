@@ -25,6 +25,7 @@ namespace KitsuMate.Onnx
 
         public ModelAsset ModelAsset => modelAsset;
         public string SourceName => modelAsset != null ? modelAsset.name : name;
+        public bool IsAssigned => modelAsset != null;
         public bool IsAvailable => modelAsset != null;
         public bool HasInspectedMetadata => false;
         public bool IsMetadataStale => false;

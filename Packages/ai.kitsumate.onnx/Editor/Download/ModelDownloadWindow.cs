@@ -38,6 +38,25 @@ namespace KitsuMate.Onnx.Editor.Download
         public static ModelDownloadWindow Show(ModelSet set, Action<DownloadedModel> onCompleted = null, bool useSentis = false)
         {
             if (set == null) throw new ArgumentNullException(nameof(set));
+            string assetPath = AssetDatabase.GetAssetPath(set);
+            string assetGuid = AssetDatabase.AssetPathToGUID(assetPath);
+            if (string.IsNullOrEmpty(assetGuid))
+                throw new InvalidOperationException("Save the model set before downloading files.");
+            if (string.IsNullOrEmpty(set.Download.installationOwnerGuid))
+            {
+                if (string.IsNullOrWhiteSpace(set.Download.installationFolder))
+                    set.Download.installationFolder = "model-sets/" + assetGuid;
+                set.Download.installationOwnerGuid = assetGuid;
+                EditorUtility.SetDirty(set);
+                AssetDatabase.SaveAssetIfDirty(set);
+            }
+            else if (set.Download.installationOwnerGuid != assetGuid)
+            {
+                set.Download.installationOwnerGuid = assetGuid;
+                set.Download.installationFolder = "model-sets/" + assetGuid;
+                EditorUtility.SetDirty(set);
+                AssetDatabase.SaveAssetIfDirty(set);
+            }
             var window = CreateInstance<ModelDownloadWindow>();
             window.titleContent = new GUIContent("Download Models");
             window.minSize = new Vector2(560, 380);
@@ -58,7 +77,7 @@ namespace KitsuMate.Onnx.Editor.Download
             window.sentis = useSentis;
             foreach (var item in set.Download.artifacts) window.selected[item.role] = item.path;
             window.token = TokenStorage.LoadToken("huggingface.co") ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(window.installationFolder)) window.installationFolder = window.repository;
+            if (string.IsNullOrWhiteSpace(window.installationFolder)) window.installationFolder = "model-sets/" + assetGuid;
             window.Show();
             try
             {
@@ -88,6 +107,8 @@ namespace KitsuMate.Onnx.Editor.Download
             modelSet.Download.repository = repository;
             modelSet.Download.revision = revision;
             modelSet.Download.family = expectedFamily;
+            modelSet.Download.graphRoles = modelSet.DownloadGraphRoles?.ToArray() ?? Array.Empty<ModelGraphRole>();
+            modelSet.Download.requiredCompanionRoles = modelSet.DownloadRequiredCompanionRoles;
             modelSet.Download.installationFolder = installationFolder;
             modelSet.Download.artifacts = (discovered != null ? SelectedArtifacts() : selected).Select(pair => new ModelDownloadProfile.ArtifactSelection { role = pair.Key, path = pair.Value }).ToArray();
             EditorUtility.SetDirty(modelSet);
@@ -125,7 +146,6 @@ namespace KitsuMate.Onnx.Editor.Download
                     required = Array.Empty<DiscoveredFile>();
                     if (previousRepository != repository)
                     {
-                        installationFolder = repository?.Trim();
                         expectedFamily = modelSet.RepositorySuggestions.FirstOrDefault(item => item.Repository == repository).Family;
                     }
                     if (!string.IsNullOrWhiteSpace(repository)) _ = ScanAsync();
@@ -156,6 +176,7 @@ namespace KitsuMate.Onnx.Editor.Download
                         ? "WebGL uses imported Unity AI Inference assets. Model compatibility must still be tested in a player."
                         : "This raw ONNX setup is not supported on WebGL. Use a Unity AI Inference model set with imported assets. Browser downloads are not supported.",
                         sentis ? MessageType.Info : MessageType.Warning);
+                DrawInterruptedUpdateRecovery();
                 storageDetails = EditorGUILayout.Foldout(storageDetails, "Storage details", true);
                 if (storageDetails)
                 {
@@ -166,7 +187,7 @@ namespace KitsuMate.Onnx.Editor.Download
                         if (GUILayout.Button("Copy path", EditorStyles.miniButton)) EditorGUIUtility.systemCopyBuffer = Destination();
                         if (GUILayout.Button("Open in Explorer", EditorStyles.miniButton)) EditorUtility.RevealInFinder(Destination());
                     }
-                    EditorGUILayout.LabelField("Completed files are kept after cancellation. The interrupted file restarts on retry. Validation uses file size and model metadata, without hashing file contents.", EditorStyles.wordWrappedMiniLabel);
+                    EditorGUILayout.LabelField("Completed files are kept after cancellation. The interrupted file restarts on retry. Downloads are verified against the repository SHA-256 hash before installation.", EditorStyles.wordWrappedMiniLabel);
                 }
             }
             if (!string.IsNullOrWhiteSpace(message) && !busy) EditorGUILayout.HelpBox(message, messageType);
@@ -192,6 +213,42 @@ namespace KitsuMate.Onnx.Editor.Download
         private ModelInstallationStore Store() => new(
             (OnnxSettings.Load() ?? throw new InvalidOperationException("Configure OnnxSettings before setting up models.")).InstallationRoot,
             installationFolder);
+
+        private void DrawInterruptedUpdateRecovery()
+        {
+            ModelInstallationStore store;
+            try { store = Store(); }
+            catch { return; }
+            if (!store.HasPendingBinding) return;
+            EditorGUILayout.HelpBox(
+                "A model update was interrupted after new files were installed. Restore the previous files if model assignment did not finish, or keep the current files if assignment completed.",
+                MessageType.Warning);
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                if (GUILayout.Button("Restore previous files")) RecoverInterruptedUpdate(store, false);
+                if (GUILayout.Button("Keep current files")) RecoverInterruptedUpdate(store, true);
+            }
+        }
+
+        private void RecoverInterruptedUpdate(ModelInstallationStore store, bool keepCurrent)
+        {
+            try
+            {
+                EnsureNoActiveRuntime();
+                if (keepCurrent) store.CompleteBinding();
+                else store.RestorePrevious();
+                cachedInstallation = store.Read();
+                message = keepCurrent ? "Kept the current installation." : "Restored the previous installation.";
+                messageType = MessageType.Info;
+                if (discovered != null) RefreshAvailability();
+                Repaint();
+            }
+            catch (Exception exception)
+            {
+                message = exception.Message;
+                messageType = MessageType.Error;
+            }
+        }
 
         private void RefreshAvailability()
         {
@@ -307,7 +364,6 @@ namespace KitsuMate.Onnx.Editor.Download
                         repository = choice.Repository;
                         cachedInstallation = null;
                         expectedFamily = choice.Family;
-                        installationFolder = choice.Repository;
                         supplied.Clear();
                         revision = "";
                         discovered = null;
@@ -441,6 +497,8 @@ namespace KitsuMate.Onnx.Editor.Download
             try
             {
                 var catalog = await HuggingFaceModelRepository.ScanAsync(Request(), token, cancellation.Token);
+                cancellation.Token.ThrowIfCancellationRequested();
+                if (modelSet == null) throw new InvalidOperationException("The selected model set no longer exists.");
                 var roles = modelSet.DownloadCompanionRoles;
                 bool hasTokenizer = catalog.CommonFiles.Any(file => file.Role == "tokenizer") && roles.Contains("tokenizer");
                 discovered = new DiscoveredRepository(catalog.Owner, catalog.Name, catalog.Family, catalog.Revision,
@@ -454,14 +512,6 @@ namespace KitsuMate.Onnx.Editor.Download
                 EnsureRequiredChoices();
                 SaveToken();
                 RefreshAvailability();
-                foreach (var source in modelSet.GetAllModels())
-                {
-                    string path = source?.ResolveModelPath();
-                    if (string.IsNullOrEmpty(path) || !File.Exists(path)) continue;
-                    foreach (var file in required.Where(file => !available.ContainsKey(file.Path) && Path.GetFileName(file.Path) == Path.GetFileName(path)))
-                        if (file.Size > 0 && new FileInfo(path).Length == file.Size) supplied[file.Path] = path;
-                }
-                RefreshAvailability();
                 message = null;
             }
             catch (OperationCanceledException) { message = "Cancelled."; }
@@ -474,6 +524,7 @@ namespace KitsuMate.Onnx.Editor.Download
             if (!Begin("Downloading models...")) return;
             try
             {
+                EnsureNoActiveRuntime();
                 if (discovered == null && cachedInstallation != null)
                 {
                     var current = Store().Read() ?? throw new InvalidOperationException("Installation files have changed. Refresh the repository to repair the installation.");
@@ -489,17 +540,38 @@ namespace KitsuMate.Onnx.Editor.Download
                 bool matches = installed != null && installed.Identity.Revision == discovered.Revision &&
                     installed.Identity.Family == discovered.Family && installed.Identity.ModelId == discovered.Name &&
                     (string.IsNullOrEmpty(installed.Repository) || installed.Repository == discovered.Repository) &&
-                    required.All(file => installed.Files.Any(existing => existing.Path == file.Path && existing.Size == file.Size) &&
+                    required.All(file => installed.Files.Any(existing => existing.Path == file.Path &&
+                        existing.Size == file.Size && existing.Sha256 == file.Sha256) &&
                         available.TryGetValue(file.Path, out string source) && Path.GetFullPath(source) == Path.GetFullPath(Path.Combine(installed.DirectoryPath, file.Path))) && supplied.Count == 0;
                 var fileReporter = new Progress<(string Path, long Bytes, long Total)>(value =>
                 {
                     message = $"{Path.GetFileName(value.Path)} · {EditorUtility.FormatBytes(value.Bytes)} / {EditorUtility.FormatBytes(value.Total)}";
                     Repaint();
                 });
-                if (!matches) await store.InstallAsync(discovered, SelectedArtifacts(), reporter, cancellation.Token, token, supplied,
-                    (path, bytes, total) => ((IProgress<(string Path, long Bytes, long Total)>)fileReporter).Report((path, bytes, total)));
-                DownloadedModel result = store.Read() ?? throw new InvalidOperationException("Installation is incomplete.");
-                await ApplyAsync(result);
+                bool installedNew = !matches;
+                if (installedNew) await store.InstallAsync(discovered, SelectedArtifacts(), reporter, cancellation.Token, token, supplied,
+                    (path, bytes, total) => ((IProgress<(string Path, long Bytes, long Total)>)fileReporter).Report((path, bytes, total)),
+                    retainPreviousUntilBinding: true);
+                try
+                {
+                    EnsureNoActiveRuntime();
+                    DownloadedModel result = store.Read() ?? throw new InvalidOperationException("Installation is incomplete.");
+                    await ApplyAsync(result);
+                }
+                catch
+                {
+                    if (installedNew) store.RestorePrevious();
+                    throw;
+                }
+                if (installedNew)
+                {
+                    try { store.CompleteBinding(); }
+                    catch (IOException exception)
+                    {
+                        message = "Model assignment succeeded, but old files could not be removed: " + exception.Message;
+                        messageType = MessageType.Warning;
+                    }
+                }
                 supplied.Clear();
                 RefreshAvailability();
                 SaveToken();
@@ -507,6 +579,20 @@ namespace KitsuMate.Onnx.Editor.Download
             catch (OperationCanceledException) { message = "Cancelled. Completed files are kept for the next attempt."; }
             catch (Exception exception) { ShowError(exception); }
             finally { try { RefreshAvailability(); } finally { End(); } }
+        }
+
+        private void EnsureNoActiveRuntime()
+        {
+            if (EditorApplication.isPlayingOrWillChangePlaymode)
+                throw new InvalidOperationException("Stop Play Mode before changing installed model files.");
+            if (InferenceEngineRuntimeBase.LiveRuntimes.Any(runtime => runtime.SourceModelSet == modelSet))
+                throw new InvalidOperationException("Unload previews and other runtimes using this model set before changing its files.");
+            if (!sentis && (modelSet.GetAllModels().OfType<OnnxModelReference>().Any(source =>
+                    source.Kind == OnnxModelReference.SourceKind.Asset && source.Asset != null) ||
+                modelSet.GetAllTextFiles().Any(source => source != null &&
+                    source.Kind == OnnxModelReference.SourceKind.Asset && source.Asset != null)))
+                throw new InvalidOperationException(
+                    "This model set uses imported Assets. Move its files into the data folder before applying a new download; the download window cannot replace imported files in place yet.");
         }
 
         private async Awaitable ApplyAsync(DownloadedModel result)
@@ -558,7 +644,8 @@ namespace KitsuMate.Onnx.Editor.Download
 
         private ModelDownloadRequest Request()
         {
-            return new ModelDownloadRequest(repository, revision, expectedFamily);
+            return new ModelDownloadRequest(repository, revision, expectedFamily,
+                modelSet.DownloadGraphRoles, modelSet.DownloadRequiredCompanionRoles);
         }
 
         private bool Begin(string status)

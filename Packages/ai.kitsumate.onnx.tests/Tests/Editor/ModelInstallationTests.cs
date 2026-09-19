@@ -50,7 +50,7 @@ namespace KitsuMate.Onnx.Tests
         }
 
         [Test]
-        public async Task SuppliedFilesCompleteSetupWithoutNetworkOrContentHashing()
+        public async Task SuppliedFilesCompleteSetupWithVerifiedContent()
         {
             string root = Path.Combine(Path.GetTempPath(), "kitsumate-supplied-" + Guid.NewGuid().ToString("N"));
             var store = new ModelInstallationStore(root, "owner/model");
@@ -60,12 +60,20 @@ namespace KitsuMate.Onnx.Tests
                 string weights = Path.Combine(root, "provided.data"), text = Path.Combine(root, "provided.json");
                 File.WriteAllText(weights, "data");
                 File.WriteAllText(text, "{}");
+                string oldStaging = store.DownloadDirectory(Repository("old-owner"));
+                Directory.CreateDirectory(oldStaging);
+                File.WriteAllText(Path.Combine(oldStaging, "old.data"), "old");
+                string currentStaging = store.DownloadDirectory(Repository());
+                Directory.CreateDirectory(currentStaging);
+                File.WriteAllText(Path.Combine(currentStaging, "unselected.data"), "old");
                 var supplied = new Dictionary<string, string> { ["weights.data"] = weights, ["tokenizer.json"] = text };
                 await store.InstallAsync(Repository(), Selection(), suppliedFiles: supplied);
                 Assert.That(store.Read().Files.Count, Is.EqualTo(2));
                 Assert.That(store.Read().Repository, Is.EqualTo("owner/model"));
                 Assert.That(File.ReadAllText(weights), Is.EqualTo("data"), "Caller-owned files must be preserved.");
                 Assert.That(File.ReadAllText(store.Read().GetPath("tokenizer")), Is.EqualTo("{}"));
+                Assert.That(Directory.Exists(oldStaging), Is.False);
+                Assert.That(File.Exists(Path.Combine(store.DirectoryPath, "unselected.data")), Is.False);
             }
             finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
         }
@@ -95,6 +103,49 @@ namespace KitsuMate.Onnx.Tests
                 Assert.That(File.Exists(Path.Combine(staging, "weights.data")), Is.True);
                 await store.InstallAsync(repository, Selection());
                 Assert.That(store.Read().Files.Count, Is.EqualTo(2));
+            }
+            finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+        }
+
+        [Test]
+        public async Task InterruptedBindingCanRestorePreviousOrKeepCurrentInstallation()
+        {
+            string root = Path.Combine(Path.GetTempPath(), "kitsumate-recovery-" + Guid.NewGuid().ToString("N"));
+            var store = new ModelInstallationStore(root, "owner/model");
+            var repository = Repository();
+            try
+            {
+                Directory.CreateDirectory(root);
+                string oldWeights = Path.Combine(root, "old.data");
+                string oldTokenizer = Path.Combine(root, "old.json");
+                File.WriteAllText(oldWeights, "data");
+                File.WriteAllText(oldTokenizer, "{}");
+                await store.InstallAsync(repository, Selection(), suppliedFiles: new Dictionary<string, string>
+                    { ["weights.data"] = oldWeights, ["tokenizer.json"] = oldTokenizer });
+                File.WriteAllText(Path.Combine(store.DirectoryPath, "marker.txt"), "previous");
+
+                string newWeights = Path.Combine(root, "new.data");
+                string newTokenizer = Path.Combine(root, "new.json");
+                File.WriteAllText(newWeights, "data");
+                File.WriteAllText(newTokenizer, "{}");
+                await store.InstallAsync(repository, Selection(), suppliedFiles: new Dictionary<string, string>
+                    { ["weights.data"] = newWeights, ["tokenizer.json"] = newTokenizer },
+                    retainPreviousUntilBinding: true);
+                Assert.That(store.HasPendingBinding, Is.True);
+                Assert.That(File.Exists(Path.Combine(store.DirectoryPath, "marker.txt")), Is.False);
+
+                store.RestorePrevious();
+                Assert.That(store.HasPendingBinding, Is.False);
+                Assert.That(File.ReadAllText(Path.Combine(store.DirectoryPath, "marker.txt")), Is.EqualTo("previous"));
+
+                await store.InstallAsync(repository, Selection(), suppliedFiles: new Dictionary<string, string>
+                    { ["weights.data"] = newWeights, ["tokenizer.json"] = newTokenizer },
+                    retainPreviousUntilBinding: true);
+                Assert.That(store.HasPendingBinding, Is.True);
+                store.CompleteBinding();
+                Assert.That(store.HasPendingBinding, Is.False);
+                Assert.That(File.Exists(Path.Combine(store.DirectoryPath, "marker.txt")), Is.False);
+                Assert.That(store.Read(), Is.Not.Null);
             }
             finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
         }
@@ -146,7 +197,7 @@ namespace KitsuMate.Onnx.Tests
         private static Dictionary<string, string> Selection() => new() { ["model"] = "weights.data" };
         private static DiscoveredRepository Repository(string owner = "owner") => new(owner, "model", "test", "revision",
             new Dictionary<string, DiscoveredArtifact[]> { ["model"] = new[] { new DiscoveredArtifact("model", "default", false,
-                new[] { new DiscoveredFile("model", "weights.data", new string('a', 64), 4) }) } },
+                new[] { new DiscoveredFile("model", "weights.data", "3a6eb0790f39ac87c94f3856b2dd2c5d110e6811602261a9a923d3bb23adc8b7", 4) }) } },
             new[] { new DiscoveredFile("tokenizer", "tokenizer.json", "", 2) }, new[] { "model" });
         private sealed class InlineProgress : IProgress<float>
         {
@@ -250,8 +301,8 @@ namespace KitsuMate.Onnx.Tests
                 resolved = await set.ResolveAsync(root, CancellationToken.None);
                 var copy = (TestModelSet)resolved.Model;
                 TextFileReference tokenizer = copy.Tokenizer;
-                Assert.That(set.Tokenizer, Is.Null);
                 Assert.That(copy, Is.Not.SameAs(set));
+                Assert.That(set.Tokenizer?.IsAvailable ?? false, Is.False);
                 Assert.That(tokenizer.text, Is.EqualTo("{}"));
                 Assert.That(copy.Identity.Revision, Is.EqualTo("revision"));
                 resolved.Dispose();

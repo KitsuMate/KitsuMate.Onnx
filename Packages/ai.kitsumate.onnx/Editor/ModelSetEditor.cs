@@ -30,6 +30,7 @@ namespace KitsuMate.Onnx.Editor
                     {
                         try
                         {
+                            EnsureCanMove(set);
                             if (UsesSentis) Installed(set.Installation(OnnxSettings.Load().InstallationRoot).Read()
                                 ?? ImportedModelGraphs.MigratedInstallation(set)
                                 ?? throw new InvalidOperationException("Download models before importing Unity AI Inference assets."));
@@ -42,11 +43,19 @@ namespace KitsuMate.Onnx.Editor
                 using (new EditorGUI.DisabledScope(assets == 0))
                     if (GUILayout.Button(new GUIContent("Move files into data folder", "Move sources to Application.persistentDataPath and use File references.")))
                     {
-                        try { ImportedModelGraphs.MoveAssignedFilesToData(set); }
+                        try { EnsureCanMove(set); ImportedModelGraphs.MoveAssignedFilesToData(set); }
                         catch (Exception exception) { Debug.LogException(exception); }
                     }
                 if (UsesSentis) EditorGUILayout.LabelField("Unity AI Inference graphs must remain imported assets.", EditorStyles.wordWrappedMiniLabel);
             }
+        }
+
+        private static void EnsureCanMove(ModelSet set)
+        {
+            if (EditorApplication.isPlayingOrWillChangePlaymode)
+                throw new InvalidOperationException("Stop Play Mode before moving model files.");
+            if (InferenceEngineRuntimeBase.LiveRuntimes.Any(runtime => runtime.SourceModelSet == set))
+                throw new InvalidOperationException("Unload previews and other runtimes using this model set before moving its files.");
         }
     }
 }

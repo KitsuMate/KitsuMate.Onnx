@@ -14,6 +14,8 @@ namespace KitsuMate.Onnx.Download
         private const string RecordName = "installation.json";
         public string DirectoryPath { get; }
         public bool IsInstalled => Read() != null;
+        /// <summary>Whether an update was promoted but its Editor binding was not finalized.</summary>
+        public bool HasPendingBinding => Directory.Exists(DirectoryPath + ".previous");
         public ModelInstallationStore(string root, string installationId) => DirectoryPath = ModelDownloadPaths.Child(root, installationId);
 
         public DownloadedModel Read(bool allowIncomplete = false)
@@ -79,12 +81,15 @@ namespace KitsuMate.Onnx.Download
 
         public async Task InstallAsync(DiscoveredRepository repository, IReadOnlyDictionary<string, string> selection,
             IProgress<float> progress = null, CancellationToken cancellationToken = default, string token = null,
-            IReadOnlyDictionary<string, string> suppliedFiles = null, Action<string, long, long> fileProgress = null)
+            IReadOnlyDictionary<string, string> suppliedFiles = null, Action<string, long, long> fileProgress = null,
+            bool retainPreviousUntilBinding = false)
         {
             cancellationToken.ThrowIfCancellationRequested();
             using var installationLock = AcquireLock();
             string staging = DownloadDirectory(repository);
             var required = RequiredFiles(repository, selection);
+            PruneOtherStaging(staging);
+            if (Directory.Exists(staging)) PruneUnselectedFiles(staging, required);
             var available = AvailableFiles(repository, required, suppliedFiles);
             foreach (var file in required)
             {
@@ -124,7 +129,57 @@ namespace KitsuMate.Onnx.Download
                 if (replacing) Directory.Move(previous, DirectoryPath);
                 throw;
             }
-            if (replacing) Directory.Delete(previous, true);
+            if (replacing && !retainPreviousUntilBinding) Directory.Delete(previous, true);
+        }
+
+        internal static void PruneUnselectedFiles(string staging, IReadOnlyList<DiscoveredFile> selectedFiles)
+        {
+            var selectedPaths = new HashSet<string>(selectedFiles.Select(file =>
+                ModelDownloadPaths.Child(staging, file.Path)), StringComparer.OrdinalIgnoreCase);
+            foreach (string path in Directory.GetFiles(staging, "*", SearchOption.AllDirectories))
+            {
+                if (!selectedPaths.Contains(path) &&
+                    !string.Equals(path, Path.Combine(staging, RecordName), StringComparison.OrdinalIgnoreCase))
+                    File.Delete(path);
+            }
+            foreach (string path in Directory.GetDirectories(staging, "*", SearchOption.AllDirectories)
+                         .OrderByDescending(path => path.Length))
+            {
+                if (!Directory.EnumerateFileSystemEntries(path).Any()) Directory.Delete(path);
+            }
+        }
+
+        private void PruneOtherStaging(string staging)
+        {
+            string root = DirectoryPath + ".downloading";
+            if (!Directory.Exists(root)) return;
+            string current = Path.GetFullPath(staging).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            foreach (string path in Directory.GetFiles(root, "*", SearchOption.AllDirectories))
+            {
+                if (!path.StartsWith(current, StringComparison.OrdinalIgnoreCase)) File.Delete(path);
+            }
+            foreach (string path in Directory.GetDirectories(root, "*", SearchOption.AllDirectories)
+                         .OrderByDescending(path => path.Length))
+            {
+                if (!Directory.EnumerateFileSystemEntries(path).Any()) Directory.Delete(path);
+            }
+        }
+
+        /// <summary>Called by an Editor binding operation after the new references are saved.</summary>
+        public void CompleteBinding()
+        {
+            using var installationLock = AcquireLock();
+            string previous = DirectoryPath + ".previous";
+            if (Directory.Exists(previous)) Directory.Delete(previous, true);
+        }
+
+        /// <summary>Restores the last working installation, or removes a failed first install.</summary>
+        public void RestorePrevious()
+        {
+            using var installationLock = AcquireLock();
+            string previous = DirectoryPath + ".previous";
+            if (Directory.Exists(DirectoryPath)) Directory.Delete(DirectoryPath, true);
+            if (Directory.Exists(previous)) Directory.Move(previous, DirectoryPath);
         }
 
         /// <summary>Records a validated local installation for the application and Editor to share.</summary>

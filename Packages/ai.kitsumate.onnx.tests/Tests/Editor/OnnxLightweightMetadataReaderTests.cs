@@ -21,6 +21,18 @@ namespace KitsuMate.Onnx.Tests
             Assert.That(result.Inputs.Select(x => x.Name), Contains.Item("input_ids"));
             Assert.That(result.Outputs, Is.Not.Empty);
         }
+
+        [Test]
+        [Category("Integration")]
+        public void Merge_ExternalDataModel_RejectsMissingWeights()
+        {
+            string path = Path.GetFullPath(Path.Combine(Application.dataPath, "..", "KitsuMateOnnxFixtures",
+                "text-embedding", "all-minilm", "model_q4f16.onnx"));
+            Assert.That(File.Exists(path), Is.True, "Missing metadata fixture. Download the required CPU CI fixture set.");
+            Assert.That(OnnxLightweightMetadataReader.Read(path).ExternalData, Is.Not.Empty);
+            Assert.Throws<InvalidDataException>(() => OnnxExternalDataMerger.MergeExternalData(
+                File.ReadAllBytes(path), Path.GetTempPath()));
+        }
     }
 }
 #endif

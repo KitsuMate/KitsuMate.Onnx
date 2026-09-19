@@ -97,7 +97,10 @@ namespace KitsuMate.Onnx
                     throw new DllNotFoundException("The ONNX Runtime package's Windows payload is missing. " +
                         "Reinstall the complete package or restore its tracked Runtime/Plugins files. " +
                         "The Windows system ONNX Runtime is not a compatible substitute.");
+#if !ENABLE_IL2CPP
+                // FileVersionInfo.GetVersionInfo is an unsupported internal call in IL2CPP players.
                 ValidateWindowsRuntime(path);
+#endif
                 _windowsRuntime = LoadLibraryEx(path, IntPtr.Zero, 0x00000100 | 0x00001000);
                 if (_windowsRuntime == IntPtr.Zero)
                     throw new DllNotFoundException($"Could not load packaged ONNX Runtime '{path}' (Windows error {Marshal.GetLastWin32Error()}).");

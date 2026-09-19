@@ -1,0 +1,6 @@
+<linker>
+  <assembly fullname="Microsoft.ML.OnnxRuntime">
+    <type fullname="Microsoft.ML.OnnxRuntime.OrtApiBase" preserve="all" />
+    <type fullname="Microsoft.ML.OnnxRuntime.OrtApi" preserve="all" />
+  </assembly>
+</linker>

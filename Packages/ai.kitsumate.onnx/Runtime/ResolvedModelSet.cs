@@ -14,8 +14,9 @@ namespace KitsuMate.Onnx
     {
         private readonly List<UnityEngine.Object> owned = new();
         private readonly SynchronizationContext context = SynchronizationContext.Current;
+        public ModelSet Source { get; }
         public ModelSet Model { get; private set; }
-        internal ResolvedModelSet(ModelSet model) => Model = model;
+        internal ResolvedModelSet(ModelSet model) { Source = model; Model = model; }
         internal void Clone() => Model = Own(UnityEngine.Object.Instantiate(Model));
 
 #if UNITY_EDITOR
