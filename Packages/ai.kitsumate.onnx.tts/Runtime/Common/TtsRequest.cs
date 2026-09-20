@@ -60,6 +60,9 @@ namespace KitsuMate.Onnx.Tts
         /// <summary>Optional NeuTTS settings. Null uses the engine defaults.</summary>
         public NeuTts.NeuTtsGenerationConfig NeuTts;
 
+        /// <summary>Optional Chatterbox sampling overrides. V3 uses its model-set defaults when null.</summary>
+        public Chatterbox.ChatterboxGenerationConfig Chatterbox;
+
         public TtsRequest() { }
 
         public TtsRequest(string text, string languageId = null)

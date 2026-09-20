@@ -43,25 +43,19 @@ namespace KitsuMate.Onnx.Editor
                 string absoluteAssetPath = ResolveAbsoluteAssetPath(ctx.assetPath);
                 string modelDirectory = Path.GetDirectoryName(absoluteAssetPath) ?? string.Empty;
 
-                modelData = ScriptableObject.CreateInstance<OnnxModelData>();
-                
                 bool isOnnxModel = ModelFileUtility.IsOnnxModelPath(ctx.assetPath);
                 bool hasExternalData = isOnnxModel && CheckAndRegisterExternalData(ctx, absoluteAssetPath);
                 bool externalDataMerged = false;
-                
-                // Read model bytes
+                modelData = ScriptableObject.CreateInstance<OnnxModelData>();
                 byte[] modelBytes = File.ReadAllBytes(ctx.assetPath);
-                
                 if (hasExternalData)
                 {
                     byte[] mergedBytes = OnnxExternalDataMerger.MergeExternalData(modelBytes, modelDirectory);
-                    if (mergedBytes != modelBytes)
-                    {
-                        modelBytes = mergedBytes;
-                        externalDataMerged = true;
-                    }
+                    if (mergedBytes == modelBytes)
+                        throw new InvalidDataException("ONNX external data was not merged into the imported model.");
+                    modelBytes = mergedBytes;
+                    externalDataMerged = true;
                 }
-
                 modelData.SetData(modelBytes);
                 modelData.name = "ModelData";
                 modelData.hideFlags = HideFlags.HideInHierarchy;
@@ -186,41 +180,17 @@ namespace KitsuMate.Onnx.Editor
         {
             if (string.IsNullOrEmpty(absoluteModelPath))
                 return false;
-                
-            string directory = Path.GetDirectoryName(absoluteModelPath);
-            string modelName = Path.GetFileName(absoluteModelPath);
-            string modelNameWithoutExt = Path.GetFileNameWithoutExtension(absoluteModelPath);
-            
-            string[] possibleDataFiles = 
+
+            var metadata = OnnxLightweightMetadataReader.Read(absoluteModelPath);
+            foreach (var reference in metadata.ExternalData)
             {
-                Path.Combine(directory, modelNameWithoutExt + ".onnx_data"),
-                Path.Combine(directory, modelName + "_data"),
-                Path.Combine(directory, modelName + ".data"),
-                Path.Combine(directory, modelNameWithoutExt + "_data"),
-            };
-            
-            bool hasExternalData = false;
-            
-            foreach (var dataPath in possibleDataFiles)
-            {
-                if (File.Exists(dataPath))
-                {
-                    // Convert to Unity asset path for dependency tracking
-                    string projectRoot = Directory.GetCurrentDirectory();
-                    string relativePath = dataPath;
-                    
-                    if (dataPath.StartsWith(projectRoot))
-                    {
-                        relativePath = dataPath.Substring(projectRoot.Length)
-                            .TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                    }
-                    
-                    ctx.DependsOnSourceAsset(relativePath);
-                    hasExternalData = true;
-                }
+                string path = OnnxLightweightMetadataReader.ResolveExternalDataPath(absoluteModelPath, reference);
+                string projectPath = FileUtil.GetProjectRelativePath(path.Replace('\\', '/'));
+                if (!projectPath.StartsWith("Assets/", StringComparison.Ordinal))
+                    throw new InvalidDataException($"External data is outside Assets: '{reference.Location}'.");
+                ctx.DependsOnSourceAsset(projectPath);
             }
-            
-            return hasExternalData;
+            return metadata.ExternalData.Count > 0;
         }
 
         private static Texture2D LoadOnnxIcon()

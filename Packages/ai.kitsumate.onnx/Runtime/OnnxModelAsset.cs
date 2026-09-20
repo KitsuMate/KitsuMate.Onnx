@@ -134,6 +134,7 @@ namespace KitsuMate.Onnx
         /// <summary>Gets the model bytes as ReadOnlyMemory.</summary>
         public ReadOnlyMemory<byte> ModelData => _modelDataAsset?.Data ?? ReadOnlyMemory<byte>.Empty;
         public string SourceName => name;
+        public bool IsAssigned => true;
         public bool IsAvailable => HasResolvableData;
         public bool HasInspectedMetadata => _metadataState == MetadataInspectionState.Succeeded;
         public bool IsMetadataStale => false;

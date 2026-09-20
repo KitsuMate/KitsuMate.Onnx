@@ -104,6 +104,9 @@ namespace KitsuMate.Onnx.Asr.Whisper
             _decoderSession = null;
             _decoderWithPastSession = null;
             _tokenizer = null;
+            _preparedClip = null;
+            _preparedSamples = null;
+            _preparedDuration = 0;
         }
 
         private void ValidateSources()
@@ -324,8 +327,12 @@ namespace KitsuMate.Onnx.Asr.Whisper
 
         protected override void OnPrepareInput(AsrRequest request)
         {
+            // Discard the previous request before reading the new clip.
+            _preparedClip = null;
+            _preparedSamples = null;
+            float[] samples = ExtractSamples(request.Audio);
             _preparedClip = request.Audio;
-            _preparedSamples = ExtractSamples(request.Audio);
+            _preparedSamples = samples;
             _preparedDuration = request.Audio.length;
         }
 

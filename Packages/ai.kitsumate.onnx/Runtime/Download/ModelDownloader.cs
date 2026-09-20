@@ -66,9 +66,9 @@ namespace KitsuMate.Onnx.Download
                 Directory.CreateDirectory(Path.GetDirectoryName(path));
                 string cache = !string.IsNullOrEmpty(cacheDirectory) && IsHash(file.Sha256)
                     ? ModelDownloadPaths.Child(cacheDirectory, file.Sha256.ToLowerInvariant()) : null;
-                if (!HasSize(path, file.Size))
+                if (!await Task.Run(() => HasVerifiedContent(path, file), cancellationToken).ConfigureAwait(false))
                 {
-                    if (cache != null && HasSize(cache, file.Size))
+                    if (cache != null && await Task.Run(() => HasVerifiedContent(cache, file), cancellationToken).ConfigureAwait(false))
                         File.Copy(cache, path, true);
                     else
                     {
@@ -135,6 +135,8 @@ namespace KitsuMate.Onnx.Download
                 ct.ThrowIfCancellationRequested();
                 if (file.Size > 0 && bytes != file.Size)
                     throw new InvalidDataException($"Download size does not match for '{file.Path}'.");
+                if (!HasVerifiedContent(partial, file))
+                    throw new InvalidDataException($"Downloaded file '{file.Path}' does not match its repository hash.");
                 if (File.Exists(path)) File.Delete(path);
                 File.Move(partial, path);
             }
@@ -142,7 +144,15 @@ namespace KitsuMate.Onnx.Download
             finally { if (File.Exists(partial)) File.Delete(partial); }
         }
 
-        // Repository hashes identify cache entries; file contents are not hashed locally.
+        private static bool HasVerifiedContent(string path, DiscoveredFile file)
+        {
+            if (!File.Exists(path) || new FileInfo(path).Length != file.Size) return false;
+            if (!IsHash(file.Sha256)) return true;
+            using var stream = File.OpenRead(path);
+            using var sha = SHA256.Create();
+            return string.Equals(Hex(sha.ComputeHash(stream)), file.Sha256, StringComparison.OrdinalIgnoreCase);
+        }
+
         internal static bool HasSize(string path, long expected) =>
             expected > 0 && File.Exists(path) && new FileInfo(path).Length == expected;
         private static bool IsHash(string value) => value?.Length == 64 && value.All(Uri.IsHexDigit);

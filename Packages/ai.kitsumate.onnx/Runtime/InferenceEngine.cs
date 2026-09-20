@@ -57,6 +57,11 @@ namespace KitsuMate.Onnx
                     if (source is OnnxModelReference reference)
                         await reference.PrepareForRuntimeAsync(cancellationToken);
                 }
+                foreach (TextFileReference file in resolved.Model.GetAllTextFiles())
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (file != null) await file.PrepareForRuntimeAsync(cancellationToken);
+                }
                 ModelValidationResult validation = resolved.Model.Validate(new ModelValidationContext(backend));
                 if (!validation.IsValid) throw new ModelValidationException(validation);
                 runtime = CreateRuntime(resolved.Model)
@@ -81,6 +86,7 @@ namespace KitsuMate.Onnx
     {
         private static readonly List<InferenceEngineRuntimeBase> Live = new();
         public static IReadOnlyList<InferenceEngineRuntimeBase> LiveRuntimes => Live;
+        public virtual ModelSet SourceModelSet => null;
         public abstract EngineLoadState LoadState { get; }
         public abstract void Dispose();
         protected void Track() { lock (Live) if (!Live.Contains(this)) Live.Add(this); }
@@ -96,6 +102,7 @@ namespace KitsuMate.Onnx
     public abstract class InferenceEngineRuntime<TRequest, TResult> : InferenceEngineRuntimeBase
     {
         internal ResolvedModelSet ResolvedModels { get; set; }
+        public override ModelSet SourceModelSet => ResolvedModels?.Source;
         private readonly object lifecycleLock = new();
         private readonly SemaphoreSlim runGate;
         private readonly CancellationTokenSource lifetime = new();
@@ -131,6 +138,7 @@ namespace KitsuMate.Onnx
                 state = EngineLoadState.Loading;
                 lastLoadError = null;
             }
+            Track();
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, lifetime.Token);
             try
             {
@@ -144,6 +152,7 @@ namespace KitsuMate.Onnx
             }
             catch (Exception exception)
             {
+                Untrack();
                 lock (lifecycleLock)
                 {
                     lastLoadError = exception;

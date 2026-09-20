@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Text;
 
@@ -19,7 +20,36 @@ namespace KitsuMate.Onnx
             public readonly List<OnnxModelAsset.TensorInfo> Inputs = new();
             public readonly List<OnnxModelAsset.TensorInfo> Outputs = new();
             public readonly List<OnnxModelAsset.MetadataEntry> CustomMetadata = new();
+            public readonly List<ExternalDataReference> ExternalData = new();
             internal bool GraphFound;
+        }
+
+        public readonly struct ExternalDataReference
+        {
+            public readonly string Location;
+            public readonly long Offset;
+            public readonly long Length;
+            public ExternalDataReference(string location, long offset, long length)
+            { Location = location; Offset = offset; Length = length; }
+        }
+
+        public static string ResolveExternalDataPath(string modelPath, ExternalDataReference reference)
+        {
+            if (string.IsNullOrWhiteSpace(reference.Location) || Path.IsPathRooted(reference.Location))
+                throw new InvalidDataException("External data location must be relative to the ONNX graph.");
+            string directory = Path.GetFullPath(Path.GetDirectoryName(modelPath) ?? string.Empty)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            string path = Path.GetFullPath(Path.Combine(directory, reference.Location));
+            StringComparison comparison = Path.DirectorySeparatorChar == '\\'
+                ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+            if (!path.StartsWith(directory + Path.DirectorySeparatorChar, comparison))
+                throw new InvalidDataException($"External data location escapes the ONNX graph directory: '{reference.Location}'.");
+            var file = new FileInfo(path);
+            if (!file.Exists) throw new FileNotFoundException($"External data file is missing: '{reference.Location}'.", path);
+            if (reference.Offset < 0 || reference.Length < 0 || reference.Offset > file.Length ||
+                reference.Length > file.Length - reference.Offset)
+                throw new InvalidDataException($"External data range is invalid for '{reference.Location}'.");
+            return path;
         }
 
         public static Result Read(string path)
@@ -57,7 +87,7 @@ namespace KitsuMate.Onnx
                 switch (Field(tag))
                 {
                     case 2: result.GraphName = input.ReadString(); break;
-                    case 5: ReadMessage(input, nested => ReadInitializerName(nested, initializerNames)); break;
+                    case 5: ReadMessage(input, nested => ReadInitializer(nested, initializerNames, result.ExternalData)); break;
                     case 10: if (string.IsNullOrWhiteSpace(result.Description)) result.Description = input.ReadString(); else input.ReadString(); break;
                     case 11: ReadMessage(input, nested => result.Inputs.Add(ReadValueInfo(nested))); break;
                     case 12: ReadMessage(input, nested => result.Outputs.Add(ReadValueInfo(nested))); break;
@@ -67,15 +97,56 @@ namespace KitsuMate.Onnx
             result.Inputs.RemoveAll(inputInfo => initializerNames.Contains(inputInfo.Name));
         }
 
-        private static void ReadInitializerName(ProtoReader input, HashSet<string> names)
+        private static void ReadInitializer(ProtoReader input, HashSet<string> names,
+            List<ExternalDataReference> externalData)
         {
-            string name = string.Empty; uint tag;
+            string name = string.Empty, location = string.Empty;
+            long offset = 0, length = 0;
+            bool external = false;
+            uint tag;
             while ((tag = input.ReadTag()) != 0)
             {
-                if (Field(tag) == 8) name = input.ReadString();
-                else input.SkipLastField();
+                switch (Field(tag))
+                {
+                    case 8: name = input.ReadString(); break;
+                    case 13: ReadMessage(input, nested => ReadExternalDataEntry(nested,
+                        ref location, ref offset, ref length)); break;
+                    case 14: external = input.ReadEnum() == 1; break;
+                    default: input.SkipLastField(); break;
+                }
             }
             if (!string.IsNullOrEmpty(name)) names.Add(name);
+            if (external)
+            {
+                if (string.IsNullOrWhiteSpace(location))
+                    throw new InvalidDataException($"External tensor '{name}' has no data location.");
+                externalData.Add(new ExternalDataReference(location, offset, length));
+            }
+        }
+
+        private static void ReadExternalDataEntry(ProtoReader input, ref string location,
+            ref long offset, ref long length)
+        {
+            string key = string.Empty, value = string.Empty;
+            uint tag;
+            while ((tag = input.ReadTag()) != 0)
+            {
+                if (Field(tag) == 1) key = input.ReadString();
+                else if (Field(tag) == 2) value = input.ReadString();
+                else input.SkipLastField();
+            }
+            switch (key)
+            {
+                case "location": location = value; break;
+                case "offset":
+                    if (!long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out offset))
+                        throw new InvalidDataException("External data offset is invalid.");
+                    break;
+                case "length":
+                    if (!long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out length))
+                        throw new InvalidDataException("External data length is invalid.");
+                    break;
+            }
         }
 
         private static OnnxModelAsset.TensorInfo ReadValueInfo(ProtoReader input)

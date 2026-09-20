@@ -4,6 +4,7 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 
 [assembly: InternalsVisibleTo("KitsuMate.Onnx.Tests")]
+[assembly: InternalsVisibleTo("KitsuMate.Onnx.Tts.Tests")]
 
 namespace KitsuMate.Onnx
 {

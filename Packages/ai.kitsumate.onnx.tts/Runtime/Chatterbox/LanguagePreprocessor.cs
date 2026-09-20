@@ -48,6 +48,19 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
             };
         }
 
+        /// <summary>V3 preserves case and applies language processing before NFKD.</summary>
+        public string ProcessV3(string text, string languageId)
+        {
+            if (string.IsNullOrEmpty(text)) return text;
+            text = languageId switch
+            {
+                "zh" => ProcessChinese(text),
+                "ru" => ProcessRussian(text),
+                _ => text
+            };
+            return text.Normalize(NormalizationForm.FormKD);
+        }
+
         #region Korean Jamo Decomposition
 
         // Unicode ranges for Korean

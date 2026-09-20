@@ -12,6 +12,7 @@ namespace KitsuMate.Onnx
     public interface IOnnxModelSource
     {
         string SourceName { get; }
+        bool IsAssigned { get; }
         bool IsAvailable { get; }
         bool HasInspectedMetadata { get; }
         bool IsMetadataStale { get; }
@@ -25,7 +26,7 @@ namespace KitsuMate.Onnx
     public sealed class OnnxModelReference : IOnnxModelSource
     {
         public enum SourceKind { Asset, File }
-        public enum FileRoot { Absolute, PersistentData }
+        public enum FileRoot { Absolute, PersistentData, StreamingAssets }
 
         [SerializeField] private SourceKind sourceKind;
         [SerializeField] private OnnxModelAsset asset;
@@ -48,6 +49,7 @@ namespace KitsuMate.Onnx
         public string SourceName => sourceKind == SourceKind.Asset
             ? (asset != null ? asset.name : "Unassigned ONNX asset")
             : (string.IsNullOrWhiteSpace(filePath) ? "Unassigned ONNX file" : Path.GetFileName(filePath));
+        public bool IsAssigned => sourceKind == SourceKind.Asset ? asset != null : !string.IsNullOrWhiteSpace(filePath);
         public bool IsAvailable => sourceKind == SourceKind.Asset
             ? asset != null && asset.HasResolvableData
             : (!string.IsNullOrWhiteSpace(preparedRuntimePath) && File.Exists(preparedRuntimePath)) || TryResolveFile(out _);
@@ -80,12 +82,16 @@ namespace KitsuMate.Onnx
             return TryResolveFile(out string path) ? path : null;
         }
 
-        internal Task PrepareForRuntimeAsync(CancellationToken cancellationToken)
+        internal async Task PrepareForRuntimeAsync(CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (sourceKind == SourceKind.File && fileRoot == FileRoot.StreamingAssets)
+            {
+                preparedRuntimePath = await StreamingAssetFiles.PrepareOnnxAsync(filePath, cancellationToken);
+                return;
+            }
             if (sourceKind == SourceKind.File && !TryResolveFile(out preparedRuntimePath))
                 throw new OnnxModelPreparationException($"ONNX model '{filePath}' was not found.");
-            return Task.CompletedTask;
         }
 
         private bool TryResolveFile(out string resolved)
@@ -94,9 +100,16 @@ namespace KitsuMate.Onnx
             if (string.IsNullOrWhiteSpace(filePath)) return false;
             try
             {
-                resolved = fileRoot == FileRoot.PersistentData
-                    ? Download.ModelDownloadPaths.Child(Application.persistentDataPath, filePath)
-                    : Path.IsPathRooted(filePath) ? filePath : null;
+                if (fileRoot == FileRoot.PersistentData)
+                    resolved = Download.ModelDownloadPaths.Child(Application.persistentDataPath, filePath);
+                else if (fileRoot == FileRoot.StreamingAssets)
+                {
+                    string root = Application.streamingAssetsPath;
+                    if (root.Contains("://")) return false;
+                    resolved = Download.ModelDownloadPaths.Child(root, filePath);
+                }
+                else
+                    resolved = Path.IsPathRooted(filePath) ? filePath : null;
             }
             catch (IOException) { return false; }
             catch (ArgumentException) { return false; }
@@ -138,6 +151,20 @@ namespace KitsuMate.Onnx
             {
                 fileRoot = FileRoot.PersistentData;
                 filePath = filePath.Substring(persistentRoot.Length).Replace('\\', '/');
+            }
+            else
+            {
+                string streamingRoot = Application.streamingAssetsPath;
+                if (!streamingRoot.Contains("://"))
+                {
+                    streamingRoot = Path.GetFullPath(streamingRoot).TrimEnd(Path.DirectorySeparatorChar,
+                        Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+                    if (filePath.StartsWith(streamingRoot, comparison))
+                    {
+                        fileRoot = FileRoot.StreamingAssets;
+                        filePath = filePath.Substring(streamingRoot.Length).Replace('\\', '/');
+                    }
+                }
             }
             sha256 = hash ?? string.Empty;
             if (inspectedInputs != null) inputs.AddRange(inspectedInputs);

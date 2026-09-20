@@ -32,6 +32,77 @@ namespace KitsuMate.Onnx.Tests
         }
 
         [Test]
+        public async Task FixedChatterboxContractsSelectOnlyTheirOwnGraphs()
+        {
+            var info = new HfModelInfo
+            {
+                sha = "pinned-revision",
+                siblings = new[]
+                {
+                    "onnx/speech_encoder_slim.onnx", "onnx/embed_tokens.onnx",
+                    "onnx/language_model.onnx", "onnx/conditional_decoder.onnx",
+                    "onnx/embedding_language_model_last.onnx", "onnx/flow_prepare_slim.onnx",
+                    "onnx/flow_step_slim.onnx", "onnx/vocoder_slim.onnx",
+                    "tokenizer.json", "default_voice.wav"
+                }.Select(path => new HfSibling { rfilename = path, size = 1 }).ToArray()
+            };
+            var four = new[]
+            {
+                new ModelGraphRole("speech-encoder", "speech_encoder"),
+                new ModelGraphRole("embed-tokens", "embed_tokens"),
+                new ModelGraphRole("language-model", "language_model"),
+                new ModelGraphRole("conditional-decoder", "conditional_decoder")
+            };
+            var five = new[]
+            {
+                new ModelGraphRole("speech-encoder", "speech_encoder"),
+                new ModelGraphRole("embedding-language-model", "embedding_language_model"),
+                new ModelGraphRole("flow-prepare", "flow_prepare"),
+                new ModelGraphRole("flow-step", "flow_step"),
+                new ModelGraphRole("vocoder", "vocoder")
+            };
+            var standard = await HuggingFaceModelRepository.ScanSnapshotAsync(
+                new ModelDownloadRequest("owner/chatterbox", expectedFamily: "chatterbox", graphRoles: four), info);
+            var split = await HuggingFaceModelRepository.ScanSnapshotAsync(
+                new ModelDownloadRequest("owner/chatterbox", expectedFamily: "chatterbox", graphRoles: five), info);
+            Assert.That(standard.Artifacts.Keys, Is.EquivalentTo(four.Select(role => role.role)));
+            Assert.That(split.Artifacts.Keys, Is.EquivalentTo(five.Select(role => role.role)));
+            Assert.That(split.Artifacts["flow-step"].Single().Model.Path,
+                Is.EqualTo("onnx/flow_step_slim.onnx"));
+        }
+
+        [Test]
+        public void FixedContractRejectsMissingLayout()
+        {
+            var info = new HfModelInfo
+            {
+                sha = "pinned-revision",
+                siblings = new[] { new HfSibling { rfilename = "onnx/speech_encoder.onnx", size = 1 } }
+            };
+            var roles = new[] { new ModelGraphRole("speech-encoder", "speech_encoder"),
+                new ModelGraphRole("vocoder", "vocoder") };
+            Assert.ThrowsAsync<System.IO.InvalidDataException>(async () =>
+                await HuggingFaceModelRepository.ScanSnapshotAsync(
+                    new ModelDownloadRequest("owner/chatterbox", graphRoles: roles), info));
+        }
+
+        [Test]
+        public void ScanRejectsCaseCollidingPaths()
+        {
+            var info = new HfModelInfo
+            {
+                sha = "pinned-revision",
+                siblings = new[]
+                {
+                    new HfSibling { rfilename = "onnx/model.onnx", size = 1 },
+                    new HfSibling { rfilename = "onnx/Model.onnx", size = 1 }
+                }
+            };
+            Assert.ThrowsAsync<System.IO.InvalidDataException>(async () =>
+                await HuggingFaceModelRepository.ScanSnapshotAsync(new ModelDownloadRequest("owner/model"), info));
+        }
+
+        [Test]
         public void SelectsEachWhisperArtifactIndependently()
         {
             DiscoveredArtifact encoderDefault = Artifact("encoder", "default", "onnx/encoder_model.onnx");
@@ -205,7 +276,7 @@ namespace KitsuMate.Onnx.Tests
         {
             var request = new ModelDownloadRequest(
                 "KitsuMate/chatterbox-nano-onnx",
-                "b70ba9ceb90a146e93af372d805ec76baaa48b0b",
+                "ea0149ce2ea3a222cd83458bf54c3dfb793e781f",
                 "chatterbox");
 
             var discovery = await HuggingFaceModelRepository.GetArtifactsAsync(request);
@@ -232,9 +303,9 @@ namespace KitsuMate.Onnx.Tests
                 "audio-embeddings", "language-decoder", "audio-heads", "acoustic-encoder",
                 "semantic-encoder", "quantizer-encoder", "higgs-decoder"
             }));
-            Assert.That(discovery.Artifacts["audio-embeddings"].Single(), Does.StartWith("int4/"));
-            Assert.That(discovery.Artifacts["acoustic-encoder"].Single(), Does.StartWith("audio_tokenizer/"));
-            Assert.That(discovery.Artifacts["acoustic-encoder"].Single(), Does.Not.Contain("/fp16/"));
+            Assert.That(discovery.Artifacts["audio-embeddings"], Does.Contain("int4/audio_embeddings_encoder.onnx"));
+            Assert.That(discovery.Artifacts["acoustic-encoder"], Does.Contain("audio_tokenizer/acoustic_encoder.onnx"));
+            Assert.That(discovery.Artifacts["acoustic-encoder"], Does.Contain("audio_tokenizer/fp16/acoustic_encoder.onnx"));
         }
 
         [Test]
@@ -258,7 +329,7 @@ namespace KitsuMate.Onnx.Tests
         {
             var repository = await HuggingFaceModelRepository.GetArtifactsAsync(new ModelDownloadRequest(
                 "KitsuMate/omnivoice-onnx", "45d20c87b64f35c4ac203c5bac7ad97a3e60ca95", "omnivoice"));
-            Assert.That(repository.Artifacts["merged-backbone"], Has.Count.EqualTo(2));
+            Assert.That(repository.Artifacts["merged-backbone"].Count, Is.EqualTo(2));
             Assert.That(repository.Artifacts["acoustic-encoder"].Single(), Does.Contain("codec-fp32"));
         }
     }

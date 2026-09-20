@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using System.Threading.Tasks;
 using KitsuMate.Tokenizers;
 using UnityEngine;
 using KitsuMate.Onnx;
@@ -54,6 +53,7 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
         private VoiceEncoderCache _voiceCache;
 
         private bool _usesModernInputs;
+        private bool _isV3;
         private string[] _kvPastNames;
         private Dictionary<string, string> _kvOutputToPastName;
         private string _logitsOutputName;
@@ -91,19 +91,14 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
 
             try
             {
-                var speechEncoderTask = Task.Run(() => backend.CreateSession(_modelSet.SpeechEncoder));
-                var embedTokensTask = Task.Run(() => backend.CreateSession(_modelSet.EmbedTokens));
-                var languageModelTask = Task.Run(() => backend.CreateSession(_modelSet.LanguageModel));
-                var conditionalDecoderTask = Task.Run(() => backend.CreateSession(_modelSet.ConditionalDecoder));
-
-                Task.WhenAll(speechEncoderTask, embedTokensTask, languageModelTask, conditionalDecoderTask)
-                    .GetAwaiter()
-                    .GetResult();
-
-                speechEncoderSession = speechEncoderTask.Result;
-                embedTokensSession = embedTokensTask.Result;
-                languageModelSession = languageModelTask.Result;
-                conditionalDecoderSession = conditionalDecoderTask.Result;
+                // Large graphs already load on a background thread. Load them one
+                // at a time to limit peak memory and retain handles for cleanup.
+                var options = new OnnxSessionOptions
+                    { IntraOpThreads = Math.Min(4, Environment.ProcessorCount), InterOpThreads = 1 };
+                speechEncoderSession = backend.CreateSession(_modelSet.SpeechEncoder, options);
+                embedTokensSession = backend.CreateSession(_modelSet.EmbedTokens, options);
+                languageModelSession = backend.CreateSession(_modelSet.LanguageModel, options);
+                conditionalDecoderSession = backend.CreateSession(_modelSet.ConditionalDecoder, options);
             }
             catch
             {
@@ -132,6 +127,7 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
             _voiceCache = _voiceCacheCapacity > 0 ? new VoiceEncoderCache(_voiceCacheCapacity) : null;
 
             _usesModernInputs = !_embedTokensSession.InputNames.Contains("position_ids");
+            _isV3 = _embedTokensSession.InputNames.Contains("text_conditioning");
             _kvPastNames = _languageModelSession.InputNames
                 .Where(name => name.StartsWith("past_key_values.", StringComparison.Ordinal))
                 .ToArray();
@@ -166,6 +162,7 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
             _voiceCache?.Dispose();
             _voiceCache = null;
             _usesModernInputs = false;
+            _isV3 = false;
             _kvPastNames = null;
             _kvOutputToPastName = null;
             _logitsOutputName = null;
@@ -190,28 +187,7 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
                 return;
             }
 
-            var samples = new float[clip.samples * clip.channels];
-            clip.GetData(samples, 0);
-
-            // Convert to mono
-            if (clip.channels > 1)
-            {
-                var mono = new float[clip.samples];
-                for (int i = 0; i < clip.samples; i++)
-                {
-                    float sum = 0f;
-                    for (int ch = 0; ch < clip.channels; ch++)
-                        sum += samples[i * clip.channels + ch];
-                    mono[i] = sum / clip.channels;
-                }
-                samples = mono;
-            }
-
-            // Resample to 24kHz if needed
-            if (clip.frequency != ChatterboxConstants.SampleRate)
-                samples = Resample(samples, clip.frequency, ChatterboxConstants.SampleRate);
-
-            _cachedVoiceSamples = samples;
+            _cachedVoiceSamples = PrepareVoiceSamples(clip);
         }
 
         protected override TtsResult OnRun(TtsRequest input, System.Threading.CancellationToken cancellationToken)
@@ -222,9 +198,23 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
             // 1. Prepare text with language preprocessing
             string text = input.Text;
             string langId = input.LanguageId;
+            var generation = input.Chatterbox ?? (_isV3 ? _modelSet.Generation : null);
+            generation?.Validate();
+            if (!_isV3 && generation?.Guidance > 0)
+                throw new ArgumentException("Guidance requires a V3 export with text_conditioning inputs.");
+            int batch = generation?.Guidance > 0 ? 2 : 1;
+            var random = new System.Random(generation?.Seed ?? 42);
+            if (_isV3)
+            {
+                langId = string.IsNullOrWhiteSpace(langId) ? "en" : langId.ToLowerInvariant();
+                if (!ChatterboxConstants.SupportedLanguages.ContainsKey(langId))
+                    throw new ArgumentException($"Unsupported Chatterbox language: {langId}");
+                text = PrepareV3Text(text);
+            }
             if (IsMultilingual && !string.IsNullOrEmpty(langId))
             {
-                text = _languagePreprocessor.Process(text, langId);
+                text = _isV3 ? _languagePreprocessor.ProcessV3(text, langId)
+                    : _languagePreprocessor.Process(text, langId);
                 text = $"[{langId.ToLowerInvariant()}]{text}";
             }
             else if (_usesModernInputs)
@@ -234,6 +224,7 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
 
             // 2. Tokenize (includes TemplateProcessing framing:
             //    [EXAGGERATION][START] {text} [STOP][START_SPEECH][START_SPEECH])
+            if (_isV3) text = text.Replace(" ", "[SPACE]");
             var encoded = _tokenizer.Encode(text, addSpecialTokens: true);
             long[] inputIds = encoded.Ids.Select(static id => (long)id).ToArray();
 
@@ -341,7 +332,7 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
                 {
                     kvCache[_kvPastNames[i]] = OnnxTensor.FromArray(
                         Array.Empty<float>(),
-                        new[] { 1, kvHeads, 0, ChatterboxConstants.HeadDim });
+                        new[] { batch, kvHeads, 0, ChatterboxConstants.HeadDim });
                 }
                 lmInputs = new Dictionary<string, OnnxTensor>(3 + kvCount)
                 {
@@ -373,7 +364,26 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
                     embedInputs["input_ids"] = OnnxTensor.FromArray(
                         new[] { (long)generatedTokens[generatedTokens.Count - 1] }, new[] { 1, 1 });
                     if (speechPositionTensor != null)
+                    {
+                        speechPositionTensor.Dispose();
+                        speechPositionTensor = OnnxTensor.FromArray(new[] { (long)step }, new[] { 1, 1 });
                         embedInputs["position_ids"] = speechPositionTensor;
+                    }
+                }
+
+                if (_isV3)
+                {
+                    embedInputs["text_conditioning"] = OnnxTensor.FromArray(
+                        batch == 2 ? new[] { 1f, 0f } : new[] { 1f }, new[] { batch });
+                    if (batch == 2)
+                    {
+                        foreach (string key in new[] { "input_ids", "position_ids" })
+                        {
+                            var data = embedInputs[key].AsLongArray();
+                            embedInputs[key] = OnnxTensor.FromArray(data.Concat(data).ToArray(), new[] { batch, data.Length });
+                        }
+                        embedInputs["exaggeration"] = OnnxTensor.FromArray(new[] { exaggeration, exaggeration }, new[] { batch });
+                    }
                 }
 
                 var embedOutputs = _embedTokensSession.Run(embedInputs);
@@ -409,7 +419,9 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
                     long[] values = step == 0
                         ? Enumerable.Range(0, initialSeqLen).Select(index => (long)index).ToArray()
                         : new[] { (long)attentionMaskLen - 1 };
-                    lmPositionTensor = OnnxTensor.FromArray(values, new[] { 1, values.Length });
+                    lmPositionTensor = OnnxTensor.FromArray(
+                        batch == 2 ? values.Concat(values).ToArray() : values,
+                        new[] { batch, values.Length });
                 }
 
                 if (deviceSession != null)
@@ -419,8 +431,8 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
                     {
                         new OnnxNamedValue("inputs_embeds", finalEmbeds),
                         new OnnxNamedValue("attention_mask", OnnxTensor.FromArray(
-                            new ReadOnlySpan<long>(attentionMask, 0, attentionMaskLen).ToArray(),
-                            new[] { 1, attentionMaskLen }))
+                            Enumerable.Repeat(1L, batch * attentionMaskLen).ToArray(),
+                            new[] { batch, attentionMaskLen }))
                     };
                     if (lmPositionTensor != null)
                         cpuInputs.Add(new OnnxNamedValue("position_ids", lmPositionTensor));
@@ -433,7 +445,7 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
                         {
                             cpuInputs.Add(new OnnxNamedValue(_kvPastNames[i],
                                 OnnxTensor.FromArray(Array.Empty<float>(),
-                                    new[] { 1, kvHeads, 0, ChatterboxConstants.HeadDim })));
+                                    new[] { batch, kvHeads, 0, ChatterboxConstants.HeadDim })));
                         }
                         deviceInputs = Array.Empty<IDeviceTensor>();
                     }
@@ -471,8 +483,8 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
                     // ── CPU fallback path (original) ──
                     lmInputs["inputs_embeds"] = finalEmbeds;
                     lmInputs["attention_mask"] = OnnxTensor.FromArray(
-                        new ReadOnlySpan<long>(attentionMask, 0, attentionMaskLen).ToArray(),
-                        new[] { 1, attentionMaskLen });
+                        Enumerable.Repeat(1L, batch * attentionMaskLen).ToArray(),
+                        new[] { batch, attentionMaskLen });
                     if (lmPositionTensor != null)
                         lmInputs["position_ids"] = lmPositionTensor;
                     foreach (var kv in kvCache)
@@ -503,23 +515,11 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
                 }
 
                 // 5d. Extract last-step logits and apply repetition penalty
-                int logitsOffset = (logits.Length / vocabSize - 1) * vocabSize;
-                var lastLogits = new float[vocabSize];
-                Array.Copy(logits, logitsOffset, lastLogits, 0, vocabSize);
+                var lastLogits = ChatterboxSampling.Combine(logits, vocabSize, batch, generation?.Guidance ?? 0);
 
                 repetitionPenalty.Apply(generatedTokens, lastLogits);
 
-                // 5e. Argmax
-                int nextToken = 0;
-                float maxVal = float.NegativeInfinity;
-                for (int i = 0; i < lastLogits.Length; i++)
-                {
-                    if (lastLogits[i] > maxVal)
-                    {
-                        maxVal = lastLogits[i];
-                        nextToken = i;
-                    }
-                }
+                int nextToken = ChatterboxSampling.Sample(lastLogits, generation, random);
 
                 generatedTokens.Add(nextToken);
 
@@ -562,11 +562,21 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
             }
 
             // 6. Build speech tokens: remove START/STOP markers, prepend prompt_token
+            if (_isV3)
+            {
+                // Upstream drops non-codec tokens before S3Gen, including out-of-band vocabulary entries.
+                bool stopped = generatedTokens[^1] == ChatterboxConstants.StopSpeechToken;
+                generatedTokens = generatedTokens.Take(1).Concat(generatedTokens.Skip(1)
+                    .Where(token => token >= 0 && token < ChatterboxConstants.StartSpeechToken)).ToList();
+                if (stopped) generatedTokens.Add(ChatterboxConstants.StopSpeechToken);
+            }
             var promptTokenData = voiceEntry.PromptToken.AsLongArray();
             int genStart = 1; // skip START_SPEECH_TOKEN
             int genEnd = generatedTokens.Count;
             if (generatedTokens[genEnd - 1] == ChatterboxConstants.StopSpeechToken)
                 genEnd--;
+            if (genEnd == genStart)
+                throw new InvalidOperationException("Chatterbox generated no speech tokens.");
 
             int silenceCount = _usesModernInputs ? 3 : 0;
             int speechCount = promptTokenData.Length + (genEnd - genStart) + silenceCount;
@@ -607,6 +617,18 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
             return tokenizerJson.Contains("\"[ko]\"") || tokenizerJson.Contains("\"[zh]\"");
         }
 
+        internal static string PrepareV3Text(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) throw new ArgumentException("Chatterbox requires nonempty text.");
+            text = string.Join(" ", text.Split((char[])null, StringSplitOptions.RemoveEmptyEntries));
+            foreach (var pair in new[] { ("...", ", "), ("…", ", "), (":", ","), (" - ", ", "),
+                (";", ", "), ("—", "-"), ("–", "-"), (" ,", ","), ("“", "\""), ("”", "\""), ("‘", "'"), ("’", "'") })
+                text = text.Replace(pair.Item1, pair.Item2);
+            text = text.TrimEnd();
+            if (!".!?-,、，。？！".Contains(text[^1])) text += ".";
+            return text;
+        }
+
         private static string PrepareModernText(string text)
         {
             if (string.IsNullOrEmpty(text)) return "You need to add some text for me to talk.";
@@ -639,7 +661,7 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
             var aData = a.AsFloatArray();
             var bData = b.AsFloatArray();
 
-            int batch = a.Shape[0];
+            int batch = b.Shape[0];
             int seq1 = a.Shape[1];
             int seq2 = b.Shape[1];
             int hidden = a.Shape[2];
@@ -647,22 +669,38 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
             var result = new float[batch * (seq1 + seq2) * hidden];
             for (int ba = 0; ba < batch; ba++)
             {
-                Array.Copy(aData, ba * seq1 * hidden, result, ba * (seq1 + seq2) * hidden, seq1 * hidden);
+                Array.Copy(aData, (a.Shape[0] == 1 ? 0 : ba) * seq1 * hidden, result, ba * (seq1 + seq2) * hidden, seq1 * hidden);
                 Array.Copy(bData, ba * seq2 * hidden, result, ba * (seq1 + seq2) * hidden + seq1 * hidden, seq2 * hidden);
             }
 
             return OnnxTensor.FromArray(result, new[] { batch, seq1 + seq2, hidden });
         }
 
-        /// <summary>
-        /// Linear interpolation resampling.
-        /// </summary>
+        /// <summary>Reads, downmixes, and resamples a reference clip for Chatterbox encoders.</summary>
+        internal static float[] PrepareVoiceSamples(AudioClip clip)
+        {
+            if (clip == null) throw new ArgumentNullException(nameof(clip));
+            if (clip.samples <= 0 || clip.channels <= 0 || clip.frequency <= 0)
+                throw new ArgumentException("The reference voice has no usable audio samples.", nameof(clip));
+            var interleaved = new float[checked(clip.samples * clip.channels)];
+            if (!clip.GetData(interleaved, 0))
+                throw new InvalidOperationException("Could not read reference voice samples.");
+            var mono = new float[clip.samples];
+            for (int sample = 0; sample < mono.Length; sample++)
+                for (int channel = 0; channel < clip.channels; channel++)
+                    mono[sample] += interleaved[sample * clip.channels + channel] / clip.channels;
+            return Resample(mono, clip.frequency, ChatterboxConstants.SampleRate);
+        }
+
+        /// <summary>Linear interpolation resampling.</summary>
         private static float[] Resample(float[] samples, int srcRate, int dstRate)
         {
             if (srcRate == dstRate) return samples;
 
             double ratio = (double)srcRate / dstRate;
             int newLength = (int)(samples.Length / ratio);
+            if (newLength == 0)
+                throw new ArgumentException("The reference voice is too short after resampling.", nameof(samples));
             var result = new float[newLength];
 
             for (int i = 0; i < newLength; i++)

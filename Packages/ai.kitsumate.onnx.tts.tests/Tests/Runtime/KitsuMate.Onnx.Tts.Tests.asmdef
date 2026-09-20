@@ -1,3 +1,10 @@
 {
-  "name": "KitsuMate.Onnx.Tts.Tests", "references": ["KitsuMate.Onnx", "KitsuMate.Onnx.Tts"], "optionalUnityReferences": ["TestAssemblies"], "overrideReferences": true, "precompiledReferences": ["KitsuMate.Tokenizers.dll", "Newtonsoft.Json.dll"], "autoReferenced": false
+  "name": "KitsuMate.Onnx.Tts.Tests",
+  "rootNamespace": "KitsuMate.Onnx.Tts.Tests",
+  "references": ["UnityEngine.TestRunner", "UnityEditor.TestRunner", "KitsuMate.Onnx", "KitsuMate.Onnx.Tts"],
+  "includePlatforms": ["Editor"],
+  "overrideReferences": true,
+  "precompiledReferences": ["KitsuMate.Tokenizers.dll", "Newtonsoft.Json.dll"],
+  "autoReferenced": false,
+  "defineConstraints": ["UNITY_INCLUDE_TESTS"]
 }

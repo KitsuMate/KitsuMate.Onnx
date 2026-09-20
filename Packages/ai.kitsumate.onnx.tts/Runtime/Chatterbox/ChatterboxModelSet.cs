@@ -9,7 +9,16 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
     [CreateAssetMenu(fileName = "ChatterboxModelSet", menuName = "KitsuMate/ONNX/TTS/Chatterbox Model Set")]
     public class ChatterboxModelSet : StandardModelSet
     {
+        public override System.Collections.Generic.IReadOnlyList<ModelGraphRole> DownloadGraphRoles => new[]
+        {
+            new ModelGraphRole("speech-encoder", "speech_encoder"),
+            new ModelGraphRole("embed-tokens", "embed_tokens"),
+            new ModelGraphRole("language-model", "language_model"),
+            new ModelGraphRole("conditional-decoder", "conditional_decoder")
+        };
         public override string[] DownloadCompanionRoles => new[] { "tokenizer", "cangjie", "voice" };
+        public override string[] DownloadRequiredCompanionRoles => new[] { "tokenizer" };
+        public override bool ValidateDownloadedBinding => true;
 
         public override TextFileReference[] GetAllTextFiles() => new[] { _tokenizer, _cangjieMapping };
 
@@ -31,7 +40,8 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
             installation.ConfigureModel(_conditionalDecoderSource, "conditional-decoder");
             _tokenizer = resources.ReadText(installation, "tokenizer");
             _cangjieMapping = resources.ReadText(installation, "cangjie", optional: true);
-            _defaultVoice = await resources.ReadAudioAsync(installation, "voice", cancellationToken);
+            if (installation.Files.Any(file => file.Role == "voice"))
+                _defaultVoice = await resources.ReadAudioAsync(installation, "voice", cancellationToken);
         }
 
         [SerializeField] private OnnxModelReference _speechEncoderSource = new();
@@ -41,6 +51,8 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
         [SerializeField] private TextFileReference _tokenizer = new();
         [SerializeField] private TextFileReference _cangjieMapping = new();
         [SerializeField] private AudioClip _defaultVoice;
+        [SerializeField] private ChatterboxGenerationConfig _generation = new();
+        public ChatterboxGenerationConfig Generation => _generation;
 
         public OnnxModelReference SpeechEncoder => _speechEncoderSource;
         public OnnxModelReference EmbedTokens => _embedTokensSource;
@@ -51,7 +63,7 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
         public AudioClip DefaultVoice => _defaultVoice;
         public override string DisplayName => string.IsNullOrWhiteSpace(name) ? "Chatterbox" : name;
         public override bool IsComplete => _speechEncoderSource.IsAvailable && _embedTokensSource.IsAvailable &&
-            _languageModelSource.IsAvailable && _conditionalDecoderSource.IsAvailable && _tokenizer?.IsAvailable == true && _defaultVoice != null;
+            _languageModelSource.IsAvailable && _conditionalDecoderSource.IsAvailable && _tokenizer?.IsAvailable == true;
         public override IOnnxModelSource[] GetAllModels() => new IOnnxModelSource[]
             { _speechEncoderSource, _embedTokensSource, _languageModelSource, _conditionalDecoderSource };
 
@@ -63,7 +75,6 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
             if (!_languageModelSource.IsAvailable) result.Error("missing_language_model", "Language model is not available.");
             if (!_conditionalDecoderSource.IsAvailable) result.Error("missing_decoder", "Conditional decoder model is not available.");
             if (_tokenizer?.IsAvailable != true) result.Error("missing_tokenizer", "Tokenizer file is not assigned.");
-            if (_defaultVoice == null) result.Error("missing_voice", "Default voice audio is not assigned.");
             foreach (IOnnxModelSource model in GetAllModels()) RequireSchema(model, result);
             return ValidateCommon(context, result);
         }
@@ -86,6 +97,7 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
             _tokenizer = tokenizer; _cangjieMapping = cangjieMapping; _defaultVoice = defaultVoice;
             UnityEditor.EditorUtility.SetDirty(this);
         }
+
 #endif
     }
 }

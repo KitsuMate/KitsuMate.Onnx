@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 using UnityEngine;
 using KitsuMate.Onnx.Download;
 using System.Threading;
@@ -50,10 +52,23 @@ namespace KitsuMate.Onnx
         [SerializeField] private ModelDownloadProfile download = new();
         public ModelDownloadProfile Download => download;
         public virtual string[] DownloadCompanionRoles => Array.Empty<string>();
+        public virtual string[] DownloadRequiredCompanionRoles => Array.Empty<string>();
+        public virtual IReadOnlyList<ModelGraphRole> DownloadGraphRoles => null;
+        public virtual bool ValidateDownloadedBinding => false;
         public virtual IEnumerable<(string Family, string Repository)> RepositorySuggestions =>
             Array.Empty<(string Family, string Repository)>();
-        public bool UsesInstallation => !string.IsNullOrWhiteSpace(download.repository) && !GetAllModels().Any(source => source != null && source.IsAvailable);
-        public ModelInstallationStore Installation(string root) => new(root, download.installationFolder);
+        public bool UsesInstallation => !string.IsNullOrWhiteSpace(download.repository) &&
+            !GetAllModels().Any(source => source != null && source.IsAssigned);
+        public ModelInstallationStore Installation(string root)
+        {
+#if UNITY_EDITOR
+            string assetPath = UnityEditor.AssetDatabase.GetAssetPath(this);
+            if (!string.IsNullOrEmpty(assetPath) && !string.IsNullOrEmpty(download.installationOwnerGuid) &&
+                download.installationOwnerGuid != UnityEditor.AssetDatabase.AssetPathToGUID(assetPath))
+                throw new InvalidOperationException("This duplicated model set needs its own installation. Open its download window to assign one.");
+#endif
+            return new ModelInstallationStore(root, download.installationFolder);
+        }
 
 #if UNITY_EDITOR
         public async Task ApplyInstallationInEditorAsync(DownloadedModel installation, CancellationToken cancellationToken = default)
@@ -63,16 +78,34 @@ namespace KitsuMate.Onnx
             if (string.IsNullOrEmpty(assetPath)) throw new InvalidOperationException("Save the model set before assigning downloaded files.");
             using var resolved = new ResolvedModelSet(this);
             resolved.Clone();
+            using var hash = SHA256.Create();
+            string key = BitConverter.ToString(hash.ComputeHash(Encoding.UTF8.GetBytes(installation.Identity.ToString())))
+                .Replace("-", "").ToLowerInvariant();
             resolved.CompanionAssetDirectory = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(assetPath),
-                System.IO.Path.GetFileNameWithoutExtension(assetPath) + " Files").Replace('\\', '/');
-            await resolved.Model.BindInstallationAsync(installation, resolved, cancellationToken);
-            cancellationToken.ThrowIfCancellationRequested();
-            UnityEditor.Undo.RecordObject(this, "Assign downloaded models");
-            resolved.Model.name = name;
-            resolved.Model.hideFlags = hideFlags;
-            UnityEditor.EditorUtility.CopySerialized(resolved.Model, this);
-            UnityEditor.EditorUtility.SetDirty(this);
-            UnityEditor.AssetDatabase.SaveAssetIfDirty(this);
+                System.IO.Path.GetFileNameWithoutExtension(assetPath) + " Files", key).Replace('\\', '/');
+            bool existingCompanions = UnityEditor.AssetDatabase.IsValidFolder(resolved.CompanionAssetDirectory);
+            try
+            {
+                await resolved.Model.BindInstallationAsync(installation, resolved, cancellationToken);
+                if (ValidateDownloadedBinding)
+                {
+                    ModelValidationResult validation = resolved.Model.Validate(new ModelValidationContext(null));
+                    if (!validation.IsValid) throw new ModelValidationException(validation);
+                }
+                cancellationToken.ThrowIfCancellationRequested();
+                resolved.Model.name = name;
+                resolved.Model.hideFlags = hideFlags;
+                UnityEditor.EditorUtility.CopySerialized(resolved.Model, this);
+                UnityEditor.EditorUtility.SetDirty(this);
+                UnityEditor.AssetDatabase.SaveAssetIfDirty(this);
+            }
+            catch
+            {
+                if (!existingCompanions && UnityEditor.AssetDatabase.IsValidFolder(resolved.CompanionAssetDirectory) &&
+                    !UnityEditor.AssetDatabase.DeleteAsset(resolved.CompanionAssetDirectory))
+                    Debug.LogWarning($"Could not remove failed companion import: {resolved.CompanionAssetDirectory}");
+                throw;
+            }
         }
 #endif
 

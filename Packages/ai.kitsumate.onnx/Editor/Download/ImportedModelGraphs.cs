@@ -13,9 +13,16 @@ namespace KitsuMate.Onnx.Editor.Download
     {
         public static void MoveAssignedFilesToData(ModelSet set)
         {
+            var settings = OnnxSettings.Load() ??
+                throw new InvalidOperationException("Configure OnnxSettings before moving model files.");
+            MoveAssignedFilesToData(set, settings.InstallationRoot);
+        }
+
+        internal static void MoveAssignedFilesToData(ModelSet set, string installationRoot)
+        {
             string assetPath = AssetDatabase.GetAssetPath(set);
             if (string.IsNullOrEmpty(assetPath)) throw new InvalidOperationException("Save the model set first.");
-            string directory = Path.Combine(OnnxSettings.Load().InstallationRoot, "Local", AssetDatabase.AssetPathToGUID(assetPath));
+            string directory = Path.Combine(installationRoot, "Local", AssetDatabase.AssetPathToGUID(assetPath));
             var destinations = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             try
             {
@@ -63,22 +70,33 @@ namespace KitsuMate.Onnx.Editor.Download
 
         private static void MoveGraphFiles(string source, string destination)
         {
-            var moved = new List<(string Source, string Destination)>();
+            var copied = new List<string>();
             try
             {
-                foreach (string data in new[] { source + "_data", source + ".data", Path.ChangeExtension(source, "onnx_data"),
-                    Path.Combine(Path.GetDirectoryName(source), Path.GetFileNameWithoutExtension(source) + "_data") }.Distinct())
-                    if (File.Exists(data))
-                    {
-                        string target = Path.Combine(Path.GetDirectoryName(destination), Path.GetFileName(data));
-                        ModelBuildFiles.Move(data, target);
-                        moved.Add((data, target));
-                    }
+                var references = ModelFileUtility.IsOnnxModelPath(source)
+                    ? OnnxLightweightMetadataReader.Read(source).ExternalData
+                    : new List<OnnxLightweightMetadataReader.ExternalDataReference>();
+                foreach (var reference in references)
+                    OnnxLightweightMetadataReader.ResolveExternalDataPath(source, reference);
+                foreach (var reference in references.GroupBy(item => item.Location, StringComparer.OrdinalIgnoreCase)
+                             .Select(group => group.First()))
+                {
+                    string data = OnnxLightweightMetadataReader.ResolveExternalDataPath(source, reference);
+                    string target = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(destination), reference.Location));
+                    if (string.Equals(data, target, StringComparison.OrdinalIgnoreCase)) continue;
+                    if (File.Exists(target)) throw new IOException($"External data already exists at {target}.");
+                    ModelBuildFiles.Copy(data, target);
+                    copied.Add(target);
+                }
                 ModelBuildFiles.Move(source, destination);
             }
             catch
             {
-                foreach (var item in moved.AsEnumerable().Reverse()) ModelBuildFiles.Move(item.Destination, item.Source);
+                foreach (string path in copied)
+                {
+                    if (File.Exists(path)) File.Delete(path);
+                    if (File.Exists(path + ".meta")) File.Delete(path + ".meta");
+                }
                 throw;
             }
         }

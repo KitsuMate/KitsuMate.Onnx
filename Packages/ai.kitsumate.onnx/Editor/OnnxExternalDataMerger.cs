@@ -2,6 +2,7 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Text;
 using UnityEngine;
@@ -41,11 +42,8 @@ namespace KitsuMate.Onnx.Editor
                 
                 return modified ? outputStream.ToArray() : modelBytes;
             }
-            catch (Exception ex)
-            {
-                Debug.LogWarning($"[OnnxExternalDataMerger] Failed to merge external data: {ex.Message}");
-                return modelBytes;
-            }
+            catch (InvalidDataException) { throw; }
+            catch (Exception ex) { throw new InvalidDataException($"Could not merge ONNX external data: {ex.Message}", ex); }
         }
 
         private enum MessageType
@@ -199,16 +197,7 @@ namespace KitsuMate.Onnx.Editor
                 return false;
             }
             
-            byte[]? externalBytes = LoadExternalData(modelDir, location!, offset, length);
-            if (externalBytes == null)
-            {
-                Debug.LogWarning($"[OnnxExternalDataMerger] Failed to load external data from '{location}'");
-                foreach (var field in fields)
-                {
-                    output.Write(field.data, 0, field.data.Length);
-                }
-                return false;
-            }
+            byte[] externalBytes = LoadExternalData(modelDir, location!, offset, length);
             
             foreach (var field in fields)
             {
@@ -267,47 +256,53 @@ namespace KitsuMate.Onnx.Editor
                         location = value;
                         break;
                     case "offset":
-                        long.TryParse(value, out offset);
+                        if (!long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out offset))
+                            throw new InvalidDataException("External data offset is invalid.");
                         break;
                     case "length":
-                        long.TryParse(value, out length);
+                        if (!long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out length))
+                            throw new InvalidDataException("External data length is invalid.");
                         break;
                 }
             }
         }
 
-        private static byte[]? LoadExternalData(string modelDir, string location, long offset, long length)
+        private static byte[] LoadExternalData(string modelDir, string location, long offset, long length)
         {
             try
             {
-                string filePath = Path.Combine(modelDir, location);
+                if (string.IsNullOrWhiteSpace(location) || Path.IsPathRooted(location))
+                    throw new InvalidDataException("External data location must be a relative path.");
+                string root = Path.GetFullPath(modelDir).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                string filePath = Path.GetFullPath(Path.Combine(root, location));
+                StringComparison comparison = Application.platform == RuntimePlatform.WindowsEditor
+                    ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+                if (!filePath.StartsWith(root + Path.DirectorySeparatorChar, comparison))
+                    throw new InvalidDataException($"External data location escapes the model directory: '{location}'.");
                 if (!File.Exists(filePath))
-                {
-                    Debug.LogWarning($"[OnnxExternalDataMerger] External data file not found: {filePath}");
-                    return null;
-                }
+                    throw new InvalidDataException($"External data file not found: {filePath}");
                 
                 using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read);
-                
-                if (offset > 0)
-                    fs.Seek(offset, SeekOrigin.Begin);
-                
-                int readLength = length > 0 ? (int)length : (int)(fs.Length - offset);
+                if (offset < 0 || length < 0 || offset > fs.Length || length > fs.Length - offset)
+                    throw new InvalidDataException($"External data range is invalid for '{location}'.");
+                long remaining = length > 0 ? length : fs.Length - offset;
+                if (remaining > int.MaxValue)
+                    throw new InvalidDataException($"External data tensor is too large to merge: '{location}'.");
+                fs.Seek(offset, SeekOrigin.Begin);
+                int readLength = (int)remaining;
                 byte[] data = new byte[readLength];
-                int bytesRead = fs.Read(data, 0, readLength);
-                
-                if (bytesRead != readLength)
+                int bytesRead = 0;
+                while (bytesRead < readLength)
                 {
-                    Debug.LogWarning($"[OnnxExternalDataMerger] Only read {bytesRead} of {readLength} bytes");
+                    int count = fs.Read(data, bytesRead, readLength - bytesRead);
+                    if (count == 0) throw new EndOfStreamException($"External data ended early: '{location}'.");
+                    bytesRead += count;
                 }
                 
                 return data;
             }
-            catch (Exception ex)
-            {
-                Debug.LogWarning($"[OnnxExternalDataMerger] Error loading external data: {ex.Message}");
-                return null;
-            }
+            catch (InvalidDataException) { throw; }
+            catch (Exception ex) { throw new InvalidDataException($"Could not load ONNX external data '{location}': {ex.Message}", ex); }
         }
 
         private static int ReadVarint32(Stream stream)

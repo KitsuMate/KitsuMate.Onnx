@@ -1,11 +1,13 @@
 #if UNITY_EDITOR
 using System;
 using System.IO;
+using System.Linq;
+using System.Security.Cryptography;
 using UnityEditor;
 
 namespace KitsuMate.Onnx.Download
 {
-    /// <summary>Tracks completed build copies using file metadata, without reading model contents.</summary>
+    /// <summary>Copies and moves model files while keeping Unity asset metadata with them.</summary>
     public static class ModelBuildFiles
     {
         public static void Move(string source, string destination)
@@ -31,10 +33,54 @@ namespace KitsuMate.Onnx.Download
                 bool hasMetadata = File.Exists(source + ".meta");
                 if (hasMetadata && File.Exists(destination + ".meta"))
                     throw new IOException($"Asset metadata already exists at {destination}.meta.");
-                File.Move(source, destination);
-                try { if (hasMetadata) File.Move(source + ".meta", destination + ".meta"); }
-                catch { File.Move(destination, source); throw; }
+                if (string.Equals(Path.GetPathRoot(source), Path.GetPathRoot(destination), comparison))
+                {
+                    File.Move(source, destination);
+                    try { if (hasMetadata) File.Move(source + ".meta", destination + ".meta"); }
+                    catch { File.Move(destination, source); throw; }
+                }
+                else
+                {
+                    string temporary = destination + ".copying~";
+                    string metadataTemporary = destination + ".meta.copying~";
+                    if (File.Exists(temporary) || File.Exists(metadataTemporary))
+                        throw new IOException($"A previous move is incomplete at {destination}. Remove its temporary files before retrying.");
+                    try
+                    {
+                        File.Copy(source, temporary);
+                        VerifyCopy(source, temporary);
+                        if (hasMetadata)
+                        {
+                            File.Copy(source + ".meta", metadataTemporary);
+                            VerifyCopy(source + ".meta", metadataTemporary);
+                        }
+                        File.Move(temporary, destination);
+                        if (hasMetadata) File.Move(metadataTemporary, destination + ".meta");
+                    }
+                    catch
+                    {
+                        if (File.Exists(temporary)) File.Delete(temporary);
+                        if (File.Exists(metadataTemporary)) File.Delete(metadataTemporary);
+                        if (File.Exists(destination)) File.Delete(destination);
+                        if (File.Exists(destination + ".meta")) File.Delete(destination + ".meta");
+                        throw;
+                    }
+                    if (hasMetadata) File.Delete(source + ".meta");
+                    File.Delete(source);
+                }
             }
+        }
+
+        private static void VerifyCopy(string source, string destination)
+        {
+            if (new FileInfo(source).Length != new FileInfo(destination).Length)
+                throw new IOException($"Copy size does not match for {source}.");
+            using var algorithm = SHA256.Create();
+            using var original = File.OpenRead(source);
+            byte[] expected = algorithm.ComputeHash(original);
+            using var copy = File.OpenRead(destination);
+            byte[] actual = algorithm.ComputeHash(copy);
+            if (!expected.SequenceEqual(actual)) throw new IOException($"Copy content does not match for {source}.");
         }
 
         public static string DirectoryFor(ModelSet set)
@@ -44,12 +90,18 @@ namespace KitsuMate.Onnx.Download
             return Path.GetDirectoryName(path).Replace('\\', '/') + "/" + Path.GetFileNameWithoutExtension(path) + " Files";
         }
 
+        // Some filesystems (notably ext4 under the Editor's embedded Mono runtime) round
+        // last-write times to whole seconds, so an exact round-trip comparison can miss
+        // by a fraction of a second even when the copy is up to date.
+        private static readonly TimeSpan TimestampTolerance = TimeSpan.FromSeconds(2);
+
         public static bool Matches(string source, string destination)
         {
             var original = new FileInfo(source);
             var copy = new FileInfo(destination);
-            return original.Exists && copy.Exists && original.Length == copy.Length &&
-                original.LastWriteTimeUtc == copy.LastWriteTimeUtc;
+            if (!original.Exists || !copy.Exists || original.Length != copy.Length) return false;
+            TimeSpan delta = original.LastWriteTimeUtc - copy.LastWriteTimeUtc;
+            return delta < TimestampTolerance && delta > -TimestampTolerance;
         }
 
         public static bool Copy(string source, string destination)
@@ -62,6 +114,7 @@ namespace KitsuMate.Onnx.Download
             {
                 File.Copy(source, temporary, true);
                 File.SetLastWriteTimeUtc(temporary, File.GetLastWriteTimeUtc(source));
+                VerifyCopy(source, temporary);
                 if (File.Exists(destination)) File.Replace(temporary, destination, null);
                 else File.Move(temporary, destination);
             }

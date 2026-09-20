@@ -37,10 +37,13 @@ require no download step. CI verifies the payload against `Dependencies/onnxrunt
 The optional NVIDIA package is assembled separately as a complete release archive;
 do not copy its files into this package or introduce a second platform core.
 
-Windows availability and device discovery validate and load the core from this package's
-resolved native directory before calling ONNX Runtime. Missing DLLs or a core version
-that differs from the managed binding produce a managed error; the backend must not
-fall through to Windows' system ONNX Runtime, which can crash with a newer binding.
+Windows availability and device discovery load the core from this package's
+resolved native directory before calling ONNX Runtime. The Editor validates its
+file version against the managed binding. IL2CPP players skip that check because
+Unity does not support `FileVersionInfo.GetVersionInfo` there; they still load
+the packaged DLL by its explicit path rather than falling through to Windows'
+system copy. The Editor build callback supplies the package's linker rules so
+IL2CPP preserves ONNX Runtime's marshaled API constructors.
 
 TODO: once platform/default provider ABIs warrant independent release cadence, extract
 the logically separated payload groups into dedicated packages without changing the
