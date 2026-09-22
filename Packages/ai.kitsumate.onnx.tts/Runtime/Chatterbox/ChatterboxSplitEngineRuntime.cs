@@ -37,7 +37,11 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
             tokenizer = Tokenizer.FromTokenizerJson(modelSet.Tokenizer.bytes);
             multilingual = modelSet.Tokenizer.text.Contains("\"[ko]\"") ||
                 modelSet.Tokenizer.text.Contains("\"[zh]\"");
-            languagePreprocessor = new LanguagePreprocessor(modelSet.CangjieMapping?.text);
+            languagePreprocessor = new LanguagePreprocessor(
+                modelSet.CangjieMapping?.text,
+                modelSet.JapaneseReadings?.text,
+                modelSet.RussianStress?.text,
+                modelSet.ChineseWords?.text);
         }
 
         protected override void OnLoadBackground(OnnxBackend backend)

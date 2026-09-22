@@ -1,7 +1,7 @@
 using System.IO;
 using KitsuMate.Onnx;
 using NUnit.Framework;
-using UnityEngine;
+using UnityEditor.PackageManager;
 
 namespace KitsuMate.Onnx.Tts.Tests
 {
@@ -30,7 +30,13 @@ namespace KitsuMate.Onnx.Tts.Tests
                     OnnxLightweightMetadataReader.Read(graph).ExternalData[0].Location, long.MaxValue, 1)));
         }
 
-        private static string FixtureGraph() => Path.GetFullPath(Path.Combine(Application.dataPath, "..",
-            "KitsuMateOnnxFixtures", "text-embedding", "all-minilm", "model_q4f16.onnx"));
+        private static string FixtureGraph()
+        {
+            string packagePath = PackageInfo.FindForAssembly(typeof(OnnxExternalDataTests).Assembly)?.resolvedPath;
+            Assert.That(packagePath, Is.Not.Null, "Could not locate the TTS test package.");
+            string graph = Path.Combine(packagePath, "Tests", "Fixtures", "ExternalData", "first.onnx");
+            Assert.That(File.Exists(graph), Is.True, $"Required external-data fixture is missing: {graph}");
+            return graph;
+        }
     }
 }

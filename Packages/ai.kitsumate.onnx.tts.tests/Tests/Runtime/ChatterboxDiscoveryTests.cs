@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using KitsuMate.Onnx;
 using KitsuMate.Onnx.Download;
 using NUnit.Framework;
+using UnityEditor.PackageManager;
 
 namespace KitsuMate.Onnx.Tts.Tests
 {
@@ -54,7 +55,8 @@ namespace KitsuMate.Onnx.Tts.Tests
                 "onnx/conditional_decoder_slim.onnx", "onnx/speech_encoder_slim.onnx",
                 "onnx/embedding_language_model_last.onnx", "onnx/flow_prepare_slim.onnx",
                 "onnx/flow_step_slim.onnx", "onnx/vocoder_slim.onnx",
-                "tokenizer.json", "Cangjie5_TC.json"
+                "tokenizer.json", "Cangjie5_TC.json", "japanese_readings.tsv",
+                "russian_stress.tsv", "chinese_words.txt"
             };
             var snapshot = new HfModelInfo { sha = "revision",
                 siblings = paths.Select(path => new HfSibling { rfilename = path, size = 1 }).ToArray() };
@@ -74,6 +76,9 @@ namespace KitsuMate.Onnx.Tts.Tests
                     Is.EquivalentTo(new[] { "onnx/speech_encoder_slim.onnx" }));
                 Assert.That(splitResult.Artifacts.Keys, Is.EquivalentTo(split.DownloadGraphRoles.Select(role => role.role)));
                 Assert.That(splitResult.CommonFiles.Select(file => file.Role), Contains.Item("cangjie"));
+                Assert.That(splitResult.CommonFiles.Select(file => file.Role), Contains.Item("japanese-readings"));
+                Assert.That(splitResult.CommonFiles.Select(file => file.Role), Contains.Item("russian-stress"));
+                Assert.That(splitResult.CommonFiles.Select(file => file.Role), Contains.Item("chinese-words"));
             }
             finally
             {
@@ -168,9 +173,12 @@ namespace KitsuMate.Onnx.Tts.Tests
         [Test]
         public async Task LayoutUpdateCanRestoreOrCompletePreviousInstallation()
         {
-            string fixture = Path.GetFullPath(Path.Combine(UnityEngine.Application.dataPath, "..",
-                "KitsuMateOnnxFixtures", "text-embedding", "all-minilm"));
-            string fixtureGraph = Path.Combine(fixture, "model_q4f16.onnx");
+            string packagePath = PackageInfo.FindForAssembly(typeof(ChatterboxDiscoveryTests).Assembly)?.resolvedPath;
+            Assert.That(packagePath, Is.Not.Null, "Could not locate the TTS test package.");
+            string fixture = Path.Combine(packagePath, "Tests", "Fixtures", "ExternalData");
+            string fixtureGraph = Path.Combine(fixture, "first.onnx");
+            Assert.That(File.Exists(fixtureGraph), Is.True,
+                $"Required external-data fixture is missing: {fixtureGraph}");
             byte[] graph = File.ReadAllBytes(fixtureGraph);
             string externalData = OnnxLightweightMetadataReader.Read(fixtureGraph).ExternalData
                 .Select(entry => entry.Location).Distinct().Single();
