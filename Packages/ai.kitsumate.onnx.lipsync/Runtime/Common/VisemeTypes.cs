@@ -66,19 +66,21 @@ namespace KitsuMate.Onnx.LipSync
         public float StartTime;
         public float EndTime;
         public float Weight;
+        public float Rms;
         
         public float Duration => EndTime - StartTime;
         
-        public VisemeFrame(Viseme viseme, float startTime, float endTime, float weight = 1f)
+        public VisemeFrame(Viseme viseme, float startTime, float endTime, float weight = 1f, float rms = 0f)
         {
             Viseme = viseme;
             StartTime = startTime;
             EndTime = endTime;
             Weight = weight;
+            Rms = rms;
         }
         
         public override string ToString() => 
-            $"[{StartTime:F3}s - {EndTime:F3}s] {Viseme} ({Weight:F2})";
+            $"[{StartTime:F3}s - {EndTime:F3}s] {Viseme} ({Weight:F2}, rms={Rms:F4})";
     }
     
     /// <summary>
