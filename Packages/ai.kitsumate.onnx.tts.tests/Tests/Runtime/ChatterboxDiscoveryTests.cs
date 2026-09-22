@@ -7,7 +7,6 @@ using System.Threading.Tasks;
 using KitsuMate.Onnx;
 using KitsuMate.Onnx.Download;
 using NUnit.Framework;
-using UnityEditor.PackageManager;
 
 namespace KitsuMate.Onnx.Tts.Tests
 {
@@ -173,16 +172,12 @@ namespace KitsuMate.Onnx.Tts.Tests
         [Test]
         public async Task LayoutUpdateCanRestoreOrCompletePreviousInstallation()
         {
-            string packagePath = PackageInfo.FindForAssembly(typeof(ChatterboxDiscoveryTests).Assembly)?.resolvedPath;
-            Assert.That(packagePath, Is.Not.Null, "Could not locate the TTS test package.");
-            string fixture = Path.Combine(packagePath, "Tests", "Fixtures", "ExternalData");
-            string fixtureGraph = Path.Combine(fixture, "first.onnx");
-            Assert.That(File.Exists(fixtureGraph), Is.True,
-                $"Required external-data fixture is missing: {fixtureGraph}");
+            using var fixture = ExternalDataFixture.Create();
+            string fixtureGraph = fixture.GraphPath;
             byte[] graph = File.ReadAllBytes(fixtureGraph);
             string externalData = OnnxLightweightMetadataReader.Read(fixtureGraph).ExternalData
                 .Select(entry => entry.Location).Distinct().Single();
-            byte[] weights = File.ReadAllBytes(Path.Combine(fixture, externalData));
+            byte[] weights = File.ReadAllBytes(Path.Combine(fixture.DirectoryPath, externalData));
             string root = Path.Combine(Path.GetTempPath(), "chatterbox-layout-" + Guid.NewGuid().ToString("N"));
             var store = new ModelInstallationStore(root, "model");
             var artifacts = new Dictionary<string, List<DiscoveredArtifact>>(StringComparer.Ordinal);
