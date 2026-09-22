@@ -482,7 +482,8 @@ namespace KitsuMate.Onnx.LipSync.Uni2005
                     viseme,
                     phoneme.StartTime,
                     phoneme.EndTime,
-                    phoneme.Probability
+                    phoneme.Probability,
+                    phoneme.Rms
                 ));
             }
             
