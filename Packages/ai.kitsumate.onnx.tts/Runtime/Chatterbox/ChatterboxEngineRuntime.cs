@@ -76,7 +76,10 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
             _isMultilingual = DetectMultilingual(_modelSet.Tokenizer.text);
             _displayName = _modelSet.DisplayName;
             _languagePreprocessor = new LanguagePreprocessor(
-                _modelSet.CangjieMapping != null ? _modelSet.CangjieMapping.text : null);
+                _modelSet.CangjieMapping?.text,
+                _modelSet.JapaneseReadings?.text,
+                _modelSet.RussianStress?.text,
+                _modelSet.ChineseWords?.text);
         }
 
         protected override void OnLoadBackground(OnnxBackend backend)

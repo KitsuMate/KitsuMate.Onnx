@@ -370,7 +370,10 @@ namespace KitsuMate.Onnx.Download
                 (Path: "default_voice.wav", Role: "voice"),
                 (Path: "cangjie.json", Role: "cangjie"),
                 (Path: "cangjie_mapping.json", Role: "cangjie"),
-                (Path: "Cangjie5_TC.json", Role: "cangjie")
+                (Path: "Cangjie5_TC.json", Role: "cangjie"),
+                (Path: "japanese_readings.tsv", Role: "japanese-readings"),
+                (Path: "russian_stress.tsv", Role: "russian-stress"),
+                (Path: "chinese_words.txt", Role: "chinese-words")
             })
             {
                 if (!byPath.TryGetValue(item.Path, out HfSibling sibling)) continue;

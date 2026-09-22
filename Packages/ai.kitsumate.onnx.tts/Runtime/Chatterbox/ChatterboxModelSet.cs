@@ -16,11 +16,13 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
             new ModelGraphRole("language-model", "language_model"),
             new ModelGraphRole("conditional-decoder", "conditional_decoder")
         };
-        public override string[] DownloadCompanionRoles => new[] { "tokenizer", "cangjie", "voice" };
+        public override string[] DownloadCompanionRoles => new[]
+            { "tokenizer", "cangjie", "japanese-readings", "russian-stress", "chinese-words", "voice" };
         public override string[] DownloadRequiredCompanionRoles => new[] { "tokenizer" };
         public override bool ValidateDownloadedBinding => true;
 
-        public override TextFileReference[] GetAllTextFiles() => new[] { _tokenizer, _cangjieMapping };
+        public override TextFileReference[] GetAllTextFiles() => new[]
+            { _tokenizer, _cangjieMapping, _japaneseReadings, _russianStress, _chineseWords };
 
         public override System.Collections.Generic.IEnumerable<(string Family, string Repository)> RepositorySuggestions
         {
@@ -40,6 +42,9 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
             installation.ConfigureModel(_conditionalDecoderSource, "conditional-decoder");
             _tokenizer = resources.ReadText(installation, "tokenizer");
             _cangjieMapping = resources.ReadText(installation, "cangjie", optional: true);
+            _japaneseReadings = resources.ReadText(installation, "japanese-readings", optional: true);
+            _russianStress = resources.ReadText(installation, "russian-stress", optional: true);
+            _chineseWords = resources.ReadText(installation, "chinese-words", optional: true);
             if (installation.Files.Any(file => file.Role == "voice"))
                 _defaultVoice = await resources.ReadAudioAsync(installation, "voice", cancellationToken);
         }
@@ -50,6 +55,9 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
         [SerializeField] private OnnxModelReference _conditionalDecoderSource = new();
         [SerializeField] private TextFileReference _tokenizer = new();
         [SerializeField] private TextFileReference _cangjieMapping = new();
+        [SerializeField] private TextFileReference _japaneseReadings = new();
+        [SerializeField] private TextFileReference _russianStress = new();
+        [SerializeField] private TextFileReference _chineseWords = new();
         [SerializeField] private AudioClip _defaultVoice;
         [SerializeField] private ChatterboxGenerationConfig _generation = new();
         public ChatterboxGenerationConfig Generation => _generation;
@@ -60,6 +68,9 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
         public OnnxModelReference ConditionalDecoder => _conditionalDecoderSource;
         public TextFileReference Tokenizer => _tokenizer?.IsAvailable == true ? _tokenizer : null;
         public TextFileReference CangjieMapping => _cangjieMapping?.IsAvailable == true ? _cangjieMapping : null;
+        public TextFileReference JapaneseReadings => _japaneseReadings?.IsAvailable == true ? _japaneseReadings : null;
+        public TextFileReference RussianStress => _russianStress?.IsAvailable == true ? _russianStress : null;
+        public TextFileReference ChineseWords => _chineseWords?.IsAvailable == true ? _chineseWords : null;
         public AudioClip DefaultVoice => _defaultVoice;
         public override string DisplayName => string.IsNullOrWhiteSpace(name) ? "Chatterbox" : name;
         public override bool IsComplete => _speechEncoderSource.IsAvailable && _embedTokensSource.IsAvailable &&
@@ -80,21 +91,29 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
         }
 
 #if UNITY_EDITOR
-        public void SetFiles(TextFileReference tokenizer, TextFileReference cangjieMapping, AudioClip defaultVoice)
+        public void SetFiles(TextFileReference tokenizer, TextFileReference cangjieMapping,
+            TextFileReference japaneseReadings, TextFileReference russianStress, TextFileReference chineseWords,
+            AudioClip defaultVoice)
         {
             _tokenizer = tokenizer;
             _cangjieMapping = cangjieMapping;
+            _japaneseReadings = japaneseReadings;
+            _russianStress = russianStress;
+            _chineseWords = chineseWords;
             _defaultVoice = defaultVoice;
             UnityEditor.EditorUtility.SetDirty(this);
         }
 
         public void SetModels(OnnxModelAsset speechEncoder, OnnxModelAsset embedTokens, OnnxModelAsset languageModel,
-            OnnxModelAsset conditionalDecoder, TextFileReference tokenizer, TextFileReference cangjieMapping, AudioClip defaultVoice,
+            OnnxModelAsset conditionalDecoder, TextFileReference tokenizer, TextFileReference cangjieMapping,
+            TextFileReference japaneseReadings, TextFileReference russianStress, TextFileReference chineseWords,
+            AudioClip defaultVoice,
             string modelIdentifier = null)
         {
             _speechEncoderSource.ConfigureAsset(speechEncoder); _embedTokensSource.ConfigureAsset(embedTokens);
             _languageModelSource.ConfigureAsset(languageModel); _conditionalDecoderSource.ConfigureAsset(conditionalDecoder);
-            _tokenizer = tokenizer; _cangjieMapping = cangjieMapping; _defaultVoice = defaultVoice;
+            _tokenizer = tokenizer; _cangjieMapping = cangjieMapping; _japaneseReadings = japaneseReadings;
+            _russianStress = russianStress; _chineseWords = chineseWords; _defaultVoice = defaultVoice;
             UnityEditor.EditorUtility.SetDirty(this);
         }
 

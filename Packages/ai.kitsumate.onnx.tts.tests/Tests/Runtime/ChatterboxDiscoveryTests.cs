@@ -54,7 +54,8 @@ namespace KitsuMate.Onnx.Tts.Tests
                 "onnx/conditional_decoder_slim.onnx", "onnx/speech_encoder_slim.onnx",
                 "onnx/embedding_language_model_last.onnx", "onnx/flow_prepare_slim.onnx",
                 "onnx/flow_step_slim.onnx", "onnx/vocoder_slim.onnx",
-                "tokenizer.json", "Cangjie5_TC.json"
+                "tokenizer.json", "Cangjie5_TC.json", "japanese_readings.tsv",
+                "russian_stress.tsv", "chinese_words.txt"
             };
             var snapshot = new HfModelInfo { sha = "revision",
                 siblings = paths.Select(path => new HfSibling { rfilename = path, size = 1 }).ToArray() };
@@ -74,6 +75,9 @@ namespace KitsuMate.Onnx.Tts.Tests
                     Is.EquivalentTo(new[] { "onnx/speech_encoder_slim.onnx" }));
                 Assert.That(splitResult.Artifacts.Keys, Is.EquivalentTo(split.DownloadGraphRoles.Select(role => role.role)));
                 Assert.That(splitResult.CommonFiles.Select(file => file.Role), Contains.Item("cangjie"));
+                Assert.That(splitResult.CommonFiles.Select(file => file.Role), Contains.Item("japanese-readings"));
+                Assert.That(splitResult.CommonFiles.Select(file => file.Role), Contains.Item("russian-stress"));
+                Assert.That(splitResult.CommonFiles.Select(file => file.Role), Contains.Item("chinese-words"));
             }
             finally
             {
@@ -168,13 +172,12 @@ namespace KitsuMate.Onnx.Tts.Tests
         [Test]
         public async Task LayoutUpdateCanRestoreOrCompletePreviousInstallation()
         {
-            string fixture = Path.GetFullPath(Path.Combine(UnityEngine.Application.dataPath, "..",
-                "KitsuMateOnnxFixtures", "text-embedding", "all-minilm"));
-            string fixtureGraph = Path.Combine(fixture, "model_q4f16.onnx");
+            using var fixture = ExternalDataFixture.Create();
+            string fixtureGraph = fixture.GraphPath;
             byte[] graph = File.ReadAllBytes(fixtureGraph);
             string externalData = OnnxLightweightMetadataReader.Read(fixtureGraph).ExternalData
                 .Select(entry => entry.Location).Distinct().Single();
-            byte[] weights = File.ReadAllBytes(Path.Combine(fixture, externalData));
+            byte[] weights = File.ReadAllBytes(Path.Combine(fixture.DirectoryPath, externalData));
             string root = Path.Combine(Path.GetTempPath(), "chatterbox-layout-" + Guid.NewGuid().ToString("N"));
             var store = new ModelInstallationStore(root, "model");
             var artifacts = new Dictionary<string, List<DiscoveredArtifact>>(StringComparer.Ordinal);

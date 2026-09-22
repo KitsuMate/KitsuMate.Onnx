@@ -18,6 +18,9 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
         [SerializeField] private OnnxModelReference vocoder = new();
         [SerializeField] private TextFileReference tokenizer = new();
         [SerializeField] private TextFileReference cangjieMapping = new();
+        [SerializeField] private TextFileReference japaneseReadings = new();
+        [SerializeField] private TextFileReference russianStress = new();
+        [SerializeField] private TextFileReference chineseWords = new();
         [SerializeField] private AudioClip defaultVoice;
         [SerializeField] private ChatterboxGenerationConfig generation = new();
         [SerializeField, Range(1, 20)] private int flowSteps = 6;
@@ -33,7 +36,8 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
         };
 
         public override IReadOnlyList<ModelGraphRole> DownloadGraphRoles => Roles;
-        public override string[] DownloadCompanionRoles => new[] { "tokenizer", "cangjie", "voice" };
+        public override string[] DownloadCompanionRoles => new[]
+            { "tokenizer", "cangjie", "japanese-readings", "russian-stress", "chinese-words", "voice" };
         public override string[] DownloadRequiredCompanionRoles => new[] { "tokenizer" };
         public override bool ValidateDownloadedBinding => true;
         public override IEnumerable<(string Family, string Repository)> RepositorySuggestions
@@ -48,6 +52,9 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
         public OnnxModelReference Vocoder => vocoder;
         public TextFileReference Tokenizer => tokenizer?.IsAvailable == true ? tokenizer : null;
         public TextFileReference CangjieMapping => cangjieMapping?.IsAvailable == true ? cangjieMapping : null;
+        public TextFileReference JapaneseReadings => japaneseReadings?.IsAvailable == true ? japaneseReadings : null;
+        public TextFileReference RussianStress => russianStress?.IsAvailable == true ? russianStress : null;
+        public TextFileReference ChineseWords => chineseWords?.IsAvailable == true ? chineseWords : null;
         public AudioClip DefaultVoice => defaultVoice;
         public ChatterboxGenerationConfig Generation => generation;
         public int FlowSteps => flowSteps;
@@ -57,7 +64,8 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
             flowPrepare.IsAvailable && flowStep.IsAvailable && vocoder.IsAvailable && Tokenizer != null;
         public override IOnnxModelSource[] GetAllModels() =>
             new IOnnxModelSource[] { speechEncoder, embeddingLanguageModel, flowPrepare, flowStep, vocoder };
-        public override TextFileReference[] GetAllTextFiles() => new[] { tokenizer, cangjieMapping };
+        public override TextFileReference[] GetAllTextFiles() => new[]
+            { tokenizer, cangjieMapping, japaneseReadings, russianStress, chineseWords };
 
         protected override async Task BindInstallationAsync(DownloadedModel installation, ResolvedModelSet resources,
             CancellationToken cancellationToken)
@@ -69,6 +77,9 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
             installation.ConfigureModel(vocoder, "vocoder");
             tokenizer = resources.ReadText(installation, "tokenizer");
             cangjieMapping = resources.ReadText(installation, "cangjie", optional: true);
+            japaneseReadings = resources.ReadText(installation, "japanese-readings", optional: true);
+            russianStress = resources.ReadText(installation, "russian-stress", optional: true);
+            chineseWords = resources.ReadText(installation, "chinese-words", optional: true);
             if (installation.Files.Any(file => file.Role == "voice"))
                 defaultVoice = await resources.ReadAudioAsync(installation, "voice", cancellationToken);
         }

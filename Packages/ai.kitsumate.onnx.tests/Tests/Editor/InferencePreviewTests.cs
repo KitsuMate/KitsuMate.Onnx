@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -6,6 +7,7 @@ using KitsuMate.Onnx.Editor;
 using NUnit.Framework;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.TestTools;
 
 namespace KitsuMate.Onnx.Tests
 {
@@ -75,7 +77,7 @@ namespace KitsuMate.Onnx.Tests
             Assert.IsTrue(engine.Last.Disposed);
             Assert.IsFalse(session.IsBusy);
         }
-        [Test] public async Task CancelDuringLoadAllowsRetry()
+        [UnityTest] public IEnumerator CancelDuringLoadAllowsRetry()
         {
             var gate = new TaskCompletionSource<bool>();
             async Task<InferenceEngineRuntime<int, int>> LateLoad(CancellationToken token)
@@ -85,9 +87,18 @@ namespace KitsuMate.Onnx.Tests
             }
             var running = session.RunAsync("a", LateLoad, Input);
             session.Cancel(); gate.SetResult(true);
-            try { await running; Assert.Fail(); } catch (OperationCanceledException) { }
+            for (var frame = 0; frame < 100 && !running.IsCompleted; frame++)
+                yield return null;
+            Assert.That(running.IsCompleted, Is.True, "Cancelled load did not finish within 100 frames.");
+            Assert.That(running.IsCanceled, Is.True, running.Exception?.ToString());
             Assert.IsTrue(engine.Last.Disposed);
-            Assert.AreEqual(8, await session.RunAsync("a", Load, Input));
+            var retry = session.RunAsync("a", Load, Input);
+            for (var frame = 0; frame < 100 && !retry.IsCompleted; frame++)
+                yield return null;
+            Assert.That(retry.IsCompleted, Is.True, "Retry did not finish within 100 frames.");
+            Assert.That(retry.IsFaulted, Is.False, retry.Exception?.ToString());
+            Assert.That(retry.IsCanceled, Is.False);
+            Assert.AreEqual(8, retry.Result);
         }
         [Test] public async Task CloseDuringRunWaitsForOperationCleanup()
         {

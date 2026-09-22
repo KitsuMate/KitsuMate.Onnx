@@ -25,8 +25,10 @@ requests without either fail before inference.
 V3 preserves text case and uses NFKD normalization. The converted tokenizer supplies
 the embedding graph's control tokens; the runtime inserts `[SPACE]` before encoding.
 The bundled tokenizer includes the Whitespace pre-tokenizer correction, tested against
-Python tokenizers reference IDs. Russian automatic stress insertion and upstream's
-Chinese word segmentation are not implemented; Chinese Cangjie character conversion is available.
+Python tokenizers reference IDs. Optional model companions provide longest-match Japanese
+kanji readings, an unambiguous Russian wordform stress table, and maximum-match Chinese
+word segmentation before Cangjie conversion. Unknown readings and words remain unchanged;
+the dictionary segmenter is deterministic but not bit-identical to pkuseg's CRF.
 Use a prepared, clean reference recording; the exported default voice is prepared by
 the upstream six-second VAD and fade procedure, then normalized below +/-1 for Unity
 PCM import. Runtime reference preprocessing does
