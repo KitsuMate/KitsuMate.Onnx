@@ -23,7 +23,6 @@ __pycache__/
 *.opendb
 *.VC.db
 *.onnx
-!Packages/ai.kitsumate.onnx.tts.tests/Tests/Fixtures/ExternalData/first.onnx
 *.ort
 *.gguf
 *.dll
