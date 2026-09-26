@@ -498,7 +498,7 @@ namespace KitsuMate.Onnx.Motion.Tests
         [Category("CharacterMotionProjectIntegration")]
         public void CharacterMotion_CompilesCapturedPoseWithoutEditorSkeleton()
         {
-            const string prefabPath = "Assets/Bundles/Nyx/Prefabs/Nyx.prefab";
+            const string prefabPath = "Assets/Content/Nyx/Prefabs/Nyx.prefab";
             GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
             if (prefab == null) Assert.Ignore($"Project Humanoid fixture not found at {prefabPath}.");
             GameObject character = null;
@@ -573,7 +573,7 @@ namespace KitsuMate.Onnx.Motion.Tests
         [Category("CharacterMotionProjectIntegration")]
         public void EditorSkeleton_CapturesPoseAndIsEditorOnly()
         {
-            const string prefabPath = "Assets/Bundles/Nyx/Prefabs/Nyx.prefab";
+            const string prefabPath = "Assets/Content/Nyx/Prefabs/Nyx.prefab";
             GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
             if (prefab == null) Assert.Ignore($"Project Humanoid fixture not found at {prefabPath}.");
             GameObject character = null, motionObject = null;
@@ -635,7 +635,7 @@ namespace KitsuMate.Onnx.Motion.Tests
         public void EffectorRepair_RecoversNamedControlAndConsolidatesGeneratedDuplicates()
         {
             const string packageFixture = "Packages/ai.kitsumate.onnx.motion.tests/Tests/PlayMode/Resources/XBot.fbx";
-            const string projectFixture = "Assets/Bundles/Nyx/Prefabs/Nyx.prefab";
+            const string projectFixture = "Assets/Content/Nyx/Prefabs/Nyx.prefab";
             GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(packageFixture) ??
                                 AssetDatabase.LoadAssetAtPath<GameObject>(projectFixture);
             if (prefab == null) Assert.Ignore($"Humanoid fixture not found at {packageFixture} or {projectFixture}.");
@@ -761,7 +761,7 @@ namespace KitsuMate.Onnx.Motion.Tests
         [Category("CharacterMotionProjectIntegration")]
         public void MotionPreview_SamplesOnlyGuideAndKeepsAvatarSignatureStable()
         {
-            const string prefabPath = "Assets/Bundles/Nyx/Prefabs/Nyx.prefab";
+            const string prefabPath = "Assets/Content/Nyx/Prefabs/Nyx.prefab";
             GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
             if (prefab == null) Assert.Ignore($"Project Humanoid fixture not found at {prefabPath}.");
             GameObject character = null, motionObject = null;
@@ -964,7 +964,7 @@ namespace KitsuMate.Onnx.Motion.Tests
         [Category("CharacterMotionProjectIntegration")]
         public void ClipBaker_ConvertsGeneratedHipsIntoGroundedAnimatorRoot()
         {
-            const string prefabPath = "Assets/Bundles/Nyx/Prefabs/Nyx.prefab";
+            const string prefabPath = "Assets/Content/Nyx/Prefabs/Nyx.prefab";
             GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
             if (prefab == null) Assert.Ignore($"Project Humanoid fixture not found at {prefabPath}.");
             GameObject character = null, motionObject = null;
