@@ -50,7 +50,7 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
         private EntityId _cachedVoiceClipId;
 
         // Voice encoder cache (LRU)
-        private VoiceEncoderCache _voiceCache;
+        private ChatterboxVoiceCache _voiceCache;
 
         private bool _usesModernInputs;
         private bool _isV3;
@@ -127,7 +127,7 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
             }
 
             // Initialize voice encoder cache
-            _voiceCache = _voiceCacheCapacity > 0 ? new VoiceEncoderCache(_voiceCacheCapacity) : null;
+            _voiceCache = _voiceCacheCapacity > 0 ? new ChatterboxVoiceCache(_voiceCacheCapacity) : null;
 
             _usesModernInputs = !_embedTokensSession.InputNames.Contains("position_ids");
             _isV3 = _embedTokensSession.InputNames.Contains("text_conditioning");
@@ -247,7 +247,7 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
             }
 
             // 4. Get speech encoder outputs (cached or computed)
-            VoiceCacheEntry voiceEntry;
+            ChatterboxVoiceConditioning voiceEntry;
             if (_voiceCache != null && _voiceCache.TryGet(_cachedVoiceClipId, out voiceEntry))
             {
                 if (VerboseLogging)
@@ -261,13 +261,11 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
                 };
 
                 var speechEncoderOutputs = _speechEncoderSession.Run(speechEncoderInputs);
-                voiceEntry = new VoiceCacheEntry
-                {
-                    CondEmb = GetOutput(speechEncoderOutputs, "audio_features", 0),
-                    PromptToken = GetOutput(speechEncoderOutputs, "audio_tokens", 1),
-                    RefXVector = GetOutput(speechEncoderOutputs, "speaker_embeddings", 2),
-                    PromptFeat = GetOutput(speechEncoderOutputs, "speaker_features", 3),
-                };
+                voiceEntry = new ChatterboxVoiceConditioning(
+                    GetOutput(speechEncoderOutputs, "audio_features", 0),
+                    GetOutput(speechEncoderOutputs, "audio_tokens", 1),
+                    GetOutput(speechEncoderOutputs, "speaker_embeddings", 2),
+                    GetOutput(speechEncoderOutputs, "speaker_features", 3));
                 _voiceCache?.Put(_cachedVoiceClipId, voiceEntry);
 
                 if (VerboseLogging)
@@ -289,7 +287,7 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
             var generatedTokens = new List<int>(maxNewTokens + 1) { ChatterboxConstants.StartSpeechToken };
 
             int kvCount = _kvPastNames.Length;
-            int kvHeads = Math.Max(1, voiceEntry.CondEmb.Shape[2] / ChatterboxConstants.HeadDim);
+            int kvHeads = Math.Max(1, voiceEntry.Features.Shape[2] / ChatterboxConstants.HeadDim);
 
             OnnxTensor exaggerationTensor = _embedTokensSession.InputNames.Contains("exaggeration")
                 ? OnnxTensor.FromArray(new[] { exaggeration }, new[] { 1 })
@@ -398,7 +396,7 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
                 OnnxTensor finalEmbeds;
                 if (step == 0)
                 {
-                    finalEmbeds = ConcatEmbeddings(voiceEntry.CondEmb, inputsEmbeds);
+                    finalEmbeds = ConcatEmbeddings(voiceEntry.Features, inputsEmbeds);
                     initialSeqLen = finalEmbeds.Shape[1];
                     attentionMask = new long[initialSeqLen + maxNewTokens];
                     for (int i = 0; i < initialSeqLen; i++)
@@ -573,7 +571,7 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
                     .Where(token => token >= 0 && token < ChatterboxConstants.StartSpeechToken)).ToList();
                 if (stopped) generatedTokens.Add(ChatterboxConstants.StopSpeechToken);
             }
-            var promptTokenData = voiceEntry.PromptToken.AsLongArray();
+            var promptTokenData = voiceEntry.Tokens.AsLongArray();
             int genStart = 1; // skip START_SPEECH_TOKEN
             int genEnd = generatedTokens.Count;
             if (generatedTokens[genEnd - 1] == ChatterboxConstants.StopSpeechToken)
@@ -594,8 +592,8 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
             var decoderInputs = new Dictionary<string, OnnxTensor>
             {
                 ["speech_tokens"] = OnnxTensor.FromArray(speechTokenIds, new[] { 1, speechCount }),
-                ["speaker_embeddings"] = voiceEntry.RefXVector,
-                ["speaker_features"] = voiceEntry.PromptFeat
+                ["speaker_embeddings"] = voiceEntry.Speaker,
+                ["speaker_features"] = voiceEntry.SpeakerFeatures
             };
 
             var decoderOutputs = _conditionalDecoderSession.Run(decoderInputs);
@@ -679,23 +677,31 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
             return OnnxTensor.FromArray(result, new[] { batch, seq1 + seq2, hidden });
         }
 
-        /// <summary>Reads, downmixes, and resamples a reference clip for Chatterbox encoders.</summary>
+        /// <summary>Reads, downmixes, trims, and resamples a reference clip for Chatterbox encoders.</summary>
         internal static float[] PrepareVoiceSamples(AudioClip clip)
         {
             if (clip == null) throw new ArgumentNullException(nameof(clip));
             if (clip.samples <= 0 || clip.channels <= 0 || clip.frequency <= 0)
                 throw new ArgumentException("The reference voice has no usable audio samples.", nameof(clip));
-            var interleaved = new float[checked(clip.samples * clip.channels)];
+            // The conditioning encoders were exported against a fixed reference length. Keeping the
+            // leading window matches the reference pipeline and keeps encoding cost independent of
+            // how long the assigned clip happens to be.
+            int frames = Math.Min(clip.samples, ChatterboxConstants.ReferenceSeconds * clip.frequency);
+            var interleaved = new float[checked(frames * clip.channels)];
             if (!clip.GetData(interleaved, 0))
                 throw new InvalidOperationException("Could not read reference voice samples.");
-            var mono = new float[clip.samples];
-            for (int sample = 0; sample < mono.Length; sample++)
+            var mono = new float[frames];
+            for (int sample = 0; sample < frames; sample++)
                 for (int channel = 0; channel < clip.channels; channel++)
                     mono[sample] += interleaved[sample * clip.channels + channel] / clip.channels;
             return Resample(mono, clip.frequency, ChatterboxConstants.SampleRate);
         }
 
-        /// <summary>Linear interpolation resampling.</summary>
+        /// <summary>
+        /// Resamples to the encoder rate. Downsampling averages every source sample that falls in an
+        /// output sample's span, because plain interpolation would fold the discarded high frequencies
+        /// back into the band and change the cloned voice. Upsampling interpolates.
+        /// </summary>
         private static float[] Resample(float[] samples, int srcRate, int dstRate)
         {
             if (srcRate == dstRate) return samples;
@@ -705,6 +711,20 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
             if (newLength == 0)
                 throw new ArgumentException("The reference voice is too short after resampling.", nameof(samples));
             var result = new float[newLength];
+
+            if (srcRate > dstRate)
+            {
+                for (int i = 0; i < newLength; i++)
+                {
+                    int start = (int)(i * ratio);
+                    int end = Math.Min((int)((i + 1) * ratio), samples.Length);
+                    if (end <= start) end = Math.Min(start + 1, samples.Length);
+                    double sum = 0;
+                    for (int source = start; source < end; source++) sum += samples[source];
+                    result[i] = (float)(sum / (end - start));
+                }
+                return result;
+            }
 
             for (int i = 0; i < newLength; i++)
             {
@@ -721,84 +741,5 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
             return result;
         }
 
-        #region Voice Encoder Cache
-
-        private struct VoiceCacheEntry
-        {
-            public OnnxTensor CondEmb;
-            public OnnxTensor PromptToken;
-            public OnnxTensor RefXVector;
-            public OnnxTensor PromptFeat;
-        }
-
-        /// <summary>
-        /// LRU cache for speech encoder outputs, keyed by AudioClip EntityId.
-        /// </summary>
-        private class VoiceEncoderCache : IDisposable
-        {
-            private readonly int _capacity;
-            private readonly LinkedList<(EntityId key, VoiceCacheEntry entry)> _list = new();
-            private readonly Dictionary<EntityId, LinkedListNode<(EntityId key, VoiceCacheEntry entry)>> _map = new();
-
-            public VoiceEncoderCache(int capacity)
-            {
-                _capacity = Math.Max(1, capacity);
-            }
-
-            public bool Contains(EntityId clipId) => _map.ContainsKey(clipId);
-
-            public bool TryGet(EntityId clipId, out VoiceCacheEntry entry)
-            {
-                if (_map.TryGetValue(clipId, out var node))
-                {
-                    // Move to front (most recently used)
-                    _list.Remove(node);
-                    _list.AddFirst(node);
-                    entry = node.Value.entry;
-                    return true;
-                }
-                entry = default;
-                return false;
-            }
-
-            public void Put(EntityId clipId, VoiceCacheEntry entry)
-            {
-                if (_map.TryGetValue(clipId, out var existing))
-                {
-                    DisposeEntry(existing.Value.entry);
-                    _list.Remove(existing);
-                    _map.Remove(clipId);
-                }
-                else if (_map.Count >= _capacity)
-                {
-                    // Evict least recently used
-                    var last = _list.Last;
-                    DisposeEntry(last.Value.entry);
-                    _map.Remove(last.Value.key);
-                    _list.RemoveLast();
-                }
-
-                var node = _list.AddFirst((clipId, entry));
-                _map[clipId] = node;
-            }
-
-            public void Dispose()
-            {
-                foreach (var item in _list)
-                    DisposeEntry(item.entry);
-                _list.Clear();
-                _map.Clear();
-            }
-
-            private static void DisposeEntry(VoiceCacheEntry entry)
-            {
-                entry.CondEmb?.Dispose();
-                entry.PromptToken?.Dispose();
-                entry.RefXVector?.Dispose();
-                entry.PromptFeat?.Dispose();
-            }
-        }
-
-        #endregion
     }
 }

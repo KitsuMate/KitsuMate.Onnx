@@ -184,6 +184,53 @@ namespace KitsuMate.Onnx.Tests
             finally { UnityEngine.Object.DestroyImmediate(backend); }
         }
 
+        [TestCase(OnnxExecutionProvider.Cpu)]
+        [TestCase(OnnxExecutionProvider.WebGpu)]
+        [Category("Integration")]
+        public void BoundRun_UpdatesStateInPlaceAndReplaysCapturedGraph(OnnxExecutionProvider provider)
+        {
+            if (!OnnxRuntimeProviderRegistry.TryGet(provider, out var module) || !module.Supports(Application.platform))
+                Assert.Ignore("Provider is not supported on this platform.");
+            var backend = ScriptableObject.CreateInstance<OnnxRuntimeBackend>();
+            try
+            {
+                backend.SetProviderOrder(provider);
+                // Opset 20: state_out = state_in + x over two floats.
+                byte[] model = Convert.FromBase64String("CAk6bQodCghzdGF0ZV9pbgoBeBIJc3RhdGVfb3V0IgNBZGQSCmFjY3VtdWxhdGVaFgoIc3RhdGVfaW4SCgoICAESBAoCCAJaDwoBeBIKCggIARIECgIIAmIXCglzdGF0ZV9vdXQSCgoICAESBAoCCAJCBAoAEBQ=");
+                IOnnxSession session;
+                try { session = backend.CreateSession(model, new OnnxSessionOptions { EnableGraphCapture = true }); }
+                catch (OnnxProviderUnavailableException ex) when (IsMissingHardwareAdapter(ex))
+                {
+                    Assert.Ignore($"No {provider} adapter is available in this environment.");
+                    return;
+                }
+                using (session)
+                {
+                    var device = (IOnnxDeviceSession)session;
+                    using IDeviceTensor state = device.CreateDeviceTensor("state", OnnxTensorElementType.Float, new[] { 2 });
+                    using IDeviceTensor step = device.CreateDeviceTensor("step", OnnxTensorElementType.Float, new[] { 2 });
+                    using (var zeros = OnnxTensor.FromArray(new[] { 0f, 0f }, new[] { 2 })) state.CopyFrom(zeros);
+                    var inputs = new System.Collections.Generic.Dictionary<string, IDeviceTensor>
+                        { ["state_in"] = state, ["x"] = step };
+                    var outputs = new System.Collections.Generic.Dictionary<string, IDeviceTensor> { ["state_out"] = state };
+                    // Graph 0 is recorded on its first run and replayed afterwards on capture-capable
+                    // providers; each replay must still see the step value written just before it.
+                    for (int run = 1; run <= 3; run++)
+                    {
+                        using (var value = OnnxTensor.FromArray(new[] { run, 10f * run }, new[] { 2 })) step.CopyFrom(value);
+                        device.RunBound(null, inputs, outputs, graphId: 0);
+                    }
+                    // An uncaptured run with a host input still updates the same state.
+                    device.RunBound(new[] { new OnnxNamedValue("x", OnnxTensor.FromArray(new[] { 1f, 1f }, new[] { 2 })) },
+                        new System.Collections.Generic.Dictionary<string, IDeviceTensor> { ["state_in"] = state }, outputs);
+                    using OnnxTensor result = state.ToCpu();
+                    Assert.That(result.AsFloatArray(), Is.EqualTo(new[] { 7f, 61f }));
+                    Assert.That(session.Diagnostics.InitializedPrimaryProvider, Is.EqualTo(provider));
+                }
+            }
+            finally { UnityEngine.Object.DestroyImmediate(backend); }
+        }
+
         private static bool IsMissingHardwareAdapter(OnnxProviderUnavailableException ex) =>
             ex.ToString().IndexOf("adapter", StringComparison.OrdinalIgnoreCase) >= 0;
 

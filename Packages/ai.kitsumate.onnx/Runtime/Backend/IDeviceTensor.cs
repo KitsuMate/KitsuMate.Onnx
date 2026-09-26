@@ -18,6 +18,12 @@ namespace KitsuMate.Onnx
         /// read outputs to CPU during RunOnDevice to avoid an extra transfer here.
         /// </summary>
         OnnxTensor ToCpu();
+
+        /// <summary>
+        /// Overwrites this tensor's contents with <paramref name="source"/>, keeping its storage.
+        /// The source must have the same element type and element count.
+        /// </summary>
+        void CopyFrom(OnnxTensor source);
     }
 
     /// <summary>
@@ -36,6 +42,14 @@ namespace KitsuMate.Onnx
         }
 
         public OnnxTensor ToCpu() => _tensor;
+
+        public void CopyFrom(OnnxTensor source)
+        {
+            if (source == null) throw new ArgumentNullException(nameof(source));
+            if (source.ElementType != _tensor.ElementType || source.Length != _tensor.Length)
+                throw new ArgumentException($"Cannot copy into device tensor '{Name}': type or size differs.", nameof(source));
+            Array.Copy(source.Data, _tensor.Data, source.Length);
+        }
 
         public void Dispose()
         {

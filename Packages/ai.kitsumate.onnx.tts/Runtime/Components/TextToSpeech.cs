@@ -16,7 +16,7 @@ namespace KitsuMate.Onnx.Tts
         [SerializeField, Min(0.01f)] private float speed = 1f;
         [SerializeField, Min(0f)] private float durationSeconds;
         [SerializeField, Range(0f, 1f)] private float exaggeration = 0.5f;
-        [SerializeField] private int maxNewTokens = 256;
+        [SerializeField] private int maxNewTokens = 500;
         [SerializeField] private float repetitionPenalty = 1.2f;
         [SerializeField] private AudioSource audioSource;
         [SerializeField] private bool autoPlay = true;

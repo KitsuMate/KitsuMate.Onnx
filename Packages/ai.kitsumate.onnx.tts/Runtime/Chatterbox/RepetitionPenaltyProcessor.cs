@@ -12,6 +12,11 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
     {
         private readonly float _penalty;
 
+        // Marks the tokens already penalized in the current Apply call. A stamp per token
+        // avoids clearing the array between steps, which the generation loop runs often.
+        private int[] _stamps = Array.Empty<int>();
+        private int _call;
+
         /// <param name="penalty">
         /// Penalty factor. Values > 1.0 discourage repetition; values &lt; 1.0 encourage it.
         /// Typical value: 1.2.
@@ -24,16 +29,22 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
         }
 
         /// <summary>
-        /// Applies repetition penalty to the logits in-place.
+        /// Applies repetition penalty to the logits in-place. A token that occurs several times
+        /// in the history is penalized once, matching the reference scatter-based implementation.
         /// </summary>
         /// <param name="generatedTokens">All tokens generated so far (flattened, single batch).</param>
         /// <param name="logits">Logits array for the current step (modified in-place).</param>
         public void Apply(IReadOnlyList<int> generatedTokens, float[] logits)
         {
+            if (_stamps.Length < logits.Length) _stamps = new int[logits.Length];
+            int call = ++_call;
+
             for (int i = 0; i < generatedTokens.Count; i++)
             {
                 int tokenId = generatedTokens[i];
                 if (tokenId < 0 || tokenId >= logits.Length) continue;
+                if (_stamps[tokenId] == call) continue;
+                _stamps[tokenId] = call;
 
                 float score = logits[tokenId];
                 logits[tokenId] = score < 0 ? score * _penalty : score / _penalty;

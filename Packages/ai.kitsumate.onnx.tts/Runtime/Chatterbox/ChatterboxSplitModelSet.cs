@@ -12,7 +12,8 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
     public sealed class ChatterboxSplitModelSet : StandardModelSet
     {
         [SerializeField] private OnnxModelReference speechEncoder = new();
-        [SerializeField] private OnnxModelReference embeddingLanguageModel = new();
+        [SerializeField] private OnnxModelReference tokenEmbedding = new();
+        [SerializeField] private OnnxModelReference languageModel = new();
         [SerializeField] private OnnxModelReference flowPrepare = new();
         [SerializeField] private OnnxModelReference flowStep = new();
         [SerializeField] private OnnxModelReference vocoder = new();
@@ -29,7 +30,8 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
         private static readonly ModelGraphRole[] Roles =
         {
             new("speech-encoder", "speech_encoder_slim"),
-            new("embedding-language-model", "embedding_language_model"),
+            new("token-embedding", "token_embedding"),
+            new("language-model", "static_language_model"),
             new("flow-prepare", "flow_prepare"),
             new("flow-step", "flow_step"),
             new("vocoder", "vocoder")
@@ -46,7 +48,10 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
         }
 
         public OnnxModelReference SpeechEncoder => speechEncoder;
-        public OnnxModelReference EmbeddingLanguageModel => embeddingLanguageModel;
+        /// <summary>Text, speech, and emotion token embeddings; small enough to run on the CPU.</summary>
+        public OnnxModelReference TokenEmbedding => tokenEmbedding;
+        /// <summary>Transformer over embeddings with a caller-owned fixed-size KV cache.</summary>
+        public OnnxModelReference LanguageModel => languageModel;
         public OnnxModelReference FlowPrepare => flowPrepare;
         public OnnxModelReference FlowStep => flowStep;
         public OnnxModelReference Vocoder => vocoder;
@@ -60,10 +65,10 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
         public int FlowSteps => flowSteps;
         public float FlowGuidance => flowGuidance;
         public override string DisplayName => string.IsNullOrWhiteSpace(name) ? "Chatterbox Split" : name;
-        public override bool IsComplete => speechEncoder.IsAvailable && embeddingLanguageModel.IsAvailable &&
+        public override bool IsComplete => speechEncoder.IsAvailable && tokenEmbedding.IsAvailable && languageModel.IsAvailable &&
             flowPrepare.IsAvailable && flowStep.IsAvailable && vocoder.IsAvailable && Tokenizer != null;
         public override IOnnxModelSource[] GetAllModels() =>
-            new IOnnxModelSource[] { speechEncoder, embeddingLanguageModel, flowPrepare, flowStep, vocoder };
+            new IOnnxModelSource[] { speechEncoder, tokenEmbedding, languageModel, flowPrepare, flowStep, vocoder };
         public override TextFileReference[] GetAllTextFiles() => new[]
             { tokenizer, cangjieMapping, japaneseReadings, russianStress, chineseWords };
 
@@ -71,7 +76,8 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
             CancellationToken cancellationToken)
         {
             installation.ConfigureModel(speechEncoder, "speech-encoder");
-            installation.ConfigureModel(embeddingLanguageModel, "embedding-language-model");
+            installation.ConfigureModel(tokenEmbedding, "token-embedding");
+            installation.ConfigureModel(languageModel, "language-model");
             installation.ConfigureModel(flowPrepare, "flow-prepare");
             installation.ConfigureModel(flowStep, "flow-step");
             installation.ConfigureModel(vocoder, "vocoder");
@@ -89,7 +95,7 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
             var result = new ModelValidationResult();
             foreach (var (source, role) in new[]
             {
-                (speechEncoder, "speech encoder"), (embeddingLanguageModel, "embedding language model"),
+                (speechEncoder, "speech encoder"), (tokenEmbedding, "token embedding"), (languageModel, "language model"),
                 (flowPrepare, "flow prepare"), (flowStep, "flow step"), (vocoder, "vocoder")
             })
             {
@@ -102,10 +108,13 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
             RequireOutput(speechEncoder, "audio_tokens", result);
             RequireOutput(speechEncoder, "speaker_embeddings", result);
             RequireOutput(speechEncoder, "speaker_features", result);
-            foreach (string input in new[] { "input_ids", "token_position_ids", "conditioning",
-                "text_conditioning", "attention_mask", "lm_position_ids" })
-                RequireInput(embeddingLanguageModel, input, result);
-            RequireOutput(embeddingLanguageModel, "logits", result);
+            foreach (string input in new[] { "input_ids", "token_position_ids", "exaggeration", "conditioning",
+                "text_conditioning" })
+                RequireInput(tokenEmbedding, input, result);
+            RequireOutput(tokenEmbedding, "inputs_embeds", result);
+            foreach (string input in new[] { "inputs_embeds", "seqlens_k", "total_sequence_length" })
+                RequireInput(languageModel, input, result);
+            RequireOutput(languageModel, "logits", result);
             foreach (string input in new[] { "speech_tokens", "speaker_embeddings", "speaker_features" })
                 RequireInput(flowPrepare, input, result);
             foreach (string output in new[] { "x", "mask", "mu", "speakers", "cond", "prefix" })

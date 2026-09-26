@@ -79,5 +79,26 @@ namespace KitsuMate.Onnx
             IReadOnlyList<OnnxNamedValue> cpuInputs,
             IReadOnlyList<IDeviceTensor> deviceInputs,
             IReadOnlyCollection<string> cpuOutputNames);
+
+        /// <summary>
+        /// Allocates a device tensor owned by this session. Its storage stays fixed for its whole
+        /// lifetime, so it can serve as a reusable input or as an output written in place by
+        /// <see cref="RunBound"/>. The contents start undefined; fill them with
+        /// <see cref="IDeviceTensor.CopyFrom"/> before reading.
+        /// </summary>
+        IDeviceTensor CreateDeviceTensor(string name, OnnxTensorElementType elementType, int[] shape);
+
+        /// <summary>
+        /// Runs inference writing each named output into its tensor in place. Keys are graph
+        /// input and output names, so one tensor may serve as both an input and an output, for
+        /// example a fixed-size KV cache that the graph updates in place.
+        /// </summary>
+        /// <param name="graphId">
+        /// With <see cref="OnnxSessionOptions.EnableGraphCapture"/>, a non-negative id records this run
+        /// once and replays it afterwards; later runs with the same id must bind the same tensors.
+        /// -1 runs normally. Providers without graph capture ignore the id.
+        /// </param>
+        void RunBound(IReadOnlyList<OnnxNamedValue> cpuInputs, IReadOnlyDictionary<string, IDeviceTensor> deviceInputs,
+            IReadOnlyDictionary<string, IDeviceTensor> outputs, int graphId = -1);
     }
 }

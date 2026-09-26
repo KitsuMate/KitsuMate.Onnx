@@ -56,6 +56,14 @@ errors, cancellation, and disposal remain strict errors. Device tensors from a r
 provider generation are staged through CPU before the retry. Explicit provider mode
 never changes providers at execution time.
 
+`IOnnxDeviceSession.CreateDeviceTensor` allocates a tensor with fixed storage, and
+`RunBound` writes outputs into caller-supplied tensors, so a graph can update a
+fixed-size cache in place. With `OnnxSessionOptions.EnableGraphCapture`, WebGPU records a
+bound run that passes a graph id and replays it afterwards; every other run on that
+session is explicitly uncaptured. Captured runs need all nodes on WebGPU and the same
+tensors and shapes each time. Bound tensors cannot move to a fallback provider, so a
+runtime provider change makes them unusable and `RunBound` fails.
+
 Editor package paths are resolved once on Unity's main thread and registered as native
 search roots. Worker-thread session creation therefore does not call Package Manager,
 and package installation remains agnostic to registry, Git, local, embedded, or cache

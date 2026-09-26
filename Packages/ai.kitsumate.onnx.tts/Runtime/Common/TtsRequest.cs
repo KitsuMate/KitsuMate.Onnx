@@ -40,7 +40,7 @@ namespace KitsuMate.Onnx.Tts
         /// Maximum number of speech tokens to generate.
         /// Higher values allow longer utterances but take more time.
         /// </summary>
-        public int MaxNewTokens = 256;
+        public int MaxNewTokens = 500;
 
         /// <summary>
         /// Repetition penalty applied during generation.

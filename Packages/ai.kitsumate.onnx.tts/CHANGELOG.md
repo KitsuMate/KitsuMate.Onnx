@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Chatterbox split engine: replaced the merged embedding/LM graph with a CPU token-embedding graph and an
+  INT8 fused-kernel language model over a fixed-size device KV cache, replayed with WebGPU graph capture.
+  The split model set now has six graph roles (`token-embedding`, `language-model`).
+- Chatterbox split engine: FP16-compute flow step for WebGPU and a blocked prefix-sum vocoder; the CPU engine
+  has its own model set with the FP32 flow step.
+
 - Added provider-neutral OmniVoice ONNX inference with split and merged backbone layouts.
 - Added auto voice, voice design, and transcript-required voice cloning with instruction, tag,
   pronunciation, speed, and fixed-duration controls.

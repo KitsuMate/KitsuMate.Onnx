@@ -23,7 +23,7 @@ namespace KitsuMate.Onnx.Tts.Editor
             public float Speed = 1;
             public float Duration;
             public float Exaggeration = 0.5f;
-            public int MaxTokens = 256;
+            public int MaxTokens = 500;
             public float RepetitionPenalty = 1.2f;
         }
         protected readonly Inputs Input = new();
