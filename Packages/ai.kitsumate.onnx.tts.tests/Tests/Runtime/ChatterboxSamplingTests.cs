@@ -59,15 +59,69 @@ namespace KitsuMate.Onnx.Tts.Tests
         }
 
         [Test]
-        public void SplitModelSetHasFiveFixedGraphRoles()
+        public void RepeatedTokensArePenalizedOnce()
+        {
+            // The reference applies the penalty to the set of generated tokens, so a token that was
+            // produced several times must not be pushed down once per occurrence.
+            var processor = new RepetitionPenaltyProcessor(2f);
+            var logits = new[] { 8f, -8f, 1f };
+            processor.Apply(new[] { 0, 0, 0, 1, 1 }, logits);
+            Assert.That(logits[0], Is.EqualTo(4f).Within(1e-6));
+            Assert.That(logits[1], Is.EqualTo(-16f).Within(1e-6));
+            Assert.That(logits[2], Is.EqualTo(1f).Within(1e-6));
+        }
+
+        [Test]
+        public void RepetitionPenaltyDoesNotCarryBetweenSteps()
+        {
+            var processor = new RepetitionPenaltyProcessor(2f);
+            processor.Apply(new[] { 0 }, new[] { 8f, 0f });
+            var logits = new[] { 8f, 0f };
+            processor.Apply(new[] { 1 }, logits);
+            Assert.That(logits[0], Is.EqualTo(8f).Within(1e-6));
+        }
+
+        [Test]
+        public void ReferenceVoiceIsTrimmedToTheEncoderWindow()
+        {
+            int frequency = ChatterboxConstants.SampleRate;
+            var clip = UnityEngine.AudioClip.Create("long", frequency * 10, 1, frequency, false);
+            try
+            {
+                Assert.That(clip.SetData(new float[frequency * 10], 0), Is.True);
+                Assert.That(ChatterboxEngineRuntime.PrepareVoiceSamples(clip),
+                    Has.Length.EqualTo(ChatterboxConstants.ReferenceSeconds * frequency));
+            }
+            finally { UnityEngine.Object.DestroyImmediate(clip); }
+        }
+
+        [Test]
+        public void DownsamplingAveragesInsteadOfFoldingHighFrequencies()
+        {
+            // Alternating full-scale samples are above the encoder's Nyquist rate. Interpolation would
+            // keep them as a loud low tone; averaging pairs cancels them as it should.
+            var clip = UnityEngine.AudioClip.Create("alias", 8, 1, ChatterboxConstants.SampleRate * 2, false);
+            try
+            {
+                Assert.That(clip.SetData(new[] { 1f, -1f, 1f, -1f, 1f, -1f, 1f, -1f }, 0), Is.True);
+                float[] samples = ChatterboxEngineRuntime.PrepareVoiceSamples(clip);
+                Assert.That(samples, Has.Length.EqualTo(4));
+                Assert.That(Array.TrueForAll(samples, sample => Math.Abs(sample) < 1e-6f), Is.True);
+            }
+            finally { UnityEngine.Object.DestroyImmediate(clip); }
+        }
+
+        [Test]
+        public void SplitModelSetHasSixFixedGraphRoles()
         {
             var split = UnityEngine.ScriptableObject.CreateInstance<ChatterboxSplitModelSet>();
             try
             {
-                Assert.That(split.DownloadGraphRoles.Count, Is.EqualTo(5));
-                Assert.That(split.DownloadGraphRoles[1].role, Is.EqualTo("embedding-language-model"));
-                Assert.That(split.DownloadGraphRoles[4].fileStem, Is.EqualTo("vocoder"));
-                Assert.That(split.GetAllModels().Length, Is.EqualTo(5));
+                Assert.That(split.DownloadGraphRoles.Count, Is.EqualTo(6));
+                Assert.That(split.DownloadGraphRoles[1].role, Is.EqualTo("token-embedding"));
+                Assert.That(split.DownloadGraphRoles[2].fileStem, Is.EqualTo("static_language_model"));
+                Assert.That(split.DownloadGraphRoles[5].fileStem, Is.EqualTo("vocoder"));
+                Assert.That(split.GetAllModels().Length, Is.EqualTo(6));
             }
             finally { UnityEngine.Object.DestroyImmediate(split); }
         }

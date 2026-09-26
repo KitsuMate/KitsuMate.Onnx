@@ -62,6 +62,33 @@ not improve synthesis speed in the local comparison. Keep FP32 as the default.
 Graph conversion and standalone Python WebGPU regression tools remain in the
 owning repository's ignored `.agent-tools/chatterbox-v3` directory.
 
+### Split engine
+
+`ChatterboxSplitEngine` uses six graphs: speech encoder, token embedding, static-cache
+language model, flow prepare, flow step, and vocoder.
+
+- The token embedding runs on the CPU. The language model is the V3 transformer rebuilt
+  with ONNX Runtime's fused attention and RMSNorm kernels and INT8 weight-only MatMuls. It
+  reads embeddings and writes into a fixed 1,024-position KV cache that the runtime
+  allocates once. Prompt, text, and generated tokens must fit in that cache; generation
+  stops at its end.
+- On WebGPU, the runtime records one decode step with graph capture and replays it for
+  every later token. The step is recorded while the cache is full, because a shorter
+  recording leaves attention past that length unprocessed on WebGPU EP 0.3.0.
+- The WebGPU model set uses an FP16-compute flow step. The CPU model set keeps the FP32
+  flow step, which is faster on the CPU.
+- Both vocoders compute the sine-source phase with a blocked prefix sum. The WebGPU
+  `CumSum` kernel is quadratic in the sample count; the blocked form is also more accurate.
+
+Against the previous merged FP32 graphs in Unity on an RTX 3070 Laptop GPU, a 6.7-second
+English request fell from 15.7 to 2.5 seconds, and four English/Polish prompts ran at
+0.36-0.61 RTF after the first request. The CPU engine's long English request fell from
+43 to 17 seconds. Greedy teacher-forced logits of the static-cache graph match the fused
+dynamic-cache graph exactly; INT8 moves logits by about 0.7% relative L2 against FP32.
+Whisper found no word errors in the four Unity prompts, and a five-seed raw comparison
+showed no word-error increase over FP32. Listening review of voice identity is still
+recommended before relying on a new voice or language.
+
 ## NeuTTS-2E
 
 `NeuTtsEngine` supports English emotional synthesis with `emily`, `paul`, `sophie`, and `steven`.

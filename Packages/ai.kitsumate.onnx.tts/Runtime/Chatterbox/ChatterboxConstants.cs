@@ -26,13 +26,16 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
         /// <summary>Token ID for [STOP_SPEECH] — marks the end of speech generation.</summary>
         public const int StopSpeechToken = 6562;
 
+        /// <summary>Width of the multilingual V3 speech head: every logits row has this many entries.</summary>
+        public const int SpeechLogitCount = 8194;
+
         /// <summary>Token used to pad Turbo and Nano speech before decoding.</summary>
         public const int SilenceToken = 4299;
 
         /// <summary>Number of hidden layers in the classic Chatterbox backbone.</summary>
         public const int NumHiddenLayers = 30;
 
-        /// <summary>Number of key-value heads in classic Chatterbox.</summary>
+        /// <summary>Number of key-value heads in the Chatterbox backbone.</summary>
         public const int NumKeyValueHeads = 16;
 
         /// <summary>Dimension of each attention head.</summary>
@@ -44,8 +47,13 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
         /// <summary>Default repetition penalty during generation.</summary>
         public const float DefaultRepetitionPenalty = 1.2f;
 
-        /// <summary>Default maximum tokens to generate.</summary>
-        public const int DefaultMaxNewTokens = 256;
+        /// <summary>Default maximum tokens to generate. The codec runs at 25 tokens per second,
+        /// so this caps one request at about 20 seconds of speech, matching the reference pipeline.</summary>
+        public const int DefaultMaxNewTokens = 500;
+
+        /// <summary>Seconds of reference audio the conditioning encoders were exported for.
+        /// The reference pipeline trims every voice clip to this length before encoding.</summary>
+        public const int ReferenceSeconds = 6;
 
         /// <summary>
         /// Supported languages for the multilingual Chatterbox model.

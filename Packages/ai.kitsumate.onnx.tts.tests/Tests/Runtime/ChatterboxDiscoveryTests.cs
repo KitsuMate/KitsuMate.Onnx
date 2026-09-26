@@ -19,8 +19,8 @@ namespace KitsuMate.Onnx.Tts.Tests
             {
                 "onnx/speech_encoder_slim.onnx", "onnx/embed_tokens.onnx",
                 "onnx/language_model.onnx", "onnx/conditional_decoder.onnx",
-                "onnx/embedding_language_model_last.onnx", "onnx/flow_prepare_slim.onnx",
-                "onnx/flow_step_slim.onnx", "onnx/vocoder_slim.onnx",
+                "onnx/token_embedding.onnx", "onnx/static_language_model_int8.onnx", "onnx/flow_prepare_slim.onnx",
+                "onnx/flow_step_fp16.onnx", "onnx/vocoder_prefix_sum.onnx",
                 "tokenizer.json", "default_voice.wav"
             };
             var snapshot = new HfModelInfo { sha = "revision",
@@ -37,6 +37,11 @@ namespace KitsuMate.Onnx.Tts.Tests
                         requiredCompanionRoles: five.DownloadRequiredCompanionRoles), snapshot);
                 Assert.That(standard.Artifacts.Keys, Is.EquivalentTo(four.DownloadGraphRoles.Select(role => role.role)));
                 Assert.That(split.Artifacts.Keys, Is.EquivalentTo(five.DownloadGraphRoles.Select(role => role.role)));
+                // The static-cache LM must not become a four-graph language model candidate.
+                Assert.That(standard.Artifacts["language-model"].Select(item => item.Model.Path),
+                    Is.EquivalentTo(new[] { "onnx/language_model.onnx" }));
+                Assert.That(split.Artifacts["language-model"].Select(item => item.Model.Path),
+                    Is.EquivalentTo(new[] { "onnx/static_language_model_int8.onnx" }));
             }
             finally
             {
@@ -52,8 +57,8 @@ namespace KitsuMate.Onnx.Tts.Tests
             {
                 "onnx/speech_encoder.onnx", "onnx/embed_tokens.onnx", "onnx/language_model.onnx",
                 "onnx/conditional_decoder_slim.onnx", "onnx/speech_encoder_slim.onnx",
-                "onnx/embedding_language_model_last.onnx", "onnx/flow_prepare_slim.onnx",
-                "onnx/flow_step_slim.onnx", "onnx/vocoder_slim.onnx",
+                "onnx/token_embedding.onnx", "onnx/static_language_model_int8.onnx", "onnx/flow_prepare_slim.onnx",
+                "onnx/flow_step_fp16.onnx", "onnx/flow_step_slim.onnx", "onnx/vocoder_prefix_sum.onnx",
                 "tokenizer.json", "Cangjie5_TC.json", "japanese_readings.tsv",
                 "russian_stress.tsv", "chinese_words.txt"
             };
@@ -209,10 +214,11 @@ namespace KitsuMate.Onnx.Tts.Tests
                 Add("language-model", "onnx/language_model.onnx");
                 Add("conditional-decoder", "onnx/conditional_decoder.onnx");
                 Add("speech-encoder", "onnx/speech_encoder_slim.onnx");
-                Add("embedding-language-model", "onnx/embedding_language_model_last.onnx");
+                Add("token-embedding", "onnx/token_embedding.onnx");
+                Add("language-model", "onnx/static_language_model_int8.onnx");
                 Add("flow-prepare", "onnx/flow_prepare_slim.onnx");
-                Add("flow-step", "onnx/flow_step_slim.onnx");
-                Add("vocoder", "onnx/vocoder_slim.onnx");
+                Add("flow-step", "onnx/flow_step_fp16.onnx");
+                Add("vocoder", "onnx/vocoder_prefix_sum.onnx");
                 string tokenizer = Path.Combine(root, "source", "tokenizer.json");
                 File.WriteAllText(tokenizer, "{}");
                 supplied["tokenizer.json"] = tokenizer;
@@ -229,16 +235,17 @@ namespace KitsuMate.Onnx.Tts.Tests
                 var split = new Dictionary<string, string>
                 {
                     ["speech-encoder"] = "onnx/speech_encoder_slim.onnx",
-                    ["embedding-language-model"] = "onnx/embedding_language_model_last.onnx",
+                    ["token-embedding"] = "onnx/token_embedding.onnx",
+                    ["language-model"] = "onnx/static_language_model_int8.onnx",
                     ["flow-prepare"] = "onnx/flow_prepare_slim.onnx",
-                    ["flow-step"] = "onnx/flow_step_slim.onnx",
-                    ["vocoder"] = "onnx/vocoder_slim.onnx"
+                    ["flow-step"] = "onnx/flow_step_fp16.onnx",
+                    ["vocoder"] = "onnx/vocoder_prefix_sum.onnx"
                 };
 
                 await store.InstallAsync(repository, four, suppliedFiles: supplied);
                 Assert.That(store.Read().Files.Count, Is.EqualTo(6));
                 await store.InstallAsync(repository, split, suppliedFiles: supplied, retainPreviousUntilBinding: true);
-                Assert.That(store.Read().Files.Count, Is.EqualTo(7));
+                Assert.That(store.Read().Files.Count, Is.EqualTo(8));
                 Assert.That(File.Exists(Path.Combine(store.DirectoryPath + ".previous", four["language-model"])), Is.True);
                 store.RestorePrevious();
                 Assert.That(store.Read().Files.Count, Is.EqualTo(6));
@@ -246,7 +253,7 @@ namespace KitsuMate.Onnx.Tts.Tests
 
                 await store.InstallAsync(repository, split, suppliedFiles: supplied, retainPreviousUntilBinding: true);
                 store.CompleteBinding();
-                Assert.That(store.Read().Files.Count, Is.EqualTo(7));
+                Assert.That(store.Read().Files.Count, Is.EqualTo(8));
                 Assert.That(Directory.Exists(store.DirectoryPath + ".previous"), Is.False);
             }
             finally { if (Directory.Exists(root)) Directory.Delete(root, true); }

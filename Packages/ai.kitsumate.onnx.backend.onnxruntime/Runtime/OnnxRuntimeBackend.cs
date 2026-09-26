@@ -19,9 +19,11 @@ namespace KitsuMate.Onnx
             OnnxExecutionDeviceInfo device,
             string gpuProviderName,
             int providerIndex,
-            string selectionReason)
+            string selectionReason,
+            bool graphCaptureEnabled = false)
         {
             Session = session ?? throw new ArgumentNullException(nameof(session));
+            GraphCaptureEnabled = graphCaptureEnabled;
             Provider = provider;
             Device = device ?? throw new ArgumentNullException(nameof(device));
             GpuProviderName = gpuProviderName;
@@ -36,12 +38,18 @@ namespace KitsuMate.Onnx
         public int ProviderIndex { get; }
         public string SelectionReason { get; }
         public OrtMemoryInfo GpuMemoryInfo { get; set; }
+        /// <summary>The provider records runs; every run must then say whether it is captured.</summary>
+        public bool GraphCaptureEnabled { get; }
+        /// <summary>Allocator for session-owned device tensors; tensors keep a pointer to it, so it lives as long as the state.</summary>
+        public OrtAllocator DeviceTensorAllocator { get; set; }
 
         public void Dispose()
         {
+            Session.Dispose();
+            DeviceTensorAllocator?.Dispose();
+            DeviceTensorAllocator = null;
             GpuMemoryInfo?.Dispose();
             GpuMemoryInfo = null;
-            Session.Dispose();
         }
     }
 
@@ -219,7 +227,8 @@ namespace KitsuMate.Onnx
                 EnableMemoryPattern = options.EnableMemoryPattern,
                 EnableCpuMemArena = options.EnableCpuMemArena,
                 IntraOpThreads = options.IntraOpThreads,
-                InterOpThreads = options.InterOpThreads
+                InterOpThreads = options.InterOpThreads,
+                EnableGraphCapture = options.EnableGraphCapture
             };
             IReadOnlyList<OnnxExecutionProvider> requested = options.Providers?.Length > 0
                 ? options.Providers.ToArray() : EffectiveProviderOrder.ToArray();
@@ -240,7 +249,8 @@ namespace KitsuMate.Onnx
                     optionSnapshot, selectedProvider, selectedDevice.ProviderDeviceIndex);
                 return new OnnxRuntimeSessionState(
                     create(selectedOptions), selectedProvider, selectedDevice,
-                    GetDeviceProviderName(selectedProvider), providerIndex, selectedReason);
+                    GetDeviceProviderName(selectedProvider), providerIndex, selectedReason,
+                    SupportsGraphCapture(selectedProvider) && optionSnapshot.EnableGraphCapture);
             }
 
             for (int index = 0; index < eligible.Count; index++)
@@ -303,6 +313,8 @@ namespace KitsuMate.Onnx
             // cannot initialize. Remove when an updated plugin passes the activation regression test.
             if (provider == OnnxExecutionProvider.WebGpu)
                 ortOptions.AddSessionConfigEntry("optimization.disable_specified_optimizers", "ConvActivationFusion");
+            if (SupportsGraphCapture(provider) && options.EnableGraphCapture)
+                ortOptions.AddSessionConfigEntry("ep.webgpuexecutionprovider.enableGraphCapture", "1");
 
             if (options.IntraOpThreads > 0)
                 ortOptions.IntraOpNumThreads = options.IntraOpThreads;
@@ -369,6 +381,8 @@ namespace KitsuMate.Onnx
                 : "provider exposed one CPU/default device";
             return gpuDevices.Length > 0 ? gpuDevices[0] : devices[0];
         }
+
+        private static bool SupportsGraphCapture(OnnxExecutionProvider provider) => provider == OnnxExecutionProvider.WebGpu;
 
         private static GraphOptimizationLevel ToOrtOptimizationLevel(OnnxOptimizationLevel level)
         {
@@ -673,7 +687,7 @@ namespace KitsuMate.Onnx
                 }
                 long inputConvertMs = sw?.ElapsedMilliseconds ?? 0;
                 sw?.Restart();
-                using var runOptions = new RunOptions();
+                using var runOptions = CreateRunOptions(state, -1);
                 using var results = state.Session.Run(runOptions, names, ortInputs, _outputNames);
                 long inferenceMs = sw?.ElapsedMilliseconds ?? 0;
                 sw?.Restart();
@@ -844,32 +858,13 @@ namespace KitsuMate.Onnx
             
             var sw = VerboseLogging ? Stopwatch.StartNew() : null;
             
-            // Lazily create GPU memory info for IO Binding output placement
-            if (state.GpuMemoryInfo == null && state.GpuProviderName != null)
-            {
-                if (state.Provider == OnnxExecutionProvider.WebGpu)
-                {
-                    // Plugin devices supply their allocator descriptor; the name-based API
-                    // only recognizes built-in devices and cannot describe WebGPU memory.
-                    OnnxRuntimeProviderRegistry.TryGet(state.Provider, out var module);
-                    var device = OnnxRuntimeProviderRegistry.GetEnvironment().GetEpDevices()
-                        .Where(candidate => candidate.EpName == module.RuntimeProviderName)
-                        .ElementAt(state.Device.ProviderDeviceIndex);
-                    state.GpuMemoryInfo = device.GetMemoryInfo(OrtDeviceMemoryType.DEFAULT);
-                }
-                else
-                {
-                    state.GpuMemoryInfo = new OrtMemoryInfo(
-                        state.GpuProviderName, OrtAllocatorType.DeviceAllocator,
-                        state.Device.ProviderDeviceIndex, OrtMemType.Default);
-                }
-            }
-            
-            // If no GPU available, fall back to regular Run wrapped in CpuDeviceTensors
-            if (state.GpuMemoryInfo == null)
-                return RunOnDeviceFallback(cpuInputs, deviceInputs, cpuOutputNames);
+            EnsureGpuMemoryInfo(state);
             
             using var cpuMemInfo = new OrtMemoryInfo("Cpu", OrtAllocatorType.DeviceAllocator, 0, OrtMemType.Default);
+            // Without a GPU the passthrough outputs stay in host memory, but they still stay inside
+            // ONNX Runtime. Copying a growing KV cache out to managed arrays on every step is what
+            // makes an autoregressive loop cost more the longer it runs.
+            OrtMemoryInfo passthroughMemory = state.GpuMemoryInfo ?? cpuMemInfo;
             var cpuOutputSet = cpuOutputNames != null
                 ? new HashSet<string>(cpuOutputNames)
                 : null; // null = all on CPU
@@ -905,7 +900,7 @@ namespace KitsuMate.Onnx
                     if (cpuOutputSet == null || cpuOutputSet.Contains(outName))
                         binding.BindOutputToDevice(outName, cpuMemInfo);
                     else
-                        binding.BindOutputToDevice(outName, state.GpuMemoryInfo);
+                        binding.BindOutputToDevice(outName, passthroughMemory);
                 }
                 
                 long bindMs = 0;
@@ -916,7 +911,7 @@ namespace KitsuMate.Onnx
                 }
                 
                 // Run inference with IO Binding
-                using var runOptions = new RunOptions();
+                using var runOptions = CreateRunOptions(state, -1);
                 state.Session.RunWithBinding(runOptions, binding);
                 
                 long inferenceMs = 0;
@@ -964,6 +959,121 @@ namespace KitsuMate.Onnx
             }
         }
         
+        /// <summary>Creates the provider memory descriptor used for device-resident outputs, once per state.</summary>
+        private static void EnsureGpuMemoryInfo(OnnxRuntimeSessionState state)
+        {
+            if (state.GpuMemoryInfo != null || state.GpuProviderName == null) return;
+            if (state.Provider == OnnxExecutionProvider.WebGpu)
+            {
+                // Plugin devices supply their allocator descriptor; the name-based API
+                // only recognizes built-in devices and cannot describe WebGPU memory.
+                OnnxRuntimeProviderRegistry.TryGet(state.Provider, out var module);
+                var device = OnnxRuntimeProviderRegistry.GetEnvironment().GetEpDevices()
+                    .Where(candidate => candidate.EpName == module.RuntimeProviderName)
+                    .ElementAt(state.Device.ProviderDeviceIndex);
+                state.GpuMemoryInfo = device.GetMemoryInfo(OrtDeviceMemoryType.DEFAULT);
+            }
+            else
+            {
+                state.GpuMemoryInfo = new OrtMemoryInfo(
+                    state.GpuProviderName, OrtAllocatorType.DeviceAllocator,
+                    state.Device.ProviderDeviceIndex, OrtMemType.Default);
+            }
+        }
+
+        /// <summary>
+        /// Run options for one call. A capture-enabled provider treats unannotated runs as graph 0
+        /// and would record them, so ordinary runs explicitly opt out with -1.
+        /// </summary>
+        private static RunOptions CreateRunOptions(OnnxRuntimeSessionState state, int graphId)
+        {
+            var runOptions = new RunOptions();
+            if (state.GraphCaptureEnabled)
+                runOptions.AddRunConfigEntry("gpu_graph_id", graphId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            return runOptions;
+        }
+
+        public IDeviceTensor CreateDeviceTensor(string name, OnnxTensorElementType elementType, int[] shape)
+        {
+            ThrowIfDisposed();
+            if (shape == null) throw new ArgumentNullException(nameof(shape));
+            OnnxRuntimeSessionState state = _state;
+            EnsureGpuMemoryInfo(state);
+            if (state.DeviceTensorAllocator == null)
+            {
+                using var cpuMemInfo = new OrtMemoryInfo("Cpu", OrtAllocatorType.DeviceAllocator, 0, OrtMemType.Default);
+                state.DeviceTensorAllocator = new OrtAllocator(state.Session, state.GpuMemoryInfo ?? cpuMemInfo);
+            }
+            OrtValue value = OrtValue.CreateAllocatedTensorValue(
+                state.DeviceTensorAllocator, ToOrtElementType(elementType), Array.ConvertAll(shape, dimension => (long)dimension));
+            var tensor = new OrtDeviceTensor(value, name, this, state);
+            lock (_trackedDeviceTensors) _trackedDeviceTensors.Add(tensor);
+            return tensor;
+        }
+
+        public void RunBound(IReadOnlyList<OnnxNamedValue> cpuInputs, IReadOnlyDictionary<string, IDeviceTensor> deviceInputs,
+            IReadOnlyDictionary<string, IDeviceTensor> outputs, int graphId = -1)
+        {
+            ThrowIfDisposed();
+            OnnxRuntimeSessionState state = _state;
+            var sw = VerboseLogging ? Stopwatch.StartNew() : null;
+            using var cpuMemInfo = new OrtMemoryInfo("Cpu", OrtAllocatorType.DeviceAllocator, 0, OrtMemType.Default);
+            using var binding = state.Session.CreateIoBinding();
+            var cpuOrtValues = new List<OrtValue>(cpuInputs?.Count ?? 0);
+            try
+            {
+                if (cpuInputs != null)
+                    foreach (OnnxNamedValue input in cpuInputs)
+                    {
+                        OnnxTensor tensor = input.Value;
+                        if (state.Session.InputMetadata.TryGetValue(input.Name, out NodeMetadata meta))
+                            tensor = CastTensorIfNeeded(tensor, meta.ElementDataType);
+                        OrtValue value = CreateOrtValueFromTensor(tensor, cpuMemInfo);
+                        cpuOrtValues.Add(value);
+                        binding.BindInput(input.Name, value);
+                    }
+                // Bound tensors are written in place, so unlike RunOnDevice they cannot be staged
+                // through a replacement provider after a runtime fallback.
+                foreach (var input in deviceInputs)
+                    binding.BindInput(input.Key, Bound(input.Key, input.Value, state, state.Session.InputMetadata).Value);
+                foreach (var output in outputs)
+                    binding.BindOutput(output.Key, Bound(output.Key, output.Value, state, state.Session.OutputMetadata).Value);
+                using var runOptions = CreateRunOptions(state, graphId);
+                state.Session.RunWithBinding(runOptions, binding);
+                if (sw != null)
+                    Debug.Log($"[OnnxSession] RunBound: graph={graphId}, {sw.Elapsed.TotalMilliseconds:F2}ms");
+            }
+            finally
+            {
+                foreach (OrtValue value in cpuOrtValues) value.Dispose();
+            }
+        }
+
+        private OrtDeviceTensor Bound(string name, IDeviceTensor tensor, OnnxRuntimeSessionState state,
+            IReadOnlyDictionary<string, NodeMetadata> metadata)
+        {
+            if (tensor is not OrtDeviceTensor ortTensor)
+                throw new ArgumentException($"Device tensor bound to '{name}' was created by an incompatible backend.");
+            if (!ortTensor.BelongsTo(this, state))
+                throw new OnnxRuntimeLifecycleException(
+                    $"Device tensor bound to '{name}' belongs to an earlier provider generation of this session.");
+            if (!metadata.TryGetValue(name, out NodeMetadata value))
+                throw new OnnxModelContractException($"Model does not declare '{name}'.");
+            ortTensor.ValidateShape(name, value);
+            return ortTensor;
+        }
+
+        private static TensorElementType ToOrtElementType(OnnxTensorElementType type) => type switch
+        {
+            OnnxTensorElementType.Float => TensorElementType.Float,
+            OnnxTensorElementType.Float16 => TensorElementType.Float16,
+            OnnxTensorElementType.Int32 => TensorElementType.Int32,
+            OnnxTensorElementType.Int64 => TensorElementType.Int64,
+            OnnxTensorElementType.UInt8 => TensorElementType.UInt8,
+            OnnxTensorElementType.Bool => TensorElementType.Bool,
+            _ => throw new NotSupportedException($"Device tensors of type {type} are not supported.")
+        };
+
         private IReadOnlyList<IDeviceTensor> RunOnDeviceFallback(
             IReadOnlyList<OnnxNamedValue> cpuInputs,
             IReadOnlyList<IDeviceTensor> deviceInputs,
@@ -1094,6 +1204,45 @@ namespace KitsuMate.Onnx
             return CopyToCpu(_value, Name);
         }
 
+        public void CopyFrom(OnnxTensor source)
+        {
+            if (_value == null) throw new ObjectDisposedException(nameof(OrtDeviceTensor));
+            if (source == null) throw new ArgumentNullException(nameof(source));
+            var target = _value.GetTensorTypeAndShape();
+            if (target.ElementCount != source.Length)
+                throw new ArgumentException(
+                    $"Cannot copy {source.Length} elements into device tensor '{Name}' of {target.ElementCount}.", nameof(source));
+            using (OrtMemoryInfo memory = _value.GetTensorMemoryInfo())
+            {
+                // Host tensors are written directly; ORT has no host-to-host transfer entry.
+                if (memory.Name == "Cpu")
+                    switch (source.ElementType)
+                    {
+                        case OnnxTensorElementType.Float when target.ElementDataType == TensorElementType.Float:
+                            source.AsFloatArray().AsSpan().CopyTo(_value.GetTensorMutableDataAsSpan<float>()); return;
+                        case OnnxTensorElementType.Int32 when target.ElementDataType == TensorElementType.Int32:
+                            source.AsIntArray().AsSpan().CopyTo(_value.GetTensorMutableDataAsSpan<int>()); return;
+                        case OnnxTensorElementType.Int64 when target.ElementDataType == TensorElementType.Int64:
+                            source.AsLongArray().AsSpan().CopyTo(_value.GetTensorMutableDataAsSpan<long>()); return;
+                    }
+            }
+            using var cpuMemInfo = new OrtMemoryInfo("Cpu", OrtAllocatorType.DeviceAllocator, 0, OrtMemType.Default);
+            long[] shape = target.Shape;
+            using OrtValue staged = source.ElementType switch
+            {
+                OnnxTensorElementType.Float when target.ElementDataType == TensorElementType.Float =>
+                    OrtValue.CreateTensorValueFromMemory<float>(cpuMemInfo, source.AsFloatArray(), shape),
+                OnnxTensorElementType.Int32 when target.ElementDataType == TensorElementType.Int32 =>
+                    OrtValue.CreateTensorValueFromMemory<int>(cpuMemInfo, source.AsIntArray(), shape),
+                OnnxTensorElementType.Int64 when target.ElementDataType == TensorElementType.Int64 =>
+                    OrtValue.CreateTensorValueFromMemory<long>(cpuMemInfo, source.AsLongArray(), shape),
+                _ => throw new ArgumentException(
+                    $"Cannot copy {source.ElementType} data into device tensor '{Name}' of {target.ElementDataType}.",
+                    nameof(source))
+            };
+            OrtEnv.Instance().CopyTensors(new[] { staged }, new[] { _value }, null);
+        }
+
         internal static OnnxTensor CopyToCpu(OrtValue value, string name)
         {
             var typeAndShape = value.GetTensorTypeAndShape();
@@ -1152,16 +1301,22 @@ namespace KitsuMate.Onnx
                     $"Device tensor '{Name}' belongs to a retired provider generation and must be staged through CPU.");
             if (metadata == null)
                 throw new OnnxModelContractException($"Model does not declare device input '{Name}'.");
+            ValidateShape(Name, metadata);
+        }
+
+        internal void ValidateShape(string name, NodeMetadata metadata)
+        {
+            if (_value == null) throw new ObjectDisposedException(nameof(OrtDeviceTensor));
             var actual = _value.GetTensorTypeAndShape();
             if (actual.ElementDataType != metadata.ElementDataType)
                 throw new OnnxModelContractException(
-                    $"Device tensor '{Name}' has type {actual.ElementDataType}; model requires {metadata.ElementDataType}.");
+                    $"Device tensor '{name}' has type {actual.ElementDataType}; model requires {metadata.ElementDataType}.");
             if (metadata.Dimensions.Length != actual.Shape.Length)
-                throw new OnnxModelContractException($"Device tensor '{Name}' has rank {actual.Shape.Length}; model requires {metadata.Dimensions.Length}.");
+                throw new OnnxModelContractException($"Device tensor '{name}' has rank {actual.Shape.Length}; model requires {metadata.Dimensions.Length}.");
             for (int i = 0; i < metadata.Dimensions.Length; i++)
                 if (metadata.Dimensions[i] > 0 && metadata.Dimensions[i] != actual.Shape[i])
                     throw new OnnxModelContractException(
-                        $"Device tensor '{Name}' dimension {i} is {actual.Shape[i]}; model requires {metadata.Dimensions[i]}.");
+                        $"Device tensor '{name}' dimension {i} is {actual.Shape[i]}; model requires {metadata.Dimensions[i]}.");
         }
         
         public void Dispose()

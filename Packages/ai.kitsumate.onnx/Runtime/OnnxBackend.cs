@@ -26,7 +26,13 @@ namespace KitsuMate.Onnx
         public int InterOpThreads = 0;
         /// <summary>Optional per-session execution policy. Empty uses the backend's configured order.</summary>
         public OnnxExecutionProvider[] Providers = Array.Empty<OnnxExecutionProvider>();
-        
+        /// <summary>
+        /// Lets providers that support it record and replay <see cref="IOnnxDeviceSession.RunBound"/>
+        /// calls that pass a graph id. Every node must run on that provider and captured runs must
+        /// keep fixed shapes and bindings. Other providers ignore it.
+        /// </summary>
+        public bool EnableGraphCapture;
+
         public static OnnxSessionOptions Default => new();
     }
     
