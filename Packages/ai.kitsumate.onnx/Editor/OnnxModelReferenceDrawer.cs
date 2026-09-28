@@ -54,7 +54,7 @@ namespace KitsuMate.Onnx.Editor
                 EditorGUI.BeginChangeCheck();
                 EditorGUI.PropertyField(line, property.FindPropertyRelative("fileRoot"), new GUIContent("Relative to"));
                 line.y += h + gap;
-                EditorGUI.PropertyField(line, path, new GUIContent("Model path", "Persistent Data paths are relative to Application.persistentDataPath. Absolute paths are specific to this machine."));
+                EditorGUI.PropertyField(line, path, new GUIContent("Model path", "Data Folder paths are relative to OnnxSettings.DataRoot. Absolute paths are specific to this machine."));
                 if (EditorGUI.EndChangeCheck()) ClearFileMetadata(property);
             }
             if (kindChanged) ClearFileMetadata(property);

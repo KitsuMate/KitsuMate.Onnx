@@ -34,9 +34,9 @@ Inference is asynchronous. Synchronous forwarding APIs are intentionally not pro
 
 ## Model installation
 
-Configure the installation folder in `OnnxSettings`, relative to `Application.persistentDataPath`. Each model set saves its repository, revision, explicit folder beneath that root, and one artifact selection per submodel. The application UI and model-set Inspector use the same `ModelInstallationStore`.
+Configure the installation folder in `OnnxSettings`, relative to `OnnxSettings.DataRoot`. The data root is the `KITSUMATE_ONNX_DATA_DIR` environment variable when set, otherwise the value the application assigns to `OnnxSettings.DataRoot`, otherwise `Application.persistentDataPath`. Set the variable to share one copy of downloaded models between projects, the Editor and builds on the same machine. Each model set saves its repository, revision, explicit folder beneath that root, and one artifact selection per submodel. The application UI and model-set Inspector use the same `ModelInstallationStore`.
 
-The model-set Inspector exposes graph and text references directly. Each supports **Asset** or **File**, with persistent-data-relative paths for files inside `Application.persistentDataPath`. External absolute paths remain machine-specific.
+The model-set Inspector exposes graph and text references directly. Each supports **Asset** or **File**, with data-folder-relative paths for files inside `OnnxSettings.DataRoot`. External absolute paths remain machine-specific.
 
 **Download models** opens the download window, where quant choices stay visible for installed models. Each single-line entry offers **Download** or **Redownload**; **Download all missing files** handles the full selection. Only selected model roles, external weights, and consumer-declared supporting files are included. **Choose file** supplies an existing file; **Use files from folder** accepts a repository-layout folder. The primary action downloads missing files and assigns file references to the model set. Downloads and project asset migration are separate actions.
 Downloaded graph schemas are validated before references are assigned. Imported companions use a folder tied to the downloaded identity, so a failed update cannot overwrite the previous default voice.

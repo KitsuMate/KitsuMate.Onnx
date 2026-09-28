@@ -41,7 +41,7 @@ namespace KitsuMate.Onnx.Editor
                 int assets = set.GetAllModels().OfType<OnnxModelReference>().Count(source => source.Kind == OnnxModelReference.SourceKind.Asset && source.Asset != null) +
                     set.GetAllTextFiles().Count(source => source != null && source.Kind == OnnxModelReference.SourceKind.Asset && source.Asset != null);
                 using (new EditorGUI.DisabledScope(assets == 0))
-                    if (GUILayout.Button(new GUIContent("Move files into data folder", "Move sources to Application.persistentDataPath and use File references.")))
+                    if (GUILayout.Button(new GUIContent("Move files into data folder", "Move sources to the ONNX data folder and use File references.")))
                     {
                         try { EnsureCanMove(set); ImportedModelGraphs.MoveAssignedFilesToData(set); }
                         catch (Exception exception) { Debug.LogException(exception); }

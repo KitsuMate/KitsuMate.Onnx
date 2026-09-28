@@ -45,7 +45,26 @@ namespace KitsuMate.Onnx
             get => _verboseLogging;
             set => _verboseLogging = value;
         }
-        public string InstallationRoot => Download.ModelDownloadPaths.Child(Application.persistentDataPath, _installationFolder);
+        /// <summary>Environment variable that points every project and build on a machine to one data folder.</summary>
+        public const string DataRootVariable = "KITSUMATE_ONNX_DATA_DIR";
+        private static string _dataRoot;
+
+        /// <summary>
+        /// Folder that holds installed models and data-folder file references. Uses <see cref="DataRootVariable"/>
+        /// when set, then the value set by the application, then <see cref="Application.persistentDataPath"/>.
+        /// </summary>
+        public static string DataRoot
+        {
+            get
+            {
+                string shared = Environment.GetEnvironmentVariable(DataRootVariable);
+                if (!string.IsNullOrWhiteSpace(shared)) return shared;
+                return string.IsNullOrWhiteSpace(_dataRoot) ? Application.persistentDataPath : _dataRoot;
+            }
+            set => _dataRoot = value;
+        }
+
+        public string InstallationRoot => Download.ModelDownloadPaths.Child(DataRoot, _installationFolder);
         public TEngine GetDefaultEngine<TEngine>() where TEngine : InferenceEngineBase
         {
             foreach (InferenceEngineBase engine in _defaultEngines) if (engine is TEngine typed) return typed;

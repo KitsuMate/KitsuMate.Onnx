@@ -48,7 +48,7 @@ namespace KitsuMate.Onnx
                 throw new PlatformNotSupportedException("Native ONNX file sessions are unavailable on WebGL.");
 
             string build = string.IsNullOrWhiteSpace(Application.buildGUID) ? "unknown-build" : Application.buildGUID;
-            string cacheBase = ModelDownloadPaths.Child(Application.persistentDataPath, "KitsuMateStreamingModels");
+            string cacheBase = ModelDownloadPaths.Child(OnnxSettings.DataRoot, "KitsuMateStreamingModels");
             string cacheRoot = ModelDownloadPaths.Child(cacheBase, build);
             string destination = ModelDownloadPaths.Child(cacheRoot, safePath);
             await CopyGate.WaitAsync(cancellationToken);

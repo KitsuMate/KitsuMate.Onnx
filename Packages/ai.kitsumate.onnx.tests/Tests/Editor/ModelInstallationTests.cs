@@ -12,17 +12,39 @@ namespace KitsuMate.Onnx.Tests
     public sealed class ModelInstallationTests
     {
         [Test]
-        public void PersistentModelReferencesSerializeRelativePaths()
+        public void DataFolderModelReferencesSerializeRelativePaths()
         {
-            string path = Path.Combine(Application.persistentDataPath, "KitsuMateModels", "owner", "model", "graph.onnx");
+            string path = Path.Combine(OnnxSettings.DataRoot, "KitsuMateModels", "owner", "model", "graph.onnx");
             var reference = new OnnxModelReference();
             reference.ConfigureFile(path, "", null, null);
-            Assert.That(reference.Root, Is.EqualTo(OnnxModelReference.FileRoot.PersistentData));
+            Assert.That(reference.Root, Is.EqualTo(OnnxModelReference.FileRoot.DataFolder));
             Assert.That(reference.FilePath, Is.EqualTo("KitsuMateModels/owner/model/graph.onnx"));
-            Assert.That(JsonUtility.ToJson(reference), Does.Not.Contain(Application.persistentDataPath));
+            Assert.That(JsonUtility.ToJson(reference), Does.Not.Contain(Path.GetFullPath(OnnxSettings.DataRoot)));
             var restored = JsonUtility.FromJson<OnnxModelReference>(JsonUtility.ToJson(reference));
             Assert.That(restored.Root, Is.EqualTo(reference.Root));
             Assert.That(restored.FilePath, Is.EqualTo(reference.FilePath));
+        }
+
+        [Test]
+        public void DataRootPrefersVariableThenApplicationValueThenPersistentData()
+        {
+            string variable = Environment.GetEnvironmentVariable(OnnxSettings.DataRootVariable);
+            Environment.SetEnvironmentVariable(OnnxSettings.DataRootVariable, null);
+            string applicationValue = OnnxSettings.DataRoot;
+            try
+            {
+                OnnxSettings.DataRoot = null;
+                Assert.That(OnnxSettings.DataRoot, Is.EqualTo(Application.persistentDataPath));
+                OnnxSettings.DataRoot = "app-data";
+                Assert.That(OnnxSettings.DataRoot, Is.EqualTo("app-data"));
+                Environment.SetEnvironmentVariable(OnnxSettings.DataRootVariable, "shared-data");
+                Assert.That(OnnxSettings.DataRoot, Is.EqualTo("shared-data"));
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable(OnnxSettings.DataRootVariable, variable);
+                OnnxSettings.DataRoot = applicationValue;
+            }
         }
 
         [Test]
