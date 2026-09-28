@@ -22,12 +22,15 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
         [Header("Performance")]
         [SerializeField, Tooltip("Number of voice embeddings to cache (0 = disabled)")]
         private int _voiceCacheCapacity = 4;
+        private readonly int _inferenceThreads;
 
         /// <summary>Model set containing Chatterbox models.</summary>
-        public ChatterboxEngineRuntime(ChatterboxModelSet modelSet, int voiceCacheCapacity, bool verbose)
+        public ChatterboxEngineRuntime(ChatterboxModelSet modelSet, int voiceCacheCapacity, bool verbose,
+            int inferenceThreads)
         {
             _modelSet = modelSet;
             _voiceCacheCapacity = voiceCacheCapacity;
+            _inferenceThreads = inferenceThreads;
             VerboseLogging = verbose;
         }
 
@@ -97,7 +100,10 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
                 // Large graphs already load on a background thread. Load them one
                 // at a time to limit peak memory and retain handles for cleanup.
                 var options = new OnnxSessionOptions
-                    { IntraOpThreads = Math.Min(4, Environment.ProcessorCount), InterOpThreads = 1 };
+                {
+                    IntraOpThreads = _inferenceThreads > 0 ? _inferenceThreads : Math.Min(4, Environment.ProcessorCount),
+                    InterOpThreads = 1
+                };
                 speechEncoderSession = backend.CreateSession(_modelSet.SpeechEncoder, options);
                 embedTokensSession = backend.CreateSession(_modelSet.EmbedTokens, options);
                 languageModelSession = backend.CreateSession(_modelSet.LanguageModel, options);

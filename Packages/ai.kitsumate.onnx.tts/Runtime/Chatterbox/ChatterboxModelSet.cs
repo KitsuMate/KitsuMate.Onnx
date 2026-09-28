@@ -31,6 +31,7 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
                 yield return ("chatterbox", "KitsuMate/chatterbox-multilingual-ONNX");
                 yield return ("chatterbox", "KitsuMate/chatterbox-turbo-onnx");
                 yield return ("chatterbox", "KitsuMate/chatterbox-nano-onnx");
+                yield return ("chatterbox", "KitsuMate/chatterbox-nano-v2-onnx");
             }
         }
 

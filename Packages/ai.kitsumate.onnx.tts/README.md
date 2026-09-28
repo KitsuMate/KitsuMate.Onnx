@@ -89,6 +89,21 @@ Whisper found no word errors in the four Unity prompts, and a five-seed raw comp
 showed no word-error increase over FP32. Listening review of voice identity is still
 recommended before relying on a new voice or language.
 
+### Chatterbox Nano v2
+
+`KitsuMate/chatterbox-nano-v2-onnx` is a KitsuMate export of the original FP32 Nano checkpoint for the
+four-graph `ChatterboxEngine`, English only. It uses the original single end-of-text token, so its
+tokenizer and graphs are not interchangeable with `KitsuMate/chatterbox-nano-onnx`. The FP32 layout is
+the reference; the CPU speed layout adds a fused GPT-2 language model with INT8 weights in layers 4-11
+and the head, and a decoder with dynamic INT8 MatMuls. The INT8 decoder operators are CPU-oriented;
+use the FP32 decoder on GPU providers.
+
+`ChatterboxEngine.inferenceThreads` sets ONNX Runtime threads per graph (0 keeps up to four). On a
+Galaxy A33 (two Cortex-A78 cores), two threads were fastest for the decoder and one for the language
+model; more threads spill onto slower cores. In native CPU benchmarks there, a 9-second sentence took
+about 17 seconds (5.0 s language model, 12.3 s decoder) against 21.7 seconds for the previous public
+profile. Unity player timing on phones has not been measured.
+
 ## NeuTTS-2E
 
 `NeuTtsEngine` supports English emotional synthesis with `emily`, `paul`, `sophie`, and `steven`.

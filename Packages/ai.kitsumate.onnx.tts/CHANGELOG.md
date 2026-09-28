@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Added `ChatterboxEngine.inferenceThreads` and the `KitsuMate/chatterbox-nano-v2-onnx` repository suggestion
+  (FP32 export plus a CPU speed layout for phones).
 - Chatterbox split engine: replaced the merged embedding/LM graph with a CPU token-embedding graph and an
   INT8 fused-kernel language model over a fixed-size device KV cache, replayed with WebGPU graph capture.
   The split model set now has six graph roles (`token-embedding`, `language-model`).
