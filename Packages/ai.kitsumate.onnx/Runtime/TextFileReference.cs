@@ -35,8 +35,8 @@ namespace KitsuMate.Onnx
             if (string.IsNullOrWhiteSpace(filePath)) return null;
             if (!string.IsNullOrWhiteSpace(preparedRuntimePath) && File.Exists(preparedRuntimePath))
                 return preparedRuntimePath;
-            if (fileRoot == OnnxModelReference.FileRoot.PersistentData)
-                return ModelDownloadPaths.Child(Application.persistentDataPath, filePath);
+            if (fileRoot == OnnxModelReference.FileRoot.DataFolder)
+                return ModelDownloadPaths.Child(OnnxSettings.DataRoot, filePath);
             if (fileRoot == OnnxModelReference.FileRoot.StreamingAssets)
             {
                 string root = Application.streamingAssetsPath;

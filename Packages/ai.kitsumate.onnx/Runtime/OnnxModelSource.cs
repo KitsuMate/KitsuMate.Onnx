@@ -26,7 +26,7 @@ namespace KitsuMate.Onnx
     public sealed class OnnxModelReference : IOnnxModelSource
     {
         public enum SourceKind { Asset, File }
-        public enum FileRoot { Absolute, PersistentData, StreamingAssets }
+        public enum FileRoot { Absolute, DataFolder, StreamingAssets }
 
         [SerializeField] private SourceKind sourceKind;
         [SerializeField] private OnnxModelAsset asset;
@@ -100,8 +100,8 @@ namespace KitsuMate.Onnx
             if (string.IsNullOrWhiteSpace(filePath)) return false;
             try
             {
-                if (fileRoot == FileRoot.PersistentData)
-                    resolved = Download.ModelDownloadPaths.Child(Application.persistentDataPath, filePath);
+                if (fileRoot == FileRoot.DataFolder)
+                    resolved = Download.ModelDownloadPaths.Child(OnnxSettings.DataRoot, filePath);
                 else if (fileRoot == FileRoot.StreamingAssets)
                 {
                     string root = Application.streamingAssetsPath;
@@ -144,13 +144,13 @@ namespace KitsuMate.Onnx
             Clear();
             sourceKind = SourceKind.File;
             filePath = Path.GetFullPath(absolutePath);
-            string persistentRoot = Path.GetFullPath(Application.persistentDataPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            string dataRoot = Path.GetFullPath(OnnxSettings.DataRoot).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
             var comparison = Application.platform == RuntimePlatform.WindowsEditor || Application.platform == RuntimePlatform.WindowsPlayer
                 ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
-            if (filePath.StartsWith(persistentRoot, comparison))
+            if (filePath.StartsWith(dataRoot, comparison))
             {
-                fileRoot = FileRoot.PersistentData;
-                filePath = filePath.Substring(persistentRoot.Length).Replace('\\', '/');
+                fileRoot = FileRoot.DataFolder;
+                filePath = filePath.Substring(dataRoot.Length).Replace('\\', '/');
             }
             else
             {

@@ -180,7 +180,7 @@ namespace KitsuMate.Onnx.Editor.Download
                 storageDetails = EditorGUILayout.Foldout(storageDetails, "Storage details", true);
                 if (storageDetails)
                 {
-                    EditorGUILayout.LabelField("Download root", "Application.persistentDataPath");
+                    EditorGUILayout.LabelField("Data folder", OnnxSettings.DataRoot);
                     EditorGUILayout.SelectableLabel(Destination(), EditorStyles.wordWrappedMiniLabel, GUILayout.Height(34));
                     using (new EditorGUILayout.HorizontalScope())
                     {
