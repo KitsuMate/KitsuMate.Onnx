@@ -10,6 +10,11 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
     /// and returns final-position logits. Because every decode step binds the same tensors with the
     /// same shapes, providers with graph capture record one step and replay it for every later token.
     /// </summary>
+    /// <remarks>
+    /// When the provider fails, the session falls back to the next one and the tensors of the failed
+    /// provider are created again on the new one. Setup and prefill then simply repeat; a failed decode
+    /// step has lost its cache, so <see cref="Step"/> rethrows and the caller starts the request again.
+    /// </remarks>
     internal sealed class ChatterboxStaticLanguageModel : IDisposable
     {
         /// <summary>Rows are the text-conditioned and unconditioned guidance pair; guidance 0 reads only the first.</summary>
@@ -20,10 +25,11 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
 
         private readonly IOnnxSession embedding;
         private readonly IOnnxDeviceSession languageModel;
+        private readonly string[] caches;
         private readonly List<IDeviceTensor> owned = new();
         private readonly Dictionary<string, IDeviceTensor> inputs = new(StringComparer.Ordinal);
         private readonly Dictionary<string, IDeviceTensor> outputs = new(StringComparer.Ordinal);
-        private readonly IDeviceTensor stepEmbeds, sequenceLengths, totalLength, logits;
+        private IDeviceTensor stepEmbeds, sequenceLengths, totalLength, logits;
         private int length;
 
         public ChatterboxStaticLanguageModel(IOnnxSession embedding, IOnnxSession languageModel, int capacity)
@@ -32,32 +38,11 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
             this.languageModel = languageModel as IOnnxDeviceSession ?? throw new OnnxModelContractException(
                 "The Chatterbox split language model needs a backend with device-resident tensors.");
             Capacity = capacity;
-            string[] caches = languageModel.OutputNames.Where(name => name.StartsWith("present.", StringComparison.Ordinal))
+            caches = languageModel.OutputNames.Where(name => name.StartsWith("present.", StringComparison.Ordinal))
                 .ToArray();
             if (caches.Length == 0 || caches.Any(name => !languageModel.InputNames.Contains(PastName(name))))
                 throw new OnnxModelContractException("The split language model has an incomplete KV cache contract.");
-            try
-            {
-                stepEmbeds = Create("inputs_embeds", OnnxTensorElementType.Float, new[] { Batch, 1, ConditioningWidth });
-                sequenceLengths = Create("seqlens_k", OnnxTensorElementType.Int32, new[] { Batch });
-                totalLength = Create("total_sequence_length", OnnxTensorElementType.Int32, Array.Empty<int>());
-                logits = Create("logits", OnnxTensorElementType.Float, new[] { Batch, ChatterboxConstants.SpeechLogitCount });
-                inputs["inputs_embeds"] = stepEmbeds;
-                inputs["seqlens_k"] = sequenceLengths;
-                inputs["total_sequence_length"] = totalLength;
-                outputs["logits"] = logits;
-                int[] cacheShape = { Batch, ChatterboxConstants.NumKeyValueHeads, capacity, ChatterboxConstants.HeadDim };
-                using var zeros = OnnxTensor.FromArray(new float[cacheShape.Aggregate(1, (a, b) => a * b)], cacheShape);
-                foreach (string present in caches)
-                {
-                    // Rows past the current length are masked, but they must not hold NaN from a reused buffer.
-                    IDeviceTensor cache = Create(present, OnnxTensorElementType.Float, cacheShape);
-                    cache.CopyFrom(zeros);
-                    inputs[PastName(present)] = cache;
-                    outputs[present] = cache;
-                }
-                CaptureDecodeStep();
-            }
+            try { Prepare(); }
             catch { Dispose(); throw; }
         }
 
@@ -71,26 +56,90 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
         public float[] Prefill(long[] ids, long[] positions, OnnxTensor conditioning, float exaggeration)
         {
             using OnnxTensor embeds = Embed(ids, positions, conditioning, exaggeration);
-            length = embeds.Shape[1];
-            if (length > Capacity)
-                throw new ArgumentException($"The request needs {length} language model positions; at most {Capacity} fit.");
-            SetLength(length);
-            var prefillInputs = new Dictionary<string, IDeviceTensor>(inputs, StringComparer.Ordinal);
-            prefillInputs.Remove("inputs_embeds");
-            languageModel.RunBound(new[] { new OnnxNamedValue("inputs_embeds", embeds) }, prefillInputs, outputs);
-            return ReadLogits();
+            int count = embeds.Shape[1];
+            if (count > Capacity)
+                throw new ArgumentException($"The request needs {count} language model positions; at most {Capacity} fit.");
+            while (true)
+            {
+                try
+                {
+                    length = count;
+                    SetLength(count);
+                    var prefillInputs = new Dictionary<string, IDeviceTensor>(inputs, StringComparer.Ordinal);
+                    prefillInputs.Remove("inputs_embeds");
+                    languageModel.RunBound(new[] { new OnnxNamedValue("inputs_embeds", embeds) }, prefillInputs, outputs);
+                    return ReadLogits();
+                }
+                // Prefill writes the cache from position 0, so it can simply run again on the new provider.
+                catch (OnnxProviderFallbackException) { Prepare(); }
+            }
         }
 
         /// <summary>Appends one generated speech token and returns the next logits for both guidance rows.</summary>
+        /// <exception cref="OnnxProviderFallbackException">
+        /// The provider failed and the cache was lost. The model is ready again on the new provider;
+        /// start the request again with <see cref="Prefill"/>.
+        /// </exception>
         public float[] Step(long token, long position, float exaggeration)
         {
             if (length >= Capacity) throw new InvalidOperationException("The language model cache is full.");
             using var conditioning = OnnxTensor.FromArray(Array.Empty<float>(), new[] { Batch, 0, ConditioningWidth });
-            using (OnnxTensor embeds = Embed(new[] { token }, new[] { position }, conditioning, exaggeration))
-                stepEmbeds.CopyFrom(embeds);
-            SetLength(++length);
-            languageModel.RunBound(null, inputs, outputs, DecodeGraph);
-            return ReadLogits();
+            try
+            {
+                using (OnnxTensor embeds = Embed(new[] { token }, new[] { position }, conditioning, exaggeration))
+                    stepEmbeds.CopyFrom(embeds);
+                SetLength(++length);
+                languageModel.RunBound(null, inputs, outputs, DecodeGraph);
+                return ReadLogits();
+            }
+            catch (OnnxProviderFallbackException)
+            {
+                Prepare();
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Creates the fixed tensors and records the decode step. A provider fallback during either
+        /// leaves tensors of the failed provider, so they are released and created on the new one.
+        /// Each fallback moves to a later provider, and the session throws when none remains.
+        /// </summary>
+        private void Prepare()
+        {
+            while (true)
+            {
+                ReleaseTensors();
+                try
+                {
+                    CreateTensors();
+                    CaptureDecodeStep();
+                    return;
+                }
+                catch (OnnxProviderFallbackException) { }
+            }
+        }
+
+        private void CreateTensors()
+        {
+            stepEmbeds = Create("inputs_embeds", OnnxTensorElementType.Float, new[] { Batch, 1, ConditioningWidth });
+            sequenceLengths = Create("seqlens_k", OnnxTensorElementType.Int32, new[] { Batch });
+            totalLength = Create("total_sequence_length", OnnxTensorElementType.Int32, Array.Empty<int>());
+            logits = Create("logits", OnnxTensorElementType.Float, new[] { Batch, ChatterboxConstants.SpeechLogitCount });
+            inputs["inputs_embeds"] = stepEmbeds;
+            inputs["seqlens_k"] = sequenceLengths;
+            inputs["total_sequence_length"] = totalLength;
+            outputs["logits"] = logits;
+            int[] cacheShape = { Batch, ChatterboxConstants.NumKeyValueHeads, Capacity, ChatterboxConstants.HeadDim };
+            using var zeros = OnnxTensor.FromArray(new float[cacheShape.Aggregate(1, (a, b) => a * b)], cacheShape);
+            foreach (string present in caches)
+            {
+                // Rows past the current length are masked, but they must not hold NaN from a reused buffer.
+                // GroupQueryAttention supports one buffer as both past and present cache; see RunBound.
+                IDeviceTensor cache = Create(present, OnnxTensorElementType.Float, cacheShape);
+                cache.CopyFrom(zeros);
+                inputs[PastName(present)] = cache;
+                outputs[present] = cache;
+            }
         }
 
         /// <summary>
@@ -143,6 +192,15 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
             return tensor;
         }
 
+        private void ReleaseTensors()
+        {
+            foreach (IDeviceTensor tensor in owned) tensor.Dispose();
+            owned.Clear();
+            inputs.Clear();
+            outputs.Clear();
+            stepEmbeds = sequenceLengths = totalLength = logits = null;
+        }
+
         private static long[] Repeat(long[] values)
         {
             var result = new long[values.Length * Batch];
@@ -152,10 +210,6 @@ namespace KitsuMate.Onnx.Tts.Chatterbox
 
         private static string PastName(string present) => "past_key_values." + present.Substring("present.".Length);
 
-        public void Dispose()
-        {
-            foreach (IDeviceTensor tensor in owned) tensor.Dispose();
-            owned.Clear();
-        }
+        public void Dispose() => ReleaseTensors();
     }
 }

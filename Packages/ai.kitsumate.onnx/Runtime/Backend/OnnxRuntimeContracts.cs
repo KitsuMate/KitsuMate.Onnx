@@ -194,4 +194,23 @@ namespace KitsuMate.Onnx
     {
         public OnnxRuntimeLifecycleException(string message, Exception innerException = null) : base(message, innerException) { }
     }
+
+    /// <summary>
+    /// The session's provider failed while it used device tensors, and the session switched to the
+    /// next provider. Device tensors created before the switch belong to the failed provider and
+    /// keep no usable data: dispose them, create new ones, fill them and run again.
+    /// </summary>
+    public class OnnxProviderFallbackException : OnnxRuntimeLifecycleException
+    {
+        public OnnxProviderFallbackException(OnnxExecutionProvider from, OnnxExecutionProvider to, Exception innerException)
+            : base($"ONNX provider '{from}' failed with device tensors in use; the session now uses '{to}'. " +
+                   "Create the device tensors again and repeat the work.", innerException)
+        {
+            From = from;
+            To = to;
+        }
+
+        public OnnxExecutionProvider From { get; }
+        public OnnxExecutionProvider To { get; }
+    }
 }

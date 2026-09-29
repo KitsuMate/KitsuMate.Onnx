@@ -1,8 +1,11 @@
 # ONNX Runtime provisioning
 
 The default backend ships ONNX Runtime 1.30.0 for Windows, Linux, macOS, and Android,
-with matching managed bindings. Windows and Linux use the WebGPU 0.3.0 plugin.
-Provider packages have independent version numbers from the core runtime.
+with matching managed bindings. Windows and Linux use the WebGPU 0.4.0 plugin. On
+Windows, its `dxcompiler.dll` and `dxil.dll` come from `Microsoft.Direct3D.DXC` 1.9, not
+from the plugin package: the plugin's 1.8.2502 compiler cannot target Shader Model 6.9.
+Provider packages have independent version numbers from the core runtime, and the
+updater caches each package archive by its URL.
 
 `Dependencies/onnxruntime.lock.json` pins official NuGet artifacts and each installed
 file's SHA-256. The complete default payload and Unity-generated importer metadata

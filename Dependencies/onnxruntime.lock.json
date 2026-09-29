@@ -1,7 +1,8 @@
 {
   "schemaVersion": 2,
   "version": "1.30.0",
-  "webGpuVersion": "0.3.0",
+  "webGpuVersion": "0.4.0",
+  "dxcVersion": "1.9.2607.13",
   "packages": [
     {
       "id": "Microsoft.ML.OnnxRuntime.Managed",
@@ -59,12 +60,12 @@
     },
     {
       "id": "Microsoft.ML.OnnxRuntime.EP.WebGpu",
-      "url": "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime.ep.webgpu/0.3.0/microsoft.ml.onnxruntime.ep.webgpu.0.3.0.nupkg",
+      "url": "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime.ep.webgpu/0.4.0/microsoft.ml.onnxruntime.ep.webgpu.0.4.0.nupkg",
       "files": [
         {
           "source": "runtimes/linux-x64/native/libonnxruntime_providers_webgpu.so",
           "destination": "Linux/x86_64/libonnxruntime_providers_webgpu.so",
-          "sha256": "1139af8249c58f6b0234aafda0ed0e09137a427e4acedebce4be02d589928cac"
+          "sha256": "9f76e3dc4459421958ad086a9da03bf7e5de9289e9a3a56e28bbb459773dec81"
         },
         {
           "source": "LICENSE",
@@ -74,22 +75,38 @@
         {
           "source": "ThirdPartyNotices.txt",
           "destination": "Licenses/WebGPU-ThirdPartyNotices.txt",
-          "sha256": "4c5b864d8974c94b37461f38163facef79a1bb5dea461667ee9e5be6a8e73f83"
+          "sha256": "c53a76501ef60db6f865f20599f220761201ac4057683acefdab37d861b86622"
         },
         {
           "source": "runtimes/win-x64/native/onnxruntime_providers_webgpu.dll",
           "destination": "Windows/x86_64/onnxruntime_providers_webgpu.dll",
-          "sha256": "b05a6d5187885be9133ac383d5271af20b76f281e72d8bfe933f35a23d05b94f"
-        },
+          "sha256": "85d7b2065b1968b846cd00d5d87d5286d3c44e8f6c557cd382d96300e524b6cb"
+        }
+      ]
+    },
+    {
+      "id": "Microsoft.Direct3D.DXC",
+      "url": "https://api.nuget.org/v3-flatcontainer/microsoft.direct3d.dxc/1.9.2607.13/microsoft.direct3d.dxc.1.9.2607.13.nupkg",
+      "files": [
         {
-          "source": "runtimes/win-x64/native/dxcompiler.dll",
+          "source": "build/native/bin/x64/dxcompiler.dll",
           "destination": "Windows/x86_64/dxcompiler.dll",
-          "sha256": "a35b933a0b633983c0cc48205879fe7adb37fe8274a5c76e9f74b2fa967a060e"
+          "sha256": "9a5100511e127c6a2fc78edf984f95074a76d35b90c90c4d342430a5ae160e9b"
         },
         {
-          "source": "runtimes/win-x64/native/dxil.dll",
+          "source": "build/native/bin/x64/dxil.dll",
           "destination": "Windows/x86_64/dxil.dll",
-          "sha256": "6768128fbac6b66088a7c466412ac4120ef9d7701e00b43fa6c1ff7063dfa042"
+          "sha256": "feb57253eff0a622561e29b44cedbe86b89fc9a5bc8dc00fa2f98fafd712c2d8"
+        },
+        {
+          "source": "LICENSE-MS.txt",
+          "destination": "Licenses/DXC-LICENSE-MS.txt",
+          "sha256": "734f72f239fe7b07b4c7203f294c1a7ce27095687278bab7e56d630d7c672963"
+        },
+        {
+          "source": "LICENSE-LLVM.txt",
+          "destination": "Licenses/DXC-LICENSE-LLVM.txt",
+          "sha256": "729615317e28dd03907e46f0fc3b5e88f7853cee61d1a1471d2749335516b46f"
         }
       ]
     }

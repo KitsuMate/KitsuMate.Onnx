@@ -45,9 +45,10 @@ namespace KitsuMate.Onnx
 
         public void Dispose()
         {
-            Session.Dispose();
+            // The allocator wraps one of the session's allocators, so it goes before the session.
             DeviceTensorAllocator?.Dispose();
             DeviceTensorAllocator = null;
+            Session.Dispose();
             GpuMemoryInfo?.Dispose();
             GpuMemoryInfo = null;
         }
@@ -309,10 +310,6 @@ namespace KitsuMate.Onnx
                 LogSeverityLevel = OrtLoggingLevel.ORT_LOGGING_LEVEL_ERROR
             };
 
-            // ORT 1.30.0 fuses Conv with Gelu/Elu, which the bundled WebGPU 0.3.0
-            // cannot initialize. Remove when an updated plugin passes the activation regression test.
-            if (provider == OnnxExecutionProvider.WebGpu)
-                ortOptions.AddSessionConfigEntry("optimization.disable_specified_optimizers", "ConvActivationFusion");
             if (SupportsGraphCapture(provider) && options.EnableGraphCapture)
                 ortOptions.AddSessionConfigEntry("ep.webgpuexecutionprovider.enableGraphCapture", "1");
 
@@ -712,7 +709,7 @@ namespace KitsuMate.Onnx
             }
         }
 
-        private bool ShouldAttemptRuntimeFallback(Exception exception)
+        internal bool ShouldAttemptRuntimeFallback(Exception exception)
         {
             if (_fallbackFactory == null || exception is OperationCanceledException || exception is ObjectDisposedException ||
                 exception is OnnxModelContractException || exception is OnnxModelPreparationException)
@@ -762,6 +759,16 @@ namespace KitsuMate.Onnx
                     $"ONNX provider '{failedState.Provider}' failed during execution and no runtime fallback remains.",
                     new AggregateException(transitionFailures));
             }
+        }
+
+        /// <summary>
+        /// Moves to the next provider after work with device tensors failed. Those tensors cannot
+        /// follow, so the returned exception tells the caller to create them again.
+        /// </summary>
+        internal OnnxProviderFallbackException SwitchProvider(OnnxRuntimeSessionState failedState, Exception exception)
+        {
+            TryTransition(failedState, exception);
+            return new OnnxProviderFallbackException(failedState.Provider, _state.Provider, exception);
         }
         
         public async Awaitable<IReadOnlyDictionary<string, OnnxTensor>> RunAsync(IReadOnlyDictionary<string, OnnxTensor> inputs)
@@ -1016,6 +1023,22 @@ namespace KitsuMate.Onnx
         {
             ThrowIfDisposed();
             OnnxRuntimeSessionState state = _state;
+            try
+            {
+                RunBoundCore(state, cpuInputs, deviceInputs, outputs, graphId);
+            }
+            catch (Exception exception) when (ShouldAttemptRuntimeFallback(exception))
+            {
+                // Bound tensors are written in place, so unlike RunOnDevice they cannot be staged
+                // through the replacement provider; the caller creates them again instead.
+                throw SwitchProvider(state, exception);
+            }
+        }
+
+        private void RunBoundCore(OnnxRuntimeSessionState state, IReadOnlyList<OnnxNamedValue> cpuInputs,
+            IReadOnlyDictionary<string, IDeviceTensor> deviceInputs, IReadOnlyDictionary<string, IDeviceTensor> outputs,
+            int graphId)
+        {
             var sw = VerboseLogging ? Stopwatch.StartNew() : null;
             using var cpuMemInfo = new OrtMemoryInfo("Cpu", OrtAllocatorType.DeviceAllocator, 0, OrtMemType.Default);
             using var binding = state.Session.CreateIoBinding();
@@ -1032,8 +1055,6 @@ namespace KitsuMate.Onnx
                         cpuOrtValues.Add(value);
                         binding.BindInput(input.Name, value);
                     }
-                // Bound tensors are written in place, so unlike RunOnDevice they cannot be staged
-                // through a replacement provider after a runtime fallback.
                 foreach (var input in deviceInputs)
                     binding.BindInput(input.Key, Bound(input.Key, input.Value, state, state.Session.InputMetadata).Value);
                 foreach (var output in outputs)
@@ -1200,14 +1221,37 @@ namespace KitsuMate.Onnx
         {
             if (_value == null)
                 throw new ObjectDisposedException(nameof(OrtDeviceTensor));
-            
-            return CopyToCpu(_value, Name);
+            try
+            {
+                return CopyToCpu(_value, Name);
+            }
+            catch (Exception exception) when (CanSwitchProvider(exception))
+            {
+                throw _ownerSession.SwitchProvider(_ownerState, exception);
+            }
         }
 
         public void CopyFrom(OnnxTensor source)
         {
             if (_value == null) throw new ObjectDisposedException(nameof(OrtDeviceTensor));
             if (source == null) throw new ArgumentNullException(nameof(source));
+            try
+            {
+                CopyFromCore(source);
+            }
+            catch (Exception exception) when (CanSwitchProvider(exception))
+            {
+                throw _ownerSession.SwitchProvider(_ownerState, exception);
+            }
+        }
+
+        // A lost device can let a bound run finish and fail only the transfer that follows,
+        // so a failed transfer switches provider like a failed run.
+        private bool CanSwitchProvider(Exception exception) =>
+            _ownerSession != null && _ownerState != null && _ownerSession.ShouldAttemptRuntimeFallback(exception);
+
+        private void CopyFromCore(OnnxTensor source)
+        {
             var target = _value.GetTensorTypeAndShape();
             if (target.ElementCount != source.Length)
                 throw new ArgumentException(

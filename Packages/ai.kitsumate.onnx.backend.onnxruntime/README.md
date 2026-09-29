@@ -61,8 +61,21 @@ never changes providers at execution time.
 fixed-size cache in place. With `OnnxSessionOptions.EnableGraphCapture`, WebGPU records a
 bound run that passes a graph id and replays it afterwards; every other run on that
 session is explicitly uncaptured. Captured runs need all nodes on WebGPU and the same
-tensors and shapes each time. Bound tensors cannot move to a fallback provider, so a
-runtime provider change makes them unusable and `RunBound` fails.
+tensors and shapes each time. Bind one tensor as both input and output only for operators
+built for it, such as GroupQueryAttention's shared KV cache; WebGPU loses the device when an
+ordinary operator reads and writes the same buffer.
+
+Bound tensors cannot move to a fallback provider. When `RunBound`, or `ToCpu`/`CopyFrom`
+on a tensor the session created, fails in an Automatic session, the session switches to the
+next provider and throws `OnnxProviderFallbackException`. The caller then creates its device
+tensors again and repeats the work. A lost device can let a bound run finish and fail only
+the next transfer, which is why transfers switch provider too. Threaded engine runtimes
+repeat such a request once on the new provider.
+
+On Windows, the WebGPU plugin compiles shaders with DirectX Shader Compiler 1.9 from the
+`Microsoft.Direct3D.DXC` package instead of the 1.8.2502 copy in the plugin package. Dawn
+targets the highest shader model that D3D12 reports; the Agility SDK 1.619 that ships with
+Unity 6.7 reports Shader Model 6.9, which the older compiler rejects.
 
 Editor package paths are resolved once on Unity's main thread and registered as native
 search roots. Worker-thread session creation therefore does not call Package Manager,
