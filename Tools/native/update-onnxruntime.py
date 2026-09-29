@@ -40,6 +40,13 @@ def download(url: str, destination: Path, attempts: int = 3) -> None:
             time.sleep(attempt)
 
 
+def cached_archive_name(package: dict, archive_format: str) -> str:
+    # Providers have their own versions, so the cache key follows the package URL.
+    extension = "tar.gz" if archive_format == "tar.gz" else "zip"
+    url_hash = hashlib.sha256(package["url"].encode("utf-8")).hexdigest()[:16]
+    return f"{package['id']}.{url_hash}.{extension}"
+
+
 def open_verified_package(url: str, archive: Path, archive_format: str):
     for attempt in range(1, 4):
         if not archive.exists():
@@ -165,8 +172,7 @@ def provision_payload(lock: dict, args) -> None:
         if not files:
             continue
         archive_format = package.get("format", "zip")
-        extension = "tar.gz" if archive_format == "tar.gz" else "zip"
-        archive = args.cache / f"{package['id']}.{lock['version']}.{extension}"
+        archive = args.cache / cached_archive_name(package, archive_format)
         try:
             with open_verified_package(package["url"], archive, archive_format) as package_archive:
                 for file in files:

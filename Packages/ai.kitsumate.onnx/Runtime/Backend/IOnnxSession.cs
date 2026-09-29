@@ -93,6 +93,14 @@ namespace KitsuMate.Onnx
         /// input and output names, so one tensor may serve as both an input and an output, for
         /// example a fixed-size KV cache that the graph updates in place.
         /// </summary>
+        /// <remarks>
+        /// Bind one tensor as both input and output only when the operator that writes it supports
+        /// this, such as GroupQueryAttention with a shared KV cache. Other operators would read and
+        /// write the same buffer in one dispatch, which WebGPU rejects by losing the device.
+        /// When the provider fails and the session can fall back, the session switches provider and
+        /// throws <see cref="OnnxProviderFallbackException"/>; <see cref="IDeviceTensor.ToCpu"/> and
+        /// <see cref="IDeviceTensor.CopyFrom"/> do the same for tensors this session created.
+        /// </remarks>
         /// <param name="graphId">
         /// With <see cref="OnnxSessionOptions.EnableGraphCapture"/>, a non-negative id records this run
         /// once and replays it afterwards; later runs with the same id must bind the same tensors.

@@ -118,7 +118,8 @@ class ArtifactProvisioningTests(unittest.TestCase):
                 archive.writestr("value", b"data")
             cache = root / "cache"
             cache.mkdir()
-            (cache / "fixture.test.zip").write_bytes(b"not a zip")
+            url_hash = hashlib.sha256(package.as_uri().encode("utf-8")).hexdigest()[:16]
+            (cache / f"fixture.{url_hash}.zip").write_bytes(b"not a zip")
             lock = root / "lock.json"
             lock.write_text(json.dumps({
                 "version": "test",

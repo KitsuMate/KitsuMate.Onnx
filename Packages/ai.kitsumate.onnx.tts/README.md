@@ -52,7 +52,7 @@ Dynamic INT8 failed to stop on a long Polish passage. INT4 introduced small word
 regressions, so neither is selected. A saved CPU ORT decoder failed WebGPU buffer
 placement; use portable ONNX for this configuration.
 
-Full FP16 computation is not a validated V3 profile on native WebGPU 0.3.0.
+Full FP16 computation is not a validated V3 profile on native WebGPU (checked on 0.3.0).
 Tests found both language-model precision regressions and incorrect FP16
 ConvTranspose coordinates in waveform decoding. Keeping the decoder's five
 transposed convolutions in FP32 fixes the isolated kernel checks while retaining
@@ -74,7 +74,9 @@ language model, flow prepare, flow step, and vocoder.
   stops at its end.
 - On WebGPU, the runtime records one decode step with graph capture and replays it for
   every later token. The step is recorded while the cache is full, because a shorter
-  recording leaves attention past that length unprocessed on WebGPU EP 0.3.0.
+  recording left attention past that length unprocessed on WebGPU EP 0.3.0.
+- If the language model's provider fails, its session moves to the next provider. The
+  cache is created there again, and a request that was generating runs once more.
 - The WebGPU model set uses an FP16-compute flow step. The CPU model set keeps the FP32
   flow step, which is faster on the CPU.
 - Both vocoders compute the sine-source phase with a blocked prefix sum. The WebGPU

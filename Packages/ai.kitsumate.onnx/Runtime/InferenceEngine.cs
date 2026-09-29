@@ -309,13 +309,28 @@ namespace KitsuMate.Onnx
             if (Backend.RequiresMainThread)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                return Task.FromResult(OnRun(request, cancellationToken));
+                return Task.FromResult(Run(request, cancellationToken));
             }
             return Task.Run(() =>
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                return OnRun(request, cancellationToken);
+                return Run(request, cancellationToken);
             }, cancellationToken);
+        }
+
+        /// <summary>
+        /// When a provider fails while device tensors are in use, the session has already moved to the
+        /// next provider by the time <see cref="OnnxProviderFallbackException"/> arrives, so the request
+        /// runs once more there instead of failing.
+        /// </summary>
+        private TResult Run(TRequest request, CancellationToken cancellationToken)
+        {
+            try { return OnRun(request, cancellationToken); }
+            catch (OnnxProviderFallbackException exception)
+            {
+                Debug.LogWarning($"[{GetType().Name}] {exception.From} failed; repeating the request on {exception.To}.");
+                return OnRun(request, cancellationToken);
+            }
         }
 
         protected sealed override Task OnUnloadAsync(CancellationToken cancellationToken) { OnUnload(); return Task.CompletedTask; }
